@@ -359,16 +359,23 @@ republish a retained result or change its native body hash. Direct manual-result
 delivery shares these immutable target/replay barriers and cannot authorize Git,
 execution, review, merge or deployment operations.
 
-Effective Task closure starts with the original charter and applies any trusted,
-explicitly owner-authorized Task Decision changing `keep-open` or
-`close-authorized`. A native PR CR cannot change it. Trusted owner continuation
-re-reads current authority/acceptance, exact head/checks and completion evidence;
-only verified Task completion with no remaining work, applicable qualification
-and no hold/protected boundary permits conditional authorized closure. It must
-surface a complete Task still held open without a genuine remaining condition
-for owner disposition. An already-authorized acceptance-dependent closure does
-not require another Decision, and an accepted Step is not itself Task completion.
-Neither Reviewer nor worker merges or closes Issues.
+Effective Task closure starts with the original charter and applies trusted,
+owner-authorized Task Decisions. A native PR CR cannot change it. Writer keeps
+execution PR linkage neutral; successful execution alone cannot designate Task
+completion. After independent exact-head acceptance/checks, trusted owner
+continuation verifies current authority, completion evidence, actual remaining
+work and holds. Only the genuinely completing `close-authorized` PR receives a
+native closing link; GitHub closes on its successful default-branch merge.
+Intermediate, unmerged and abandoned PRs do not complete the Task.
+
+For `keep-open`, neutral linkage preserves post-merge obligations. Once the
+adjacent preauthorized condition, acceptance/integration and absence of remaining
+work/protected holds verify, the owner channel closes and reads back the Issue
+through its existing connector. No redundant policy Decision or conversion is
+needed. Missing intent requires reconciliation, not unsafe closure or an invented
+permanent hold. No-PR and already-admitted historical results retain their
+qualified completion paths and immutable identities. Neither Reviewer nor worker
+merges or closes Issues; no duplicate closure engine is introduced.
 
 [Pre-dispatch finalization](../controller/README.md#pre-dispatch-admission-finalization)
 can retire a strictly proven first-run partial label admission through a fresh

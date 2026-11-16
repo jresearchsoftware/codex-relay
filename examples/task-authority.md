@@ -42,8 +42,9 @@ Completion and closure require the documentation changes, independent exact-head
 ```
 
 The fictional owner has authorized this closure policy. It permits closure only
-after verified independent acceptance and no remaining work; implementation,
-admission, Step completion or merge does not establish Task completion.
+on successful default-branch merge of the genuinely completing PR, designated
+with `Closes #42` after verified exact-head acceptance and no remaining work.
+Implementation, admission and Step completion alone do not establish completion.
 
 When the owner accepts explicit coverage of no-change completion, publish the
 following Task-scoped Decision through `publish_task_authority`. The Decision
@@ -79,14 +80,14 @@ Step, and projects labels/title. No additional authoring form or Request is need
 
 In a separate synthetic v4 charter, the owner authorizes a bounded source fix,
 independent exact-head acceptance, merge, an explicit installed Apply and
-original-operation verification. With `Issue closure policy: close-authorized`,
+original-operation verification. With `Issue closure policy: keep-open`,
 those adjacent completion conditions keep the Issue open through merge and
 Apply. After verified success with no remaining work/hold, the existing owner
 continuation closes it without another closure Decision. Source PASS, merge or
 an unrelated deployment does not satisfy the original-operation evidence.
 
-If the owner instead leaves a concrete unresolved deployment choice or later
-qualification outside the authorized path, use `keep-open` and name that hold.
+Likewise, publication of an accepted package requires `keep-open` with its exact
+publication condition; merge does not prove release. Name any explicit hold.
 If the owner later defers, combines or cancels the required Apply, publish a
 trusted Task-scoped v4 Decision reconciling completion conditions and closure
 policy; do not rewrite the admitted charter or pretend deployment occurred.
@@ -261,8 +262,9 @@ After correction, the independent evaluator assesses the complete exact result.
 Owner orchestration may squash the TEST-only PR using its approved current head,
 passing required checks, verified readiness/holds and native merge readback.
 An uncertain publication or merge is reconciled as the original operation, never
-repeated blindly. Issue #42 remains open when its policy is `keep-open`; closing
-other TEST-only Issues still follows their own closure authority. These actions
+repeated blindly. Issue #42 remains open under `keep-open` until its adjacent preauthorized
+condition is verified; then ordinary trusted closure needs no policy conversion
+or redundant Decision. Other TEST-only Issues retain their own authority. These actions
 retain actual actor permissions and native admission for Relay executions,
 preserve Writer/Reviewer separation and grant no product PR merge, PROD, external-repository or new
 credential/App/runner-ACL permission. A product-review preview remains scoped to
