@@ -323,8 +323,8 @@ A native exact-head PR `APPROVE` also returns the bounded
 `native-approve-exact-head-squash-v1` continuation policy. It authorizes automatic
 continuation only for that reviewed head, squash merge, passing native required
 checks and verified mergeability. Unresolved checks block continuation;
-an explicit hold blocks continuation, and `keep-open`, an incomplete Task or
-remaining Task work blocks Issue closure. Native next-request or selected Task
+an explicit hold blocks continuation, and incomplete Task work or an unsatisfied
+completion condition blocks Issue closure. Native next-request or selected Task
 Decision references are re-read before publication. `execution_supported: false` makes explicit
 that this Reviewer implementation publishes the policy and performs neither a
 merge nor closure. Execution belongs to a separately authorized trusted owner
@@ -335,7 +335,29 @@ The v4 continuation receipt carries effective closure permission, hold/next,
 exact source/admission/Outcome identities and a requirement for trusted owner
 canonical completion evidence. It does not infer Task completion from an
 implemented Step or absence of a next direction. Owner orchestration verifies
-remaining work and applicable qualification conditions before conditional closure.
+remaining work and applicable qualification conditions before closure. The one
+`Issue closure policy` selects its timing. For current v4 `close-authorized`
+work, only the genuinely completing final PR may receive `Closes #N`; GitHub
+closes the Task on the owner's guarded merge to the default branch. Intermediate,
+unmerged and abandoned PRs do not complete the Task. Writer initially publishes
+neutral linkage, and trusted owner continuation may designate the final PR after
+independent exact-head acceptance without repeating approval for a link-only
+change. Current-v4 approval rejects closing links to another Task/repository,
+`keep-open` or unresolved closure intent, an explicit hold, or a same-Task next
+direction, before reserving or posting a verdict. Valid trusted Task Decisions
+can reconcile the charter's effective policy; malformed charter metadata remains
+visible as a warning. These mechanical checks do not prove genuine completion.
+
+For current v4 `keep-open` work, PR linkage stays `Related to #N`. Once the
+human-readable preauthorized condition beside the single closure field is
+verified, required acceptance/integration is complete and no work or protected
+hold remains, the trusted owner continuation closes the Issue and records that
+verification in its existing chronology. Satisfying that condition needs no
+conversion to `close-authorized` or redundant owner Decision. The receipt keeps
+the effective policy and canonical authority binding; Reviewer neither interprets
+free-form condition text as executable permission nor closes the Issue. Genuine
+no-PR work uses its existing completion path. Historical and already-admitted
+attempts retain their original closure and recovery contract.
 
 An owner-created standalone source PR can instead receive a `source_pr`
 continuation binding without admission/Outcome. The service verifies native

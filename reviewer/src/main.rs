@@ -1024,6 +1024,27 @@ async fn current_approval_authority(
         true,
     )
     .await?;
+    if authority["schema_version"] == "4.0" {
+        let closing = step_sync::closing_issue_references(&pr)?;
+        if closing.iter().any(|(repository, task)| {
+            !repository.eq_ignore_ascii_case(app.repository)
+                || Some(*task) != issue["number"].as_u64()
+        }) {
+            return Err("AUTHORITY_CLOSING_LINK_MISMATCH");
+        }
+        if !closing.is_empty()
+            && (authority["issue_closure_policy"] != "close-authorized"
+                || authority["continuation"]["hold"] == true
+                || authority["continuation"]["next"]["task"] == issue["number"])
+        {
+            return Err("AUTHORITY_CLOSING_LINK_FORBIDDEN");
+        }
+        // A permitted closing reference is a final-result designation, not
+        // proof of Task completion. Independent assessment and trusted owner
+        // continuation still verify the complete Task before guarded merge.
+        // Related-to and Closes forms preserve the same exact-head authority
+        // binding, so that owner designation does not create a review loop.
+    }
     if authority["schema_version"] == "4.0" && arguments["_preview"] != true {
         if let Some(expected) = arguments.get("expected_task_authority_sha256") {
             if *expected != authority["authority"]["sha256"] {
