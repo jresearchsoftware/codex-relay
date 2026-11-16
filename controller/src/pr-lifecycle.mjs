@@ -32,13 +32,14 @@ export async function transitionPr({ api, store, key, record, readPr, head, draf
   return pr;
 }
 
-export async function beginRemediation({ api, store, request, authorityDigest, admittedEnvelope }) {
+export async function beginRemediation({ api, store, admissionStore, request, authorityDigest, admittedEnvelope }) {
   if (Object.keys(request).some(key => !['operation', 'prNumber', 'reviewId', 'head'].includes(key))
     || !positive(request.prNumber) || !positive(request.reviewId) || !exactSha(request.head)) fail('PR_LIFECYCLE_REQUEST_INVALID');
+  const admitted = admittedEnvelope?.request?.kind === 'admission';
   const read = async () => {
     const pr = await api.get(`/pulls/${request.prNumber}`); assertPr(pr, request.prNumber);
     let authority;
-    if (admittedEnvelope?.request?.kind === 'admission') {
+    if (admitted) {
       // Only the internal broker supplies this already-resolved admission.
       // Revalidate its immutable binding without allocating another Step.
       validateEnvelope(admittedEnvelope);
@@ -71,33 +72,50 @@ export async function beginRemediation({ api, store, request, authorityDigest, a
       || author?.id !== publisher.id || author?.type !== 'Bot'
       || authority.review.id !== request.reviewId || authority.startHead !== request.head
       || authority.pr.head.sha !== request.head) fail('CURRENT_CHANGE_REQUEST_MISSING');
-    if (authorityDigest && authority.authorityDigest !== authorityDigest) fail('AUTHORITY_CHANGED');
+    if (authorityDigest && (admitted ? admittedEnvelope.authorityDigest : authority.authorityDigest) !== authorityDigest) fail('AUTHORITY_CHANGED');
     return authority;
   };
   const authority = await read();
   const binding = { repository: REPOSITORY, prNumber: request.prNumber, reviewId: request.reviewId,
-    head: request.head, authorityDigest: authority.authorityDigest };
-  // Only protected Writer can supply a retained admission at a later head.
-  // Its lifecycle namespace is keyed by run, leaving the original review's
-  // exact A/head/authority intent and recovery bytes untouched.
-  const continuing = admittedEnvelope?.request?.kind === 'admission'
-    && admittedEnvelope.startHead !== admittedEnvelope.request.reviewed_head_sha;
+    head: request.head, authorityDigest: admitted ? admittedEnvelope.authorityDigest : authority.authorityDigest };
+  // The review action keeps its immutable exact-head/authority receipt. A
+  // freshly admitted run may have new trusted Decisions even at that same
+  // head; use the existing run namespace after proving the original action
+  // settled, rather than overwriting it or borrowing an uncertain effect.
+  const original = await store.get(request.reviewId);
+  const retainedAdmission = admitted && admissionStore ? await admissionStore.get(admittedEnvelope.runId) : null;
+  const sameHead = admitted && admittedEnvelope.startHead === admittedEnvelope.request.reviewed_head_sha;
+  const changedAuthority = admitted && original
+    && original.binding?.authorityDigest !== binding.authorityDigest;
+  const continuing = admitted && (!sameHead || changedAuthority || retainedAdmission !== null);
+  if (continuing) {
+    if (!admissionStore) fail('PR_LIFECYCLE_STORE_REQUIRED');
+    // Replay must retain its namespace. A same-head run receipt relied on
+    // settled original proof; its loss cannot authorize recreating that proof.
+    if (sameHead && retainedAdmission && !original) fail('PR_LIFECYCLE_BINDING_CHANGED');
+    if (original && (original.binding?.repository !== REPOSITORY
+      || original.binding?.prNumber !== request.prNumber || original.binding?.reviewId !== request.reviewId
+      || original.binding?.head !== admittedEnvelope.request.reviewed_head_sha
+      || !/^[a-f0-9]{64}$/.test(original.binding?.authorityDigest ?? '')
+      || original.lifecycleIntent !== null)) fail('PR_LIFECYCLE_BINDING_CHANGED');
+    store = admissionStore;
+    binding.admission = digest(admittedEnvelope);
+  }
   const key = continuing ? admittedEnvelope.runId : request.reviewId;
-  if (continuing) binding.admission = digest(admittedEnvelope);
-  const record = await store.get(key) ?? { binding };
+  const record = continuing ? retainedAdmission ?? { binding } : original ?? { binding };
   if (digest(record.binding) !== digest(binding)) fail('PR_LIFECYCLE_BINDING_CHANGED');
   if (await store.isRetained?.(key)) {
     // Completed SERIAL receipts are read-only evidence, never a new intent.
     // Live authority above and below must still identify the exact old review.
     const fresh = await read();
-    if (fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
+    if (!admitted && fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
     if (record.lifecycleIntent !== null || fresh.pr.draft !== true) fail('SERIAL_POOL_LIFECYCLE_UNRESOLVED');
     return { repository: REPOSITORY, prNumber: fresh.pr.number, reviewId: request.reviewId, head: fresh.pr.head.sha, draft: true };
   }
   const pr = await transitionPr({ api, store, key, record, head: request.head, draft: true,
     readPr: async () => {
       const fresh = await read();
-      if (fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
+      if (!admitted && fresh.authorityDigest !== binding.authorityDigest) fail('AUTHORITY_CHANGED');
       return fresh.pr;
     } });
   return { repository: REPOSITORY, prNumber: pr.number, reviewId: request.reviewId, head: pr.head.sha, draft: pr.draft };

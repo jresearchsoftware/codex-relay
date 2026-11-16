@@ -234,6 +234,16 @@ known changed fields, comparison gaps and the review signal.
 This report is not a claim that amended work was performed or permission to
 exercise newly granted protected operations.
 
+Trusted chronological Decisions may arrive during automatic source execution. Added
+boundary prose and acceptance checks are reported as drift rather than blocking
+safe source collection/publication. The admitted execution and its permissions
+are unchanged. Writer does not classify arbitrary prose as revocation: use the
+existing structured `continuation.hold` amendment to stop active effects
+immediately. Removed admitted scope, changed starting pins and native source or
+identity failures retain their stops. Bounded contained collection can preserve
+source under reporting validation even when publication is held. See the
+[controller contract](../controller/README.md) for action-time checks and limits.
+
 Task acceptance binds the current authority while preserving the exact
 Outcome/admission and immutable result. The reviewer explicitly evaluates
 admitted versus current requirements: missing work needs remediation, unused

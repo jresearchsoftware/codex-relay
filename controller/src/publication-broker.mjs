@@ -171,9 +171,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     // The current native CR supplies the same exact action as Reviewer
     // pr_lifecycle. Consume it before reserving a worker or emitting a handoff,
     // even when the owner launches through the ordinary routing entrypoint.
-    const continuing = e.request?.kind === 'admission' && e.startHead !== e.request.reviewed_head_sha;
-    if (continuing && !admissionLifecycleStore) fail('PR_LIFECYCLE_STORE_REQUIRED');
-    await beginRemediation({ api, store: continuing ? admissionLifecycleStore : lifecycleStore,
+    await beginRemediation({ api, store: lifecycleStore, admissionStore: admissionLifecycleStore,
       authorityDigest: e.authorityDigest, admittedEnvelope: e,
       request: { operation: 'begin-remediation', prNumber: e.number, reviewId: e.reviewId, head: e.startHead } });
   }
@@ -673,7 +671,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
         : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
         : ['publication-state', 'recover-publication', 'complete-handoff', 'complete-execution', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
-          : { reporting: ['finish', 'finish-no-change'].includes(request.operation),
+          : { reporting: ['collect-progress', 'finish', 'finish-no-change'].includes(request.operation),
             verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
       if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
       if (['predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) {

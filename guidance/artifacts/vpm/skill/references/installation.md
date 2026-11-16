@@ -8,7 +8,7 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **6.1.0** becomes a first-party source release only on independent
+Version **7.0.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
 that another consumer adopted it. An unmerged artifact remains a candidate.
@@ -31,12 +31,24 @@ meaningful-result paths without new mandatory consumer work. Frozen 6.0.0 and
 earlier payloads remain unchanged. Source acceptance, external publication and
 installed activation remain separate.
 
+Version 7.0.0 is a MAJOR change from accepted 6.1.0: new trusted boundary
+prose or validation requirements no longer implicitly stop admitted automatic
+source work or safe Writer publication. Already-admitted manual handoffs retain
+their conservative predispatch boundary/validation checks; manual reporting
+still records valid later Decision drift. Existing structured holds, scope removal, exact
+identity/pin checks and protected-effect boundaries remain. Boundary prose is
+not interpreted as a machine cancellation command for automatic source progress;
+use the existing structured
+hold for a deterministic stop. Current authority still governs independent
+exact-head acceptance. This adds no automatic live steering or installed upgrade.
+Frozen 6.1.0 and earlier package bytes remain unchanged.
+
 ## Choose a delivery form
 
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `6.1.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `7.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 5.0.0

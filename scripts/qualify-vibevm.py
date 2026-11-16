@@ -21,7 +21,7 @@ COORDINATE = "org.jresearch.ai/development-governance"
 VERSION = "7.0.1"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "6.1.0"
+SELF_VERSION = "7.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
 PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
@@ -410,12 +410,16 @@ def check_first_party_registry(root, expected):
     manual_wait_files = files_in(root / manual_wait)
     require(tree_hash(manual_wait_files) == "sha256:5dad950eb74b1abd04501da9644be77334e673852951ecfedb6d21fa8c0ad1f8",
             "Frozen accepted 6.0.0 registry changed")
+    autonomy = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v6.1.0")
+    autonomy_files = files_in(root / autonomy)
+    require(tree_hash(autonomy_files) == "sha256:d672628dc4b9eb9541bab65b7652def5ee4356d44b46e004bb19ed2c6e172d18",
+            "Frozen accepted 6.1.0 registry changed")
     previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
     require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
             "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 

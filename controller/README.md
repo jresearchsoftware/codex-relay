@@ -234,6 +234,15 @@ Outcome records are retained unchanged. The public `begin-remediation` operation
 continues to accept only the original current CR's reviewed head A. The internal
 continuation intent cannot turn an arbitrary head into review authority.
 
+The same run-scoped namespace also permits a fresh admission at unchanged A
+when trusted Task Decisions changed after an earlier terminal prepublication
+BLOCKED. Writer verifies that the original review-ID receipt is settled and
+still bound to the same repository, PR, review and reviewed head; it retains
+those original bytes and reserves the new admission's Draft observation under
+its `runId`. A pending original intent or mismatched effect remains blocked.
+Same-attempt replay keeps the selected admission namespace. A fresh checkout at
+the exact published head needs no old-worktree recovery or replacement CR.
+
 For a verified SERIAL-to-managed transition with plural repositories, the
 review-ID lifecycle store coexists with preserved flat `pr-lifecycle-v1` receipts.
 The existing protected transition receipt and original consumer identify the
@@ -368,8 +377,8 @@ and a canonical `relay-manual-result` source comment remains available for
 compatible schema `3.0` callers. It is no longer a required precursor to the
 narrow MCP submission. Existing in-flight attempts are not rewritten.
 
-For schema-v4 completion, valid intervening trusted Task Decisions do not
-invalidate the original execution's truthful result. Writer verifies the
+For schema-v4 execution and completion, valid intervening trusted Task Decisions
+do not by themselves invalidate ongoing source work or its truthful result. Writer verifies the
 original source bytes, native identities and immutable admission, resolves
 current trusted Task authority separately, and records the difference in the
 same Outcome for independent review. It never rewrites the admission or claims
@@ -386,10 +395,42 @@ Issue publication; only the exact original Issue Outcome POST may be recovered.
 The late report remains attributable to its original admission and Step and
 grants no acceptance of the current head.
 
+During automatic source execution, added boundary prose, additive scope and
+changed validation requirements do not block preflight, contained source collection or ordinary task-branch publication.
+The original scope, profile and permissions remain frozen; a later Decision does
+not grant the running worker protected operations. Writer records the current
+Decision sources and changed fields in the one Outcome. Independent review checks
+current requirements, including amended work the worker could not incorporate.
+There is no live worker polling, steering service or extra execution for drift.
+Already-admitted manual handoff remains conservative about changed boundary and
+validation fields before dispatch; its truthful result reporting still accepts
+trusted Decision drift.
+
+For a deterministic stop of active effects, use the existing trusted Decision
+`continuation: {"hold": true, "next": null}`. Removed admitted scope and changed
+branch/base/head/PR pins also stop execution/publication. Boundary strings are
+arbitrary prose: Writer cannot infer whether new wording is a harmless
+clarification or a revocation. A prose-only prohibition remains a semantic
+obligation for its reader and current review, but is not an automated stop signal;
+include the structured hold when immediate automatic stopping is required.
+Source/actor tampering, closed Tasks, changed CRs, foreign or moved refs and
+uncertain effects retain their existing guards. A hold arriving after source
+publication does not undo the push or prevent exposing the exact result for
+independent review; it still governs acceptance and owner continuation.
+
+Contained collection is a bounded read of admitted task-owned source. It verifies
+original sources and identity using reporting validation, so a later hold, scope
+removal or changed starting pin does not erase useful local commits before a
+publication decision. The runner retains its collection evidence; publication
+still revalidates current effect permission and may stop with a truthful BLOCKED
+Outcome. Existing retained-source recovery and explicit current owner authority
+apply to unpublished progress; a fresh attempt can instead start from the last
+canonical published head without mandatory salvage of an old worktree.
+
 Reporting a result grants no new operation permission. Source publication and
-other execution actions remain bounded by both admitted and current protected
-authority; uncertain or revoked permission stops the action while preserving
-useful progress and allowing truthful result reporting. Independent exact-head
+other execution actions remain bounded by admitted authority and the concrete
+current stops above; revoked permission stops the action while preserving useful
+progress and allowing truthful result reporting. Independent exact-head
 PR review or no-PR Task Approval evaluates the delivered result against current
 requirements. Missing amended work needs normal remediation, and material Task changes
 authority after approval requires fresh acceptance before merge or closure.

@@ -2,7 +2,7 @@
 
 Relay selects Shared Governance **7.0.1** for its project-wide adoption under
 Task [#199](https://github.com/jresearchsoftware/codex-relay/issues/199), following the accepted 7.0.0 adoption in Task #213.
-Candidate Relay **6.1.0** retains Shared 5.0.0 for its standalone
+Candidate Relay **7.0.0** retains Shared 5.0.0 for its standalone
 snapshot and publisher closure evidence. Native Shared compatibility remains **`>=2.5.0`**;
 frozen Relay 4.1.1 and earlier packages retain their original bytes.
 Human-owned [AGENTS](../AGENTS.md) adopts
@@ -150,7 +150,7 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=7.0.1` by its anonymous public Git
-source and exact commit. The native local registry supplies Relay `=6.1.0`,
+source and exact commit. The native local registry supplies Relay `=7.0.0`,
 whose supported Shared lower-bound edge resolves to that same explicit Git root.
 The root exact selection is project policy; it is not imposed on other consumers
 by Relay's lower bound. The schema-7

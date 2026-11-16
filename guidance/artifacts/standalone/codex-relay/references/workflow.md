@@ -235,10 +235,34 @@ CD's material operator-change and durable-decision rules to canonical native
 Task/Decision authority; candidate code or guidance cannot amend that authority.
 
 Permission for every action must remain within admitted and current protected
-boundaries. A later Decision may allow truthful reporting of the original work
-without proving newly added requirements were performed or granting a revoked
-operation. Consumer-specific TEST/PROD, deployment, credentials and recovery
-authority must be explicit; the Skill creates none.
+boundaries. Later trusted Decisions may add or clarify boundary prose and
+validation requirements during automatic execution without automatically
+stopping the admitted automatic source work or safe Writer collection/publication.
+Writer preserves
+the original admission, attributes the current Decision set and changed fields,
+and exposes the drift for independent exact-head review. Added requirements are
+not evidence that the executor performed them. Codex follows available current
+guidance within its admitted permissions; Relay adds no live steering or polling.
+
+For automatic source progress, boundary prose is not a machine-readable
+cancellation command: Relay does not classify arbitrary text as harmless
+guidance or a revoked operation. Use the
+existing trusted Decision `continuation.hold: true` for a deterministic stop at
+the next active-effect check; removal of admitted structured scope also stops
+active effects. Changed exact starting pins, native identity/source tampering,
+conflicting CRs, uncertain publication and protected operations retain their
+stops. Bounded collection of the contained attempt may still preserve source
+for truthful reporting after a hold; it does not authorize a push or another
+execution. New boundary wording alone no longer supplies the earlier implicit
+stop for automatic source progress. Already-admitted manual handoffs retain
+their conservative predispatch checks for added boundary prose and validation
+requirements. Manual result reporting still preserves the original admission
+and records valid later Decision drift. A fresh manual admission resolves
+current trusted Decisions normally. Human executors must still stop on a concrete unsafe boundary,
+and independent review assesses the delivered result against current authority.
+No Decision expands an already admitted permission or profile automatically.
+Consumer-specific TEST/PROD, deployment, credentials and recovery authority must
+be explicit; the Skill creates none.
 
 ## Isolated disposable TEST qualification
 

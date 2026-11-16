@@ -91,8 +91,8 @@ test('automatic durable handoff becomes Ready when an approval hold arrives afte
   assert.equal(f.comments.find(c => extractAuthorityRecord(c.body)?.kind === 'outcome').body, body);
 });
 
-for (const amendments of [{ boundaries: [...originalBoundaries, 'Source publication is revoked'] },
-  { scope: ['Different replacement work'] }, { validation: ['diff-check', 'secret-scan'] }]) {
+for (const amendments of [{ continuation: { hold: true, next: null } },
+  { scope: ['Different replacement work'] }]) {
   test(`changed action-time constraint ${Object.keys(amendments)[0]} blocks source publication while one truthful Outcome remains available`, async t => {
     const f = await driftFixture(t);
     let localHead;
@@ -175,4 +175,83 @@ test('late original reporting survives new starting pins while active effects re
     await assert.rejects(revalidateAuthority(f.api, f.envelope), { code: 'AUTHORITY_CHANGED' });
     assert.deepEqual((await f.store.get(99)).envelope, f.originalEnvelope);
   }
+});
+
+for (const arrival of ['before-preflight', 'collect-progress', 'publish-progress', 'finish']) {
+  test(`trusted boundary and acceptance Decisions at ${arrival} retain source progress and original admission`, async t => {
+    const f = await driftFixture(t);
+    let amended = false;
+    const amend = () => {
+      if (amended) return;
+      amended = true;
+      f.amend({ boundaries: [...originalBoundaries, 'Use isolated synthetic GitVerse fixtures'] });
+      f.amend({ validation: ['diff-check', 'secret-scan'], scope: [...originalScope, 'Current acceptance evidence'] });
+    };
+    if (arrival === 'before-preflight') amend();
+    const invoke = f.broker.invoke.bind(f.broker);
+    f.broker.invoke = async request => {
+      if (request.operation === arrival) amend();
+      return invoke(request);
+    };
+    // Exercise Writer's admission-derived contained collector, not just the
+    // direct fixture helper, including its action-time authority validation.
+    const collector = createPublicationBroker({ api: f.api, store: f.store, publisher: f.publisher,
+      journal: f.journal, collectRetained: f.collect });
+    const result = await runAttempt({ ...f,
+      collect: async e => {
+        if (arrival === 'collect-progress') amend();
+        return collector.dispatch({ operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId });
+      },
+      execute: async e => { await f.commit(); return f.execute(e); } });
+    assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(f.pushes(), 1);
+    const outcome = f.comments.map(c => extractAuthorityRecord(c.body)).find(value => value?.kind === 'outcome');
+    assert.deepEqual(outcome.authority_drift.changed_fields, ['boundaries', 'scope', 'validation']);
+    assert.equal(outcome.authority_drift.current_authority.decisions.length, 3);
+    assert.deepEqual(outcome.admission, admissionBinding(f.originalEnvelope.request));
+    assert.deepEqual((await f.store.get(99)).envelope, f.originalEnvelope);
+    await runAttempt({ ...f, admissionResumed: true, execute: () => assert.fail('replay executed') });
+    assert.equal(f.pushes(), 1);
+  });
+}
+
+for (const partial of [false, true]) {
+  test(`boundary clarification preserves ${partial ? 'partial blocked commits' : 'no-op completion'} without another execution`, async t => {
+    const f = await driftFixture(t);
+    const result = await runAttempt({ ...f, execute: async e => {
+      if (partial) await f.commit();
+      f.amend({ boundaries: [...originalBoundaries, 'Keep fixtures inside the isolated test checkout'] });
+      const returned = await f.execute(e);
+      if (partial) returned.result = { status: 'blocked', summary: 'Useful bounded source delivered.',
+        blockedReason: 'Remaining requirement needs owner evidence.', validation: [] };
+      return returned;
+    } });
+    assert.equal(result.status, partial ? 'BLOCKED' : 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(f.pushes(), partial ? 1 : 0);
+    const outcome = f.comments.map(c => extractAuthorityRecord(c.body)).find(value => value?.kind === 'outcome');
+    assert.deepEqual(outcome.authority_drift.changed_fields, ['boundaries']);
+    assert.deepEqual(outcome.authority, f.originalEnvelope.request.authority);
+    if (partial) assert.equal(outcome.result.revision, await f.remoteHead());
+  });
+}
+
+test('explicit hold permits bounded contained collection but prevents the source push', async t => {
+  const f = await driftFixture(t);
+  let collected;
+  const collector = createPublicationBroker({ api: f.api, store: f.store, publisher: f.publisher,
+    journal: f.journal, collectRetained: async e => { collected = await f.collect(e); return collected; } });
+  await assert.rejects(runAttempt({ ...f,
+    collect: e => collector.dispatch({ operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId }),
+    execute: async e => {
+      await f.commit();
+      f.amend({ boundaries: [...originalBoundaries, 'Source publication is revoked'],
+        continuation: { hold: true, next: null } });
+      return f.execute(e);
+    } }), { code: 'AUTHORITY_CHANGED' });
+  assert.ok(collected.bundle);
+  assert.equal((await f.journal.get(99)).collection.head, collected.head);
+  assert.equal((await f.journal.get(99)).collection.preserved, true);
+  assert.equal(f.pushes(), 0);
+  assert.equal(await f.remoteHead(), null);
+  assert.equal((await f.store.get(99)).outcome.status, 'BLOCKED');
 });

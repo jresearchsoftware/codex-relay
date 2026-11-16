@@ -10,7 +10,28 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **6.1.0** is a **MINOR** candidate from independently accepted **6.0.0**.
+Guidance **7.0.0** is a **MAJOR** candidate from independently accepted **6.1.0**
+at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It removes the implicit
+automatic stop caused solely by new trusted boundary prose or validation
+requirements during admitted automatic source work. Already-admitted manual
+handoffs retain their conservative predispatch boundary/validation checks,
+while manual reporting still records valid later Decision drift. Existing structured holds, scope
+removal, identity/pin and protected-effect checks remain; bounded collection
+can preserve contained source even when publication must stop. The original
+admission stays immutable and current requirements govern independent exact-head
+acceptance. This is a supported control change, not a compatibility-preserving
+wording repair: arbitrary prose is no longer treated as machine cancellation
+for automatic source progress.
+It adds no live steering, new protected permission or activation claim.
+
+Task #194 independently proposes an unmerged 7.0.0 candidate from the same
+accepted baseline. Its Shared update and closure changes are not included here.
+The proposal number reserves no release identity: reconcile both changes and
+version classification against the then-current accepted baseline before
+integration, regenerate and obtain fresh exact-head review if the head changes.
+Frozen accepted 6.1.0 and earlier registry payloads remain unchanged.
+
+Guidance **6.1.0** was a **MINOR** change from independently accepted **6.0.0**.
 It adds compatible engineering-autonomy methods, unchanged-authority technical
 continuation, meaningful evidence-only/no-change results and findings on stopped
 or Draft results. It preserves authenticated owner launch, protected actor
@@ -104,8 +125,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 6.1.0 uses `contract_source: source-tree` and records the accepted
-Task 57 baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 7.0.0 uses `contract_source: source-tree` and records the accepted
+Task 266 baseline `4f0990c4b676a45f7e37d37ecb10fecc871b7a25` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -117,7 +138,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 6.1.0 is a candidate. Native source
+release. Before independent acceptance, 7.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
