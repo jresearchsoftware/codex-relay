@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import stat
 import subprocess
 import sys
@@ -28,7 +29,7 @@ PROGRESS_ROOT = Path('/run')
 # A root-private, operation-local rendezvous supplies only the latest validated
 # drain observation while that same command runs. This follows the guard
 # transport's ephemeral channel pattern; it is never lifecycle authority.
-DRAIN_PROGRESS_WRAPPER = r'''import json, os, pathlib, re, subprocess, sys
+DRAIN_PROGRESS_WRAPPER = r'''import json, os, pathlib, re, subprocess, sys, threading
 directory = pathlib.Path(sys.argv[1])
 process = None
 owned = False
@@ -44,8 +45,17 @@ try:
     os.mkdir(directory, 0o700)
     owned = True
     process = subprocess.Popen(request['argv'], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    process.stdin.write(request['input'].encode('utf-8'))
-    process.stdin.close()
+    def send_input():
+        try:
+            process.stdin.write(request['input'].encode('utf-8'))
+            process.stdin.close()
+        except BrokenPipeError:
+            pass  # Child exit/output is decisive; never retry the command.
+        except Exception:
+            import traceback
+            traceback.print_exc(limit=8)
+    writer = threading.Thread(target=send_input, daemon=True)
+    writer.start()
     pending = b''
     observations = []
     progress_truncated = False
@@ -154,7 +164,21 @@ def prove_native_local(target):
         'local', target['hostFingerprint']], stdin=subprocess.DEVNULL, capture_output=True,
         cwd=BACKEND, env=backend_environment(), timeout=60, check=False)
     if result.returncode != 0 or result.stdout != b'RELAY_TARGET_IDENTITY=PASS\n' or result.stderr:
-        raise RuntimeError('target-identity-or-debian-capability-unproven')
+        raise RuntimeError('target-identity-or-debian-capability-unproven') from subprocess.CalledProcessError(
+            result.returncode, 'target-identity-proof', output=result.stdout, stderr=result.stderr)
+
+
+class OperationDirectory:
+    """Existing private transport spools, retained explicitly on failed evidence.
+
+    Unlike TemporaryDirectory, process shutdown cannot remove the only original
+    cause after a recorder failure. Successful operations still clean eagerly.
+    """
+    def __init__(self):
+        self.name = tempfile.mkdtemp(prefix='relay-ansible-operation-')
+
+    def cleanup(self):
+        shutil.rmtree(self.name)
 
 
 class TargetProcess:
@@ -174,8 +198,27 @@ class TargetProcess:
         self.last_progress = None
         self.forwarded_progress = {}
         self.progress_warning = False
+        self.retained = False
+        self.capture_counts = [0, 0]
+        self.capture_prefix = [bytearray(), bytearray()]
+        self.capture_tail = [bytearray(), bytearray()]
+        self.reader_errors = []
+        self.readers = []
 
     def start(self, value=None):
+        try:
+            return self._start(value)
+        except BaseException as error:
+            self.record_transport_failure(error, 'target-operation-start')
+            if self.process is not None and self.process.poll() is None:
+                try:
+                    self.kill()
+                    self.process.wait(timeout=CHANNEL_CLEANUP_TIMEOUT)
+                except BaseException as secondary:
+                    self.record_transport_failure(secondary, 'target-operation-start-cleanup')
+            raise
+
+    def _start(self, value=None):
         if self.process is not None:
             return
         if self.started:
@@ -184,7 +227,7 @@ class TargetProcess:
         self.native = native_local_eligible(self.target, local=self.local)
         if self.native:
             prove_native_local(self.target)
-        self.temporary = tempfile.TemporaryDirectory(prefix='relay-ansible-operation-')
+        self.temporary = OperationDirectory()
         work = Path(self.temporary.name)
         work.chmod(0o700)
         self.result_path = work / 'result.json'
@@ -219,10 +262,23 @@ class TargetProcess:
             path.write_text(json.dumps(content), encoding='utf-8')
             path.chmod(0o600)
         env = backend_environment()
-        self.process = subprocess.Popen(['ansible-playbook', '-i', str(work / 'inventory.json'),
+        self.output_paths = [work / 'controller-stdout', work / 'controller-stderr']
+        self.output_streams = []
+        try:
+            for path in self.output_paths:
+                fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+                os.fchmod(fd, 0o600)
+                self.output_streams.append(os.fdopen(fd, 'w+b'))
+            self.process = subprocess.Popen(['ansible-playbook', '-i', str(work / 'inventory.json'),
             str(work / 'operation.json'), '--limit', self.target['host']], cwd=BACKEND, env=env,
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True)
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=True)
+            self.start_readers()
+        except BaseException as error:
+            self.record_transport_failure(error, 'ansible-controller-start')
+            for stream in self.output_streams:
+                stream.close()
+            raise
 
 
     def start_native(self, work, value):
@@ -244,33 +300,128 @@ class TargetProcess:
             self.output_streams = streams[1:]
             self.output_identities = [(os.fstat(stream.fileno()).st_dev, os.fstat(stream.fileno()).st_ino)
                                       for stream in self.output_streams]
-            self.reader_errors = []
-            self.readers = []
-            for index, (pipe, stream) in enumerate(zip([self.process.stdout, self.process.stderr], self.output_streams)):
-                reader = threading.Thread(target=self.read_channel,
-                    args=(pipe, stream, self.progress and index == 1), daemon=True)
-                self.readers.append(reader)
-                reader.start()
-        except BaseException:
+            self.start_readers()
+        except BaseException as error:
             if self.process is not None:
                 self.kill()
                 self.process.wait()
             for stream in streams:
                 stream.close()
-            self.temporary.cleanup()
+            self.record_transport_failure(error, 'native-target-start')
             raise
         finally:
             if streams:
                 streams[0].close()
 
-    def read_channel(self, pipe, stream, emit_progress=False):
+    def start_readers(self):
+        for index, (pipe, stream) in enumerate(zip([self.process.stdout, self.process.stderr], self.output_streams)):
+            reader = threading.Thread(target=self.read_channel,
+                args=(pipe, stream, self.native and self.progress and index == 1, index), daemon=True)
+            self.readers.append(reader)
+            reader.start()
+
+    def captured_evidence(self, index):
+        prefix = bytes(self.capture_prefix[index])
+        if self.capture_counts[index] > len(prefix):
+            return prefix + b'\n[bounded child capture: middle omitted]\n' + bytes(self.capture_tail[index])
+        return prefix
+
+    def record_transport_failure(self, error, phase):
+        """Durable bounded original evidence before receipt/spool cleanup.
+
+        The existing private operation directory is the independent fallback if
+        the protected host journal is unavailable. It contains no retry authority.
+        """
+        if getattr(error, '_transport_failure_recorded', False):
+            return
+        error._transport_failure_recorded = True
+        if self.temporary is None or not Path(self.temporary.name).is_dir():
+            from lifecycle import report_failure
+            return report_failure(error, phase)
+        self.retained = True
+        observation = getattr(error, 'observation', {})
+        if not isinstance(observation, dict):
+            observation = {'observationAvailability': 'unavailable-invalid-type'}
+        def safe_message(item):
+            try:
+                return str(item)[:4096]
+            except Exception as formatting:
+                return '[message unavailable: ' + type(formatting).__name__ + ']'
+        error.observation = {**observation,
+            'operationId': Path(self.temporary.name).name,
+            'controllerExit': self.process.returncode if self.process else None,
+            'effect': 'unknown-inspect-original-operation',
+            'channels': [{'bytes': count, 'retainedBytes': len(prefix),
+                          'truncated': count > len(prefix)}
+                         for count, prefix in zip(self.capture_counts, self.capture_prefix)],
+            'readerFailures': [{'type': type(item).__name__, 'message': safe_message(item)}
+                               for item in self.reader_errors[:4]]}
+        if not isinstance(error, (subprocess.CalledProcessError, subprocess.TimeoutExpired)):
+            error.stdout, error.stderr = self.captured_evidence(0), self.captured_evidence(1)
+            error.capture_bytes = dict(zip(['stdout', 'stderr'], self.capture_counts))
+        if (not isinstance(error, (subprocess.CalledProcessError, subprocess.TimeoutExpired))
+                and error.__cause__ is None and self.process is not None
+                and self.process.returncode is not None and self.process.returncode != 0):
+            child = subprocess.CalledProcessError(self.process.returncode if self.process else 255,
+                'ansible-controller' if not self.native else 'native-target',
+                output=self.captured_evidence(0), stderr=self.captured_evidence(1))
+            error.__cause__ = child
+        try:
+            from lifecycle import report_failure
+            for index, name in enumerate(['stdout-tail', 'stderr-tail']):
+                if self.capture_counts[index] > len(self.capture_prefix[index]):
+                    fd = os.open(Path(self.temporary.name) / name,
+                                 os.O_CREAT | os.O_TRUNC | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, 'wb') as tail:
+                        tail.write(self.capture_tail[index])
+                        tail.flush()
+                        os.fsync(tail.fileno())
+            path = Path(self.temporary.name) / 'failure.log'
+            fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+            os.fchmod(fd, 0o600)
+            os.close(fd)
+            report_failure(error, phase, private_log=path)
+            directory_fd = os.open(self.temporary.name, os.O_DIRECTORY | os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        except Exception as recorder_error:
+            # This fixed fallback does not invoke the failed formatter/recorder.
+            print('RELAY_ANSIBLE_DIAGNOSTIC_UNAVAILABLE=' + type(recorder_error).__name__ +
+                  ';original-private-channels-retained', file=sys.stderr, flush=True)
+        print('RELAY_ANSIBLE_FAILURE=phase=' + phase + ';evidence=protected-transport/' +
+              Path(self.temporary.name).name +
+              ';effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry',
+              file=sys.stderr, flush=True)
+
+    def cleanup_output(self):
+        for stream in getattr(self, 'output_streams', []):
+            try:
+                stream.close()
+            except Exception as secondary:
+                self.record_transport_failure(secondary, 'transport-channel-cleanup')
+        if not self.retained and self.temporary is not None:
+            try:
+                self.temporary.cleanup()
+            except Exception as secondary:
+                self.record_transport_failure(secondary, 'transport-directory-cleanup')
+                print('RELAY_ANSIBLE_WARNING=cleanup-unproven;original-result-preserved;inspect-before-retry',
+                      file=sys.stderr, flush=True)
+
+    def read_channel(self, pipe, stream, emit_progress=False, index=0):
         stored = 0
+        writable = True
         pending = b''
         try:
             while True:
                 chunk = pipe.read1(65536)
                 if not chunk:
                     break
+                self.capture_counts[index] += len(chunk)
+                self.capture_tail[index].extend(chunk)
+                del self.capture_tail[index][:-8192]
+                self.capture_prefix[index].extend(chunk[:max(0, RESULT_LIMIT + 1 - len(self.capture_prefix[index]))])
                 if emit_progress:
                     # A partial/oversized line never becomes public evidence.
                     from lifecycle import drain_progress
@@ -281,18 +432,30 @@ class TargetProcess:
                             drain_progress(line.decode('ascii', errors='replace'))
                     if len(pending) > 4096:
                         pending = b'oversized:'
-                if stored <= RESULT_LIMIT:
+                if writable and stored <= RESULT_LIMIT:
                     bounded = chunk[:RESULT_LIMIT + 1 - stored]
-                    stream.write(bounded)
-                    stored += len(bounded)
-            stream.flush()
-        except Exception:
-            self.reader_errors.append(True)
+                    try:
+                        stream.write(bounded)
+                        stored += len(bounded)
+                    except Exception as error:
+                        # Continue draining the child even if durable capture
+                        # fails; the independent bounded memory prefix survives.
+                        self.reader_errors.append(error)
+                        writable = False
+            if writable:
+                stream.flush()
+                if hasattr(stream, 'fileno'):
+                    try:
+                        os.fsync(stream.fileno())
+                    except __import__('io').UnsupportedOperation:
+                        pass
+        except Exception as error:
+            self.reader_errors.append(error)
         finally:
             pipe.close()
 
     def pending_output(self):
-        return self.native and any(reader.is_alive() for reader in getattr(self, 'readers', []))
+        return any(reader.is_alive() for reader in self.readers)
 
     def warn_progress(self):
         if not self.progress_warning:
@@ -325,7 +488,7 @@ class TargetProcess:
         try:
             output = []
             if self.reader_errors:
-                raise ValueError()
+                raise ValueError('native-target-output-capture-failed')
             for path, stream, identity in zip(self.output_paths, self.output_streams, self.output_identities):
                 before = os.fstat(stream.fileno())
                 current = path.lstat()
@@ -336,20 +499,22 @@ class TargetProcess:
                         or before.st_uid != 0 or before.st_nlink != 1
                         or (before.st_dev, before.st_ino) != identity
                         or stamp(current) != stamp(before)):
-                    raise ValueError()
+                    raise ValueError('native-target-output-identity-unproven')
                 stream.seek(0)
                 raw = stream.read(RESULT_LIMIT + 1)
                 if (len(raw) > RESULT_LIMIT or stamp(os.fstat(stream.fileno())) != stamp(before)
                         or stamp(path.lstat()) != stamp(before)):
-                    raise ValueError()
+                    raise ValueError('native-target-output-oversized-or-changed')
                 output.append(raw.decode('utf-8'))
             self.result = {'rc': self.process.returncode, 'stdout': output[0], 'stderr': output[1]}
-        except (OSError, ValueError, UnicodeError):
+            if self.process.returncode:
+                self.record_transport_failure(subprocess.CalledProcessError(self.process.returncode,
+                    'native-target', output=output[0], stderr=output[1]), 'native-target')
+        except (OSError, ValueError, UnicodeError) as error:
+            self.record_transport_failure(error, 'native-target-receipt')
             self.result = {'rc': 255, 'stdout': '', 'stderr': 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n'}
         finally:
-            for stream in self.output_streams:
-                stream.close()
-            self.temporary.cleanup()
+            self.cleanup_output()
         return self.result['stdout'], self.result['stderr']
 
     @property
@@ -360,7 +525,7 @@ class TargetProcess:
         status = self.process.poll() if self.process else None
         # The old Ansible wrapper stayed alive until helper channels closed.
         # Preserve that completion frontier for every existing guard loop.
-        return None if self.native and self.pending_output() else status
+        return None if self.pending_output() else status
 
     def communicate(self, input=None, timeout=None):
         if self.result is not None:
@@ -393,21 +558,24 @@ class TargetProcess:
             if self.native:
                 raise subprocess.TimeoutExpired('relay-target-operation', timeout) from None
             raise
-        if self.native:
+        if self.readers:
             for reader in self.readers:
                 reader.join(timeout=max(0, deadline - time.monotonic()) if deadline is not None else None)
                 if reader.is_alive():
                     raise subprocess.TimeoutExpired('relay-target-operation', timeout)
+        if self.native:
             return self.collect_native()
         try:
+            if self.reader_errors:
+                raise RuntimeError('ansible-controller-output-capture-failed')
             if self.result_path.stat().st_size > RESULT_LIMIT * 3:
-                raise ValueError()
+                raise ValueError('ansible-target-receipt-oversized')
             result = json.loads(self.result_path.read_text())
             if (set(result) != {'rc', 'stdout', 'stderr'} or type(result['rc']) is not int
                     or any(not isinstance(result[k], str) or len(result[k].encode()) > RESULT_LIMIT
                            for k in ['stdout', 'stderr'])
                     or self.process.returncode != 0 and result['rc'] == 0):
-                raise ValueError()
+                raise ValueError('ansible-target-receipt-invalid-or-controller-failed')
             self.result = result
             if self.remote_progress is not None:
                 from lifecycle import DRAIN_PROGRESS_PATTERN
@@ -422,24 +590,29 @@ class TargetProcess:
                     self.forward_progress(line)
                 if re.search(r'(?m)^ANSIBLE_PROGRESS_CHANNEL_(?:UNPROVEN|CLEANUP_UNPROVEN|TRUNCATED)$', result['stderr']):
                     self.warn_progress()
-        except (OSError, ValueError, TypeError):
+            if result['rc'] != 0:
+                failure = subprocess.CalledProcessError(result['rc'], 'target-operation',
+                    output=result['stdout'], stderr=result['stderr'])
+                self.record_transport_failure(failure, 'target-operation')
+        except (OSError, ValueError, TypeError, RuntimeError) as error:
+            self.record_transport_failure(error, 'ansible-target-receipt')
             self.result = {'rc': 255, 'stdout': '', 'stderr': 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n'}
         finally:
-            self.temporary.cleanup()
+            self.cleanup_output()
         return self.result['stdout'], self.result['stderr']
 
     def terminate(self):
-        self.cancelled = self.native
+        self.cancelled = True
         if self.process:
             try:
                 os.killpg(self.process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-        elif self.temporary is not None:
+        elif self.temporary is not None and not self.retained:
             self.temporary.cleanup()
 
     def kill(self):
-        self.cancelled = self.native
+        self.cancelled = True
         if self.process:
             try:
                 os.killpg(self.process.pid, signal.SIGKILL)
@@ -449,7 +622,7 @@ class TargetProcess:
     def wait(self, timeout=None):
         if self.process is None:
             return 255  # a failed launch is never an instruction to launch again
-        bounded_cancel = self.native and self.cancelled
+        bounded_cancel = self.cancelled
         effective = timeout
         if bounded_cancel:
             effective = min(timeout, CHANNEL_CLEANUP_TIMEOUT) if timeout is not None else CHANNEL_CLEANUP_TIMEOUT
@@ -485,17 +658,40 @@ def run_target(target, key, argv, *, input=None, timeout=None, local=False, prog
         else:
             output, errors = process.communicate(input=input, timeout=timeout)
         return subprocess.CompletedProcess(argv, process.returncode, output, errors)
+    except BaseException as error:
+        primary = error
+        raise
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=CHANNEL_CLEANUP_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                process.kill()
+        primary = locals().get('primary')
+        try:
+            if process.poll() is None:
+                process.terminate()
                 try:
                     process.wait(timeout=CHANNEL_CLEANUP_TIMEOUT)
                 except subprocess.TimeoutExpired:
-                    raise RuntimeError('target-operation-channel-unproven;inspect-before-retry') from None
+                    process.kill()
+                    try:
+                        process.wait(timeout=CHANNEL_CLEANUP_TIMEOUT)
+                    except subprocess.TimeoutExpired:
+                        raise RuntimeError('target-operation-channel-unproven;inspect-before-retry') from None
+        except BaseException as cleanup_error:
+            process.record_transport_failure(cleanup_error, 'target-operation-cleanup')
+            if primary is None:
+                raise
+            print('RELAY_ANSIBLE_WARNING=cleanup-unproven;primary-failure-preserved;inspect-before-retry',
+                  file=sys.stderr, flush=True)
+        if primary is not None:
+            if isinstance(primary, subprocess.TimeoutExpired):
+                primary.output = process.captured_evidence(0)
+                primary.stderr = process.captured_evidence(1)
+                primary.capture_bytes = dict(zip(['stdout', 'stderr'], process.capture_counts))
+            # collect may have cleaned a successful child after a deadline; do
+            # not fabricate a spool path that no longer exists.
+            if process.temporary is not None and Path(process.temporary.name).is_dir():
+                process.record_transport_failure(primary, 'target-operation-interrupted')
+            else:
+                from lifecycle import report_failure
+                report_failure(primary, 'target-operation-interrupted')
 
 
 TARGET_PROOF = '''import glob, os, pathlib, stat, subprocess, sys
@@ -514,6 +710,8 @@ try:
         if sys.argv[2] not in fingerprints: raise ValueError()
     print('RELAY_TARGET_IDENTITY=PASS')
 except Exception:
+    import traceback
+    traceback.print_exc(limit=8)
     print('RELAY_TARGET_IDENTITY_UNPROVEN', file=sys.stderr)
     sys.exit(1)
 '''
@@ -523,7 +721,8 @@ def qualify_target(target, key):
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', TARGET_PROOF,
         target.get('connection', 'ssh'), target['hostFingerprint']], timeout=60)
     if result.returncode or result.stdout != 'RELAY_TARGET_IDENTITY=PASS\n':
-        raise RuntimeError('target-identity-or-debian-capability-unproven')
+        raise RuntimeError('target-identity-or-debian-capability-unproven') from subprocess.CalledProcessError(
+            result.returncode, 'target-identity-proof', output=result.stdout, stderr=result.stderr)
 
 
 # A blocking Ansible command owns the original helper's stdin and kernel lock.
@@ -550,11 +749,14 @@ try:
     parent_start = ancestry(parent)
     value = json.load(sys.stdin)
     process = subprocess.Popen(value['argv'], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                               stderr=subprocess.DEVNULL, text=True)
+                               stderr=sys.stderr, text=True)
     with selectors.DefaultSelector() as selector:
         selector.register(process.stdout, selectors.EVENT_READ)
-        if not selector.select(30) or process.stdout.readline().strip() != value['ready']:
-            raise ValueError()
+        if not selector.select(30):
+            raise TimeoutError('guard-readiness-timeout')
+        observed = process.stdout.readline().strip()
+        if observed != value['ready']:
+            raise ValueError('guard-readiness-mismatch;expected=' + value['ready'] + ';observed=' + observed[:4096])
     (directory / 'ready').touch(mode=0o600)
     while not (directory / 'release').exists():
         if process.poll() is not None or os.getppid() != parent:
@@ -567,6 +769,8 @@ try:
         raise ValueError()
     print('ANSIBLE_GUARD_RELEASED')
 except Exception:
+    import traceback
+    traceback.print_exc(limit=8)
     print('ANSIBLE_GUARD_UNPROVEN', file=sys.stderr)
     sys.exit(1)
 finally:
@@ -662,11 +866,20 @@ def hold_target(target, key, argv, ready):
             if guard.control('wait-ready') == 'READY' and guard.poll() is None:
                 return guard
         raise RuntimeError('host-operation-guard-unavailable')
-    except BaseException:
+    except BaseException as error:
+        from lifecycle import report_failure
+        report_failure(error, 'host-operation-guard')
         try:
             guard.close()
             guard.wait(timeout=30)
+        except BaseException as secondary:
+            report_failure(secondary, 'host-operation-guard-cleanup')
+            print('RELAY_ANSIBLE_WARNING=guard-cleanup-unproven;primary-failure-preserved;inspect-before-retry',
+                  file=sys.stderr, flush=True)
         finally:
             if guard.poll() is None:
-                guard.process.terminate()
+                try:
+                    guard.process.terminate()
+                except BaseException as secondary:
+                    report_failure(secondary, 'host-operation-guard-termination')
         raise

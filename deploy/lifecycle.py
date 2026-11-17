@@ -31,43 +31,88 @@ def report_failure(error, phase, *, private_log=None):
     import stat
     import subprocess
     import traceback
-    if hasattr(error, '_deployment_failure_evidence'):
-        return error._deployment_failure_evidence
-    def redact(value):
-        value = str(value)
+    previous = getattr(error, '_deployment_failure_evidence', None)
+    if isinstance(previous, dict) and previous.get('status') in ['stored', 'submitted']:
+        return previous
+    def redact(value, partial=False):
+        try:
+            value = str(value)
+        except Exception as failure:
+            return '[message unavailable: ' + type(failure).__name__ + ']'
         for key, secret in os.environ.items():
             if re.search(r'TOKEN|SECRET|PASSWORD|PRIVATE_KEY|CREDENTIAL', key, re.I) and len(secret) >= 4:
                 value = value.replace(secret, '[REDACTED]')
+                if partial:
+                    # A timeout or bounded capture may stop mid-credential.
+                    # Linear overlap matching avoids quadratic scans for long
+                    # environment credentials; never publish a surviving prefix.
+                    def trim_suffix(text, word):
+                        table = [0] * len(word)
+                        matched = 0
+                        for index in range(1, len(word)):
+                            while matched and word[index] != word[matched]:
+                                matched = table[matched - 1]
+                            if word[index] == word[matched]:
+                                matched += 1
+                            table[index] = matched
+                        matched = 0
+                        for character in text[-len(word):]:
+                            while matched and character != word[matched]:
+                                matched = table[matched - 1]
+                            if character == word[matched]:
+                                matched += 1
+                            if matched == len(word):
+                                matched = table[matched - 1]
+                        return text[:-matched] + '[REDACTED PARTIAL]' if matched >= 4 else text
+                    separator = '\n[bounded child capture: middle omitted]\n'
+                    pieces = value.split(separator)
+                    for index, piece in enumerate(pieces):
+                        piece = trim_suffix(piece, secret)
+                        # A tail capture can also begin inside a credential.
+                        reverse = trim_suffix(piece[::-1], secret[::-1])
+                        pieces[index] = reverse[::-1].replace(']LAITRAP DETCADER[', '[REDACTED PARTIAL]')
+                    value = separator.join(pieces)
         value = re.sub(r'(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)', '[REDACTED PRIVATE KEY]', value)
         value = re.sub(r'\b(?:github_pat_[A-Za-z0-9_]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]{8,})', '[REDACTED]', value)
         value = re.sub(r'(?i)("(?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*(?:"|\\?$)', r'\1"[REDACTED]"', value)
         value = re.sub(r"(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"']?\s*[:=]\s*)'[^']*(?:'|$)", r"\1'[REDACTED]'", value)
         value = re.sub(r'(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"\x27]?\s*[:=]\s*[\"\x27]?)(?:(?:bearer|basic)\s+)?[^\s,\"\x27}]+', r'\1[REDACTED]', value)
-        return value[:65536]
+        return value
+    def bounded(value, limit):
+        if len(value) <= limit:
+            return value
+        marker = '\n[diagnostic text: middle omitted]\n'
+        head = (limit - len(marker)) // 2
+        return value[:head] + marker + value[-(limit - len(marker) - head):]
     phase = phase if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', phase) else 'deployment'
     causes, seen, current = [], set(), error
     while isinstance(current, BaseException) and id(current) not in seen and len(causes) < 4:
         seen.add(id(current))
         message = redact(current)
-        row = {'type': type(current).__name__, 'message': message[:4096], 'messageTruncated': len(message) > 4096}
+        row = {'type': type(current).__name__, 'message': bounded(message, 4096), 'messageTruncated': len(message) > 4096}
         if isinstance(current, OSError) and current.errno in errno.errorcode:
             row['errno'] = errno.errorcode[current.errno]
         if isinstance(current, subprocess.CalledProcessError):
             row['exit'] = current.returncode
-        if isinstance(current, (subprocess.CalledProcessError, subprocess.TimeoutExpired)):
+            if isinstance(current.returncode, int) and current.returncode < 0:
+                row['signal'] = -current.returncode
+        if (isinstance(current, (subprocess.CalledProcessError, subprocess.TimeoutExpired))
+                or isinstance(getattr(current, 'capture_bytes', None), dict)):
             for channel in ['stdout', 'stderr']:
                 captured = getattr(current, channel, None)
                 row[channel + 'Availability'] = 'available' if captured is not None else 'unavailable'
                 if captured is not None:
-                    row[channel + 'Bytes'] = len(captured if isinstance(captured, bytes) else str(captured).encode('utf-8'))
-            if current.stderr:
-                stderr = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr)
-                row['stderr'], row['stderrTruncated'] = stderr[:8192], len(stderr) > 8192
+                    captured_bytes = len(captured if isinstance(captured, bytes) else str(captured).encode('utf-8'))
+                    row[channel + 'Bytes'] = getattr(current, 'capture_bytes', {}).get(channel, captured_bytes)
+                    row[channel + 'Truncated'] = row[channel + 'Bytes'] > captured_bytes
+            if getattr(current, 'stderr', None):
+                stderr = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr, partial=isinstance(current, subprocess.TimeoutExpired) or row.get('stderrTruncated', False))
+                row['stderr'], row['stderrTruncated'] = bounded(stderr, 8192), len(stderr) > 8192 or row.get('stderrTruncated', False)
                 if '[REDACTED' in stderr:
                     row['stderrAvailability'] = 'redacted'
-            if current.stdout:
-                stdout = redact(current.stdout.decode('utf-8', errors='replace') if isinstance(current.stdout, bytes) else current.stdout)
-                row['stdout'], row['stdoutTruncated'] = stdout[:8192], len(stdout) > 8192
+            if getattr(current, 'stdout', None):
+                stdout = redact(current.stdout.decode('utf-8', errors='replace') if isinstance(current.stdout, bytes) else current.stdout, partial=isinstance(current, subprocess.TimeoutExpired) or row.get('stdoutTruncated', False))
+                row['stdout'], row['stdoutTruncated'] = bounded(stdout, 8192), len(stdout) > 8192 or row.get('stdoutTruncated', False)
                 if '[REDACTED' in stdout:
                     row['stdoutAvailability'] = 'redacted'
         if isinstance(current, subprocess.TimeoutExpired):
@@ -76,25 +121,33 @@ def report_failure(error, phase, *, private_log=None):
             try:
                 observation = redact(json.dumps(current.observation, ensure_ascii=True, sort_keys=True))
                 row['observation'] = json.loads(observation) if len(observation) <= 8192 else {'status': 'bounded-omitted'}
-            except (TypeError, ValueError, RecursionError):
+            except Exception:
                 row['observation'] = {'status': 'unavailable'}
         causes.append(row)
         current = current.__cause__ or current.__context__
-    stack = redact(''.join(traceback.format_exception(error)))
+    try:
+        stack = redact(''.join(traceback.format_exception(error)))
+    except Exception as failure:
+        stack = '[stack unavailable: ' + type(failure).__name__ + ']'
     record = {'version': 1, 'phase': phase, 'causes': causes,
-              'stack': stack[:32768], 'stackTruncated': len(stack) > 32768}
+              'stack': bounded(stack, 32768), 'stackTruncated': len(stack) > 32768}
+    correlation = {key: os.environ[name] for key, name in [('runId', 'GITHUB_RUN_ID'),
+                   ('runAttempt', 'GITHUB_RUN_ATTEMPT')]
+                   if re.fullmatch(r'[1-9][0-9]{0,19}', os.environ.get(name, ''))}
+    if correlation:
+        record['correlation'] = correlation
     if private_log is not None:
         record['protectedLog'] = str(private_log)
     payload = json.dumps(record, ensure_ascii=True, separators=(',', ':'))
     result = {'phase': phase, 'status': 'unavailable', 'reason': 'NO_CONFIGURED_HOST_STORE'}
     recorder = None
     root = os.geteuid() == 0 and os.getuid() == 0
-    if root and private_log is not None:
+    if private_log is not None:
         try:
             fd = os.open(private_log, os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, 'w') as stream:
                 info = os.fstat(stream.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_gid != 0 or stat.S_IMODE(info.st_mode) not in {0o600, 0o640} or info.st_nlink != 1:
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or (root and info.st_gid != 0) or stat.S_IMODE(info.st_mode) not in ({0o600, 0o640} if root else {0o600}) or info.st_nlink != 1:
                     raise ValueError('protected-log-unproven')
                 stream.write('RELAY_DEPLOYMENT_CAUSAL_EVIDENCE=' + payload + '\n')
                 stream.flush()
@@ -126,9 +179,41 @@ def report_failure(error, phase, *, private_log=None):
             if isinstance(failure, subprocess.CalledProcessError):
                 recorder['exit'] = failure.returncode
                 recorder['messageAvailability'] = 'redacted'
+    if result['status'] not in ['stored', 'submitted']:
+        # Pre-install/owner controllers may have no root journal. Reuse the
+        # deployment's private temporary-log mechanism, with no service/config
+        # prerequisite and no public host path. Keep the original record bounded.
+        try:
+            import tempfile
+            prefix = 'relay-' + os.urandom(6).hex() + '-causal-'
+            descriptor, fallback_path = tempfile.mkstemp(prefix=prefix, suffix='.log')
+            with os.fdopen(descriptor, 'w') as stream:
+                os.fchmod(stream.fileno(), 0o600)
+                if recorder:
+                    record['recorderFailure'] = recorder
+                stream.write('RELAY_DEPLOYMENT_CAUSAL_EVIDENCE=' + json.dumps(record, ensure_ascii=True, separators=(',', ':')) + '\n')
+                stream.flush()
+                os.fsync(stream.fileno())
+            result = {'phase': phase, 'status': 'stored', 'destination': 'existing-private-deployment-log',
+                      'reference': 'protected-log/' + os.path.basename(fallback_path)}
+        except Exception as failure:
+            result['reason'] = 'PRIVATE_LOG_FALLBACK_UNAVAILABLE'
+            recorder = {'type': type(failure).__name__, **({'previous': recorder} if recorder else {})}
+            if isinstance(failure, OSError) and failure.errno in errno.errorcode:
+                recorder['errno'] = errno.errorcode[failure.errno]
     if recorder:
         result['recorderFailure'] = recorder
-    print('RELAY_DEPLOYMENT_FAILURE_EVIDENCE=' + json.dumps(result, sort_keys=True), file=__import__('sys').stderr, flush=True)
+    summary = 'RELAY_DEPLOYMENT_FAILURE_EVIDENCE=' + json.dumps(result, sort_keys=True) + '\n'
+    try:
+        __import__('sys').stderr.write(summary)
+        __import__('sys').stderr.flush()
+    except Exception:
+        # Independent descriptor fallback: a failed stream must not replace the
+        # original operation error. Host/descriptor failure can defeat both.
+        try:
+            os.write(2, summary.encode('ascii'))
+        except OSError:
+            pass
     try:
         error._deployment_failure_evidence = result
     except (AttributeError, TypeError):
@@ -213,7 +298,8 @@ def execute(gate, target, apply, verify, *, operation=None, timeout=1800,
         try:
             gate('phase', '--operation', operation, '--phase', 'recovery-required')
             progress('RECOVERY_REQUIRED', target)
-        except Exception:
+        except Exception as recovery_error:
+            report_failure(recovery_error, 'recovery-state-write')
             print('RELAY_LIFECYCLE_WARNING=recovery-state-write-unproven;admission-remains-closed;inspect-retained-operation',
                   file=sys.stderr, flush=True)
         raise

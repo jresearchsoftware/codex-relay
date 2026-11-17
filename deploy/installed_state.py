@@ -45,7 +45,7 @@ def recipe_digest(source_root):
 # preserving bounded diagnostic causes, instance preflight evidence and the
 # enriched consumer-transition diagnostic wire. Every Ansible script is part of
 # this fingerprint, including read-only helpers used before installation.
-RECIPE_SHA256 = '76702a3ee9167d6a957e366aa9d4b58125e2fae40e88c4c89d8df687f3af775e'
+RECIPE_SHA256 = 'd72fa93a415ef7f3b0ff187b8df63799d83d5f6a3b6d547e4ffe0c632325bb6a'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",

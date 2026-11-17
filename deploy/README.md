@@ -2061,3 +2061,53 @@ task unless its live authority explicitly requires standalone-install proof.
 Track the dedicated clean-environment qualification separately (currently
 Task #15); incidental state retained from another consumer must not become a
 documented prerequisite merely because that proof is deferred.
+
+### Ansible controller evidence and interrupted transport
+
+The Ansible adapter drains both controller channels while the command runs. A
+missing, invalid or oversized receipt retains the first bounded controller output
+and the failed receipt check; it does not establish that the target never ran.
+A valid target receipt keeps its original exit/signal and output classification.
+Failure, timeout and cancellation retain causal evidence independently of receipt
+creation. Successful operations remove their private temporary channels.
+
+Ordinary output supplies a reference such as
+`protected-transport/relay-ansible-operation-<random>` and an instruction to inspect
+the original operation before retrying. An authorized reader on the **controller
+host**, acting as the original deployment Unix user (or its authorized host
+administrator), resolves that directory name under the original process's
+configured temporary root (`TMPDIR`, or the platform temporary directory).
+Read its `failure.log` for sanitized cause records, original exit/OS details,
+controller byte counts and truncation. Each file is private to that user and the
+directory remains private. This is the existing operation spool retained for
+inspection, not another deployment journal or a retry reservation.
+
+If formatting or recording fails, the independent
+`RELAY_ANSIBLE_DIAGNOSTIC_UNAVAILABLE` notice identifies the failure class and the
+same private directory retains available original channel prefixes. Raw channel
+files and request/receipt data can contain sensitive input; inspect them only
+through the authorized host boundary and never attach them wholesale to GitHub.
+Preserve useful original evidence until diagnosis/durability is reconciled, then
+remove only that identified operation directory. Host/storage loss can prevent
+all recording; an unavailable recorder is not evidence of an unobserved cause.
+
+Lifecycle progress reports the actual current child/dependency, transitions and
+elapsed waits even for quiet subprocesses. It supplies no invented percentage,
+ETA or Task success. Parent wrappers forward only validated source-owned progress,
+warning and evidence-reference records; arbitrary child output stays protected.
+Cancellation and guard/cleanup failures preserve the first operation failure and
+record secondary failures separately. Inspect the original operation and its
+retained state whenever target effects or channel containment remain uncertain.
+
+Before configuration or a protected host journal is available, causal reporting
+reuses the private temporary deployment log mechanism. A summary with
+`destination=existing-private-deployment-log` and a `protected-log/relay-…-causal-….log`
+reference resolves under the original controller process's temporary root, rather
+than the configured deployment log root. Authorized local readers use the
+original Unix user or host administrator. The file is mode `0600`, contains only
+bounded sanitized records, and is flushed/synced before `stored` is reported.
+If both the configured store and this fallback fail, the public summary reports
+`PRIVATE_LOG_FALLBACK_UNAVAILABLE` with bounded recorder type/OS reasons. A failed
+summary stream uses the independent stderr descriptor when available. Neither
+successfully recording a failure nor a recovered optimization refusal changes the
+original operation's success, rejection, uncertainty or replay classification.

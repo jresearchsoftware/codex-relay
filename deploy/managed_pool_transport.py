@@ -8,6 +8,7 @@ import tempfile
 
 from managed_pool import require
 from ansible_transport import TargetProcess
+from lifecycle import failure_reporting_source
 
 
 OWNER_POOL_SOURCES = ['managed_pool', 'pool_eligibility', 'config', 'pool_migration',
@@ -16,7 +17,7 @@ OWNER_POOL_INPUT_BYTES = 262144
 OWNER_POOL_OUTPUT_BYTES = 16384
 
 
-OWNER_POOL_SCRIPT = r'''import json, os, re, sys, types
+OWNER_POOL_SCRIPT = failure_reporting_source() + r'''import json, os, re, sys, types
 try:
     raw = sys.stdin.buffer.read(262145)
     if len(raw) > 262144 or os.geteuid() != 0:
@@ -49,8 +50,12 @@ try:
             text=True, capture_output=True, check=False)
         if result.returncode:
             codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', result.stderr, re.MULTILINE)
-            pool.require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else
-                         'RECONCILIATION_UNPROVEN_INSPECT_BEFORE_RETRY')
+            try:
+                pool.require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else
+                             'RECONCILIATION_UNPROVEN_INSPECT_BEFORE_RETRY')
+            except Exception as error:
+                raise error from subprocess.CalledProcessError(result.returncode, 'managed-pool-reconcile',
+                    output=result.stdout, stderr=result.stderr)
         pool.require(len(result.stdout.encode()) <= 16384 and
                      result.stdout.startswith('MANAGED_POOL_RESULT='), 'RESULT_UNPROVEN_INSPECT_BEFORE_RETRY')
         public = json.loads(result.stdout.removeprefix('MANAGED_POOL_RESULT='))
@@ -70,6 +75,7 @@ try:
                  and not proof.get('completionRequired', False), 'SERIAL_TRANSITION_RETIRED')
     print('MANAGED_POOL_PREFLIGHT=PASS')
 except Exception as error:
+    report_failure(error, 'managed-pool-owner-transport')
     # Fixed public error codes only. Never print payload, config or credentials.
     import re
     code = str(error)
@@ -91,8 +97,14 @@ def consumer_digest(consumer, source_root=None):
             'console.log(JSON.stringify(consumerDigest(validateConsumer(JSON.parse(s)))));')
     result = subprocess.run(['node', '--input-type=module', '-e', code],
         input=json.dumps(consumer), cwd=source_root, text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60, check=False)
-    require(result.returncode == 0 and len(result.stdout) <= 128, 'TARGET_DIGEST_UNPROVEN')
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=False)
+    if result.returncode != 0:
+        try:
+            require(False, 'TARGET_DIGEST_UNPROVEN')
+        except Exception as error:
+            raise error from subprocess.CalledProcessError(result.returncode, 'consumer-digest',
+                output=result.stdout, stderr=result.stderr)
+    require(len(result.stdout) <= 128, 'TARGET_DIGEST_UNPROVEN')
     try:
         digest = json.loads(result.stdout)
     except (ValueError, TypeError):
@@ -128,9 +140,14 @@ def projected_consumer(config, source_root=None):
         env = {key: os.environ[key] for key in ['HOME', 'PATH', 'USER', 'LANG', 'LC_ALL'] if key in os.environ}
         env.update(ANSIBLE_CONFIG=str(backend / 'ansible.cfg'), ANSIBLE_LOCAL_TEMP=str(work / 'local-tmp'))
         result = subprocess.run(['ansible-playbook', '-i', str(inventory), str(playbook), '--limit', 'localhost'],
-            cwd=backend, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, timeout=60, check=False)
-        require(result.returncode == 0, 'TARGET_DIGEST_UNPROVEN')
+            cwd=backend, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE, timeout=60, check=False)
+        if result.returncode:
+            try:
+                require(False, 'TARGET_DIGEST_UNPROVEN')
+            except Exception as error:
+                raise error from subprocess.CalledProcessError(result.returncode, 'consumer-projection',
+                    output=result.stdout, stderr=result.stderr)
         return json.loads(destination.read_text())
 
 
@@ -165,7 +182,11 @@ def _owner_transport(target, key, pending, guard, *, local, extra_guard):
                 pending = None
         if process.returncode:
             codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', errors, re.MULTILINE)
-            require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else 'OWNER_PREFLIGHT_UNPROVEN')
+            try:
+                require(False, codes[-1].removeprefix('MANAGED_POOL_') if codes else 'OWNER_PREFLIGHT_UNPROVEN')
+            except Exception as error:
+                raise error from subprocess.CalledProcessError(process.returncode, 'owner-pool-target',
+                    output=output, stderr=errors)
         require(len(output.encode()) <= OWNER_POOL_OUTPUT_BYTES, 'OWNER_POOL_RESULT_SIZE_UNPROVEN')
         return output
     finally:

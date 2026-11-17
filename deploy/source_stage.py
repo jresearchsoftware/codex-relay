@@ -77,11 +77,15 @@ def prepare(preparation, guard, pool_guard):
             'helperSource': helper_source, 'archiveGzipBase64': base64.b64encode(compressed).decode(),
             'consumerBase64': base64.b64encode(consumer).decode()}
         require(len(json.dumps(payload).encode()) <= MAX_INPUT)
-    except (ImportError, OSError, KeyError, ValueError, TypeError):
+    except (ImportError, OSError, KeyError, ValueError, TypeError) as error:
+        from lifecycle import report_failure
+        report_failure(error, 'source-stage-optimization-fallback')
         return False
-    except Exception:
+    except Exception as error:
         # Templar filter/register availability is frontend capability, not
         # permission to issue an alternative root operation after submission.
+        from lifecycle import report_failure
+        report_failure(error, 'source-stage-optimization-fallback')
         return False
     from lifecycle import failure_reporting_source
     result = preparation.execute(['/usr/bin/python3', '-I', '-c', failure_reporting_source() + Path(__file__).read_text()], payload=payload)

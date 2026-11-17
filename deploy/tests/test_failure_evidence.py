@@ -6,6 +6,7 @@ from pathlib import Path
 import stat
 import subprocess
 import sys
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -64,22 +65,26 @@ def test_missing_recorder_preserves_original_errno_and_reports_independent_unava
             raise FileNotFoundError(errno.ENOENT, 'journal absent')
         return original_stat(path, *args, **kwargs)
     monkeypatch.setattr(os, 'stat', absent)
+    monkeypatch.setattr(tempfile, 'mkstemp', lambda **kwargs: (_ for _ in ()).throw(OSError(errno.ENOSPC, 'fixture full')))
     original = PermissionError(errno.EACCES, 'private input unreadable', '/private/input')
     evidence = report_failure(original, 'owner-lifecycle')
-    assert evidence['reason'] == 'HOST_JOURNAL_UNAVAILABLE'
-    assert evidence['recorderFailure']['errno'] == 'ENOENT'
+    assert evidence['reason'] == 'PRIVATE_LOG_FALLBACK_UNAVAILABLE'
+    assert evidence['recorderFailure']['errno'] == 'ENOSPC'
+    assert evidence['recorderFailure']['previous']['errno'] == 'ENOENT'
     assert original.errno == errno.EACCES
     public = capsys.readouterr().err
     assert 'private input' not in public and '/private/input' not in public
 
 
-def test_embedded_reporter_runs_unprivileged_without_inventing_a_store_or_privilege(monkeypatch, capsys):
+def test_embedded_reporter_reports_independent_unavailability_when_all_host_storage_fails(monkeypatch, capsys):
     monkeypatch.setattr(os, 'geteuid', lambda: 1234)
+    monkeypatch.setattr(tempfile, 'mkstemp', lambda **kwargs: (_ for _ in ()).throw(OSError(errno.EACCES, 'fixture unavailable')))
     namespace = {}
     exec(compile(failure_reporting_source(), '<frozen-reporter-fixture>', 'exec'), namespace)
     result = namespace['report_failure'](OSError('native cause retained in-process'), 'pre-configuration')
-    assert result == {'phase': 'pre-configuration', 'status': 'unavailable', 'reason': 'NO_CONFIGURED_HOST_STORE'}
-    assert 'NO_CONFIGURED_HOST_STORE' in capsys.readouterr().err
+    assert result['status'] == 'unavailable' and result['reason'] == 'PRIVATE_LOG_FALLBACK_UNAVAILABLE'
+    assert result['recorderFailure']['errno'] == 'EACCES'
+    assert 'PRIVATE_LOG_FALLBACK_UNAVAILABLE' in capsys.readouterr().err
 
 
 def test_host_probe_keeps_classification_and_the_original_actionable_child_stderr():
@@ -166,3 +171,93 @@ def test_timeout_retains_partial_output_counts_redaction_and_capture_state(monke
     assert cause[('stderr' if channel == 'stdout' else 'stdout') + 'Availability'] == 'unavailable'
     assert 'original loader failure' in cause[channel]
     assert 'private-timeout-value' not in captured[0]
+
+
+def test_unprivileged_owned_private_log_is_durable_without_host_journal(tmp_path, capsys):
+    log = tmp_path / 'failure.log'
+    log.touch(mode=0o600)
+    result = report_failure(ValueError('original owner-controller startup failure'),
+                            'ansible-controller', private_log=log)
+    assert result['status'] == 'stored'
+    assert 'original owner-controller startup failure' in log.read_text()
+    assert 'startup failure' not in capsys.readouterr().err
+
+
+def test_exception_formatter_failure_does_not_destroy_original_type(tmp_path):
+    class BrokenMessage(Exception):
+        def __str__(self):
+            raise ValueError('private formatter failure')
+    log = tmp_path / 'failure.log'
+    log.touch(mode=0o600)
+    report_failure(BrokenMessage(), 'unexpected-exception', private_log=log)
+    payload = json.loads(log.read_text().split('=', 1)[1])
+    assert payload['causes'][0]['type'] == 'BrokenMessage'
+    assert payload['causes'][0]['message'] == '[message unavailable: ValueError]'
+    assert 'private formatter failure' not in log.read_text()
+
+
+def test_stream_publication_failure_uses_independent_descriptor_without_masking_cause(tmp_path, monkeypatch):
+    log = tmp_path / 'failure.log'; log.touch(mode=0o600)
+    class BrokenStream:
+        def write(self, value):
+            raise OSError('cannot publish diagnostic summary')
+    monkeypatch.setattr(sys, 'stderr', BrokenStream())
+    published = []
+    monkeypatch.setattr(os, 'write', lambda fd, value: published.append((fd, value)))
+    result = report_failure(ValueError('original controller failure'), 'publication', private_log=log)
+    assert result['status'] == 'stored' and 'original controller failure' in log.read_text()
+    assert published and published[0][0] == 2
+    assert b'original controller failure' not in published[0][1]
+
+
+def test_preconfiguration_without_journal_reuses_durable_private_log(tmp_path, monkeypatch, capsys):
+    original = tempfile.mkstemp
+    created = []
+    def local_log(**options):
+        fd, path = original(dir=tmp_path, **options)
+        created.append(path)
+        return fd, path
+    monkeypatch.setattr(tempfile, 'mkstemp', local_log)
+    monkeypatch.setattr(os, 'geteuid', lambda: 1234)
+    result = report_failure(ValueError('original preconfiguration failure password=private-value'), 'pre-configuration')
+    assert result['status'] == 'stored' and result['destination'] == 'existing-private-deployment-log'
+    log = Path(created[0])
+    assert log.stat().st_mode & 0o777 == 0o600
+    assert result['reference'] == 'protected-log/' + log.name
+    assert 'original preconfiguration failure' in log.read_text()
+    assert 'private-value' not in log.read_text() and str(tmp_path) not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize('fragment', ['synthetic-native-credential-pre', 'prefix-and-rest'])
+def test_timeout_redacts_known_partial_credential_at_capture_edge(tmp_path, monkeypatch, fragment):
+    secret = 'synthetic-native-credential-prefix-and-rest'
+    monkeypatch.setenv('FIXTURE_ACCESS_TOKEN', secret)
+    log = tmp_path / 'private.log'; log.touch(mode=0o600)
+    text = 'upstream failed ' + fragment if fragment.startswith('synthetic') else fragment
+    report_failure(subprocess.TimeoutExpired('fixed-child', 2, stderr=text), 'child-timeout', private_log=log)
+    assert fragment not in log.read_text() and '[REDACTED PARTIAL]' in log.read_text()
+
+
+def test_bounded_middle_capture_redacts_credential_at_both_omission_edges(tmp_path, monkeypatch):
+    monkeypatch.setenv('FIXTURE_ACCESS_TOKEN', 'synthetic-native-credential-prefix-and-rest')
+    log = tmp_path / 'private.log'; log.touch(mode=0o600)
+    error = subprocess.CalledProcessError(7, 'fixed-child',
+        stderr='first error synthetic-native-credential-pre\n[bounded child capture: middle omitted]\nprefix-and-rest')
+    error.capture_bytes = {'stderr': 999999}
+    report_failure(error, 'bounded-child', private_log=log)
+    text = log.read_text()
+    assert 'first error' in text and 'synthetic-native' not in text and 'prefix-and-rest' not in text
+    assert json.loads(text.split('=', 1)[1])['causes'][0]['stderrTruncated']
+
+
+def test_durable_record_preserves_first_and_last_actionable_child_output(tmp_path):
+    log = tmp_path / 'private.log'; log.touch(mode=0o600)
+    error = subprocess.CalledProcessError(7, 'fixed-build-child',
+        stderr='FIRST_ERROR_E111\n' + 'x' * 300000 + '\nACTUAL_NATIVE_FAILURE_E999')
+    report_failure(error, 'build-child', private_log=log)
+    payload = json.loads(log.read_text().split('=', 1)[1])
+    cause = payload['causes'][0]
+    assert cause['stderr'].startswith('FIRST_ERROR_E111')
+    assert cause['stderr'].endswith('ACTUAL_NATIVE_FAILURE_E999')
+    assert len(cause['stderr']) == 8192 and cause['stderrTruncated']
+    assert cause['stderrBytes'] == len(error.stderr)
