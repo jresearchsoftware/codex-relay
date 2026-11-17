@@ -2,6 +2,7 @@ import { connect } from 'node:net';
 import { realpath } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { createBoundedUtf8Capture } from './utf8-capture.mjs';
+import { boundedDiagnosticText } from './diagnostic-redaction.mjs';
 
 const clientError = code => Object.assign(new Error(code), { code });
 function privateFailure(error, operation, receipt) {
@@ -10,16 +11,31 @@ function privateFailure(error, operation, receipt) {
 }
 
 // This fixed client deliberately has no consumer/credential configuration. Its
-// stderr is retained by the Reviewer/protected service journal. A standalone
-// redactor is unavailable here, so print native errno/syscall and byte metadata
-// only; caller input, socket paths, raw receipt text and stacks stay private.
-export function manualClientFailureSummary(error) {
+// stderr is retained by the Reviewer/protected service journal. The shared pure
+// redactor retains observed receipt/native causes without loading consumer state
+// or echoing submitted claims. stdout remains the existing semantic receipt.
+export function manualClientFailureSummary(error, { secrets = {
+  githubToken: process.env.GITHUB_TOKEN ?? '', codexAccessToken: process.env.CODEX_ACCESS_TOKEN ?? ''
+} } = {}) {
   const code = value => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : undefined;
-  return { event: 'manual_outcome_transport_failure', code: code(error?.code) ?? 'MANUAL_PUBLICATION_UNCERTAIN',
+  const observed = (value, limit, capture) => {
+    if (value === undefined || value === null) return { available: false, reason: 'not_observed' };
+    const bounded = boundedDiagnosticText(value, limit, { ...secrets, inputTruncated: capture?.truncated === true });
+    return { available: true, ...bounded, bytes: Math.max(bounded.bytes, capture?.total ?? 0),
+      truncated: bounded.truncated || capture?.truncated === true };
+  };
+  let scale = 1; let summary;
+  do {
+    const limit = size => Math.max(32, Math.floor(size * scale));
+    summary = { event: 'manual_outcome_transport_failure', code: code(error?.code) ?? 'MANUAL_PUBLICATION_UNCERTAIN',
     ...(Number.isInteger(error?.errno) ? { errno: error.errno } : {}),
     ...(typeof error?.syscall === 'string' && /^[a-z][a-z0-9_-]{0,39}$/.test(error.syscall) ? { syscall: error.syscall } : {}),
-    ...(error?.native?.receipt ? { receiptBytes: error.native.receipt.total, receiptTruncated: error.native.receipt.truncated,
-      receiptText: 'unavailable_without_standalone_redactor' } : {}) };
+      stdout: observed(error?.native?.receipt?.value ?? error?.stdout, limit(2048), error?.native?.receipt),
+      stderr: observed(error?.stderr, limit(512)), message: observed(error?.message, limit(384)),
+      stack: observed(error?.stack, limit(768)) };
+    scale /= 2;
+  } while (Buffer.byteLength(JSON.stringify(summary)) > 4095);
+  return summary;
 }
 
 export async function submit(socketPath, bytes, { timeoutMs = 60000 } = {}) {
