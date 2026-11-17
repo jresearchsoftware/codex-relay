@@ -104,7 +104,9 @@ def report_failure(error, phase, *, private_log=None):
                 if captured is not None:
                     captured_bytes = len(captured if isinstance(captured, bytes) else str(captured).encode('utf-8'))
                     row[channel + 'Bytes'] = getattr(current, 'capture_bytes', {}).get(channel, captured_bytes)
-                    row[channel + 'Truncated'] = row[channel + 'Bytes'] > captured_bytes
+                    row[channel + 'Truncated'] = (row[channel + 'Bytes'] > captured_bytes
+                        or (b'[bounded child capture: middle omitted]' in captured if isinstance(captured, bytes)
+                            else '[bounded child capture: middle omitted]' in str(captured)))
             if getattr(current, 'stderr', None):
                 stderr = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr, partial=isinstance(current, subprocess.TimeoutExpired) or row.get('stderrTruncated', False))
                 row['stderr'], row['stderrTruncated'] = bounded(stderr, 8192), len(stderr) > 8192 or row.get('stderrTruncated', False)

@@ -261,3 +261,21 @@ def test_durable_record_preserves_first_and_last_actionable_child_output(tmp_pat
     assert cause['stderr'].endswith('ACTUAL_NATIVE_FAILURE_E999')
     assert len(cause['stderr']) == 8192 and cause['stderrTruncated']
     assert cause['stderrBytes'] == len(error.stderr)
+
+
+def test_omission_marker_keeps_redaction_active_when_rendered_capture_exceeds_original_size(tmp_path, monkeypatch):
+    # Original count exceeds capture limit by one byte; the separator is larger
+    # than the omitted region. Byte-size comparison alone cannot prove complete.
+    secret = 'synthetic-native-value-' + 'z' * 127950 + '-credential-end'
+    monkeypatch.setenv('FIXTURE_ACCESS_TOKEN', secret)
+    original = 'x' * 131070 + secret + 'y' * (262145 - 131070 - len(secret))
+    retained = original[:131072] + '\n[bounded child capture: middle omitted]\n' + original[-131072:]
+    assert len(retained) > len(original)
+    error = subprocess.CalledProcessError(7, 'fixed-child', stderr=retained)
+    error.capture_bytes = {'stderr': len(original)}
+    log = tmp_path / 'private.log'; log.touch(mode=0o600)
+    report_failure(error, 'bounded-edge', private_log=log)
+    text = log.read_text()
+    cause = json.loads(text.split('=', 1)[1])['causes'][0]
+    assert cause['stderrTruncated'] and cause['stderrAvailability'] == 'redacted'
+    assert 'z' * 128 not in text and '-credential-end' not in text
