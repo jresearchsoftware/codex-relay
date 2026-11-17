@@ -38,7 +38,8 @@ export async function withStoreLock(path, action, { waitSeconds = 0, busyCode = 
     const observedFailure = (code, cause, exit = {}) => {
       const error = Object.assign(new Error(code, { cause }), { code });
       Object.defineProperty(error, 'native', { value: { operation: 'store-lock', stdout: stdout.finish(), stderr: stderr.finish(),
-        exitCode: exit.code, signal: exit.signal, waitSeconds }, writable: true, configurable: true });
+        exitCode: exit.code, signal: exit.signal, waitSeconds,
+        ...(streamError ? { streamError: { name: streamError.name, code: streamError.code, message: streamError.message, stack: streamError.stack } } : {}) }, writable: true, configurable: true });
       return error;
     };
     let ready = false;
@@ -61,7 +62,7 @@ export async function withStoreLock(path, action, { waitSeconds = 0, busyCode = 
     finally {
       child.stdin.end();
       const exit = await closed;
-      if (exit.code !== 0) throw observedFailure('STORE_LOCK_RELEASE_FAILED', actionError ?? streamError, exit);
+      if (exit.code !== 0 || streamError) throw observedFailure('STORE_LOCK_RELEASE_FAILED', actionError ?? streamError, exit);
     }
   } finally { await descriptor.close(); }
 }

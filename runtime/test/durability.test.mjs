@@ -328,3 +328,13 @@ test('runtime stream errors are captured with their original cause and retain un
   assert.equal(f.options.evidence.codexContainment, 'unknown');
   assert.doesNotMatch(JSON.stringify(failure.details), /read pipe broke/);
 });
+test('observed native errors remain durable after successful recovery without changing semantic success', async t => {
+  const f = await fixture(t);
+  const stdout = JSON.stringify({ type: 'error', message: 'native request temporarily unavailable token=private-fixture' }) + '\n'
+    + JSON.stringify({ type: 'task_result', result: { status: 'success', summary: 'recovered', validation: [], blockedReason: '' } }) + '\n';
+  const result = await runGovernedCodexTask({ ...f.options, spawnImpl: childFixture({ stdout }) });
+  assert.equal(result.status, 'success'); assert.equal(result.summary, 'recovered');
+  const state = await f.capsule.read(); assert.equal(state.persistence, 'stored');
+  assert.match(state.causalEvidence.native.text, /native request temporarily unavailable/);
+  assert.doesNotMatch(JSON.stringify(state), /private-fixture/);
+});

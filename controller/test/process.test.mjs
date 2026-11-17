@@ -280,3 +280,23 @@ test('dispatch preserves malformed native output plus recorder failure before fi
   assert.equal(beforeFinalization.causalEvidence.process.exitCode, 2);
   assert.doesNotMatch(JSON.stringify(beforeFinalization), /private-fixture/);
 });
+test('containment group probe exceptions survive as protected observations without proving absence', async t => {
+  const originalKill = process.kill;
+  let probeFailed = false; let saved;
+  t.mock.method(process, 'kill', function(pid, signal) {
+    if (signal === 0 && !probeFailed) {
+      probeFailed = true; throw Object.assign(new Error('group existence probe denied'), { code: 'EPERM', syscall: 'kill' });
+    }
+    return originalKill.call(process, pid, signal);
+  });
+  const dispatcher = fixture({
+    diagnosticStore: async value => { saved = value; return { status: 'stored', executionId: value.executionId, mode: value.mode }; },
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(2,JSON.stringify({version:2,status:"blocked",code:"CODEX_RESULT_MISSING",diagnostic:{containment:"reaped",observed:{child:"started"}}}));process.exitCode=1;')
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'CODEX_RESULT_MISSING');
+    assert.doesNotMatch(JSON.stringify(error.details), /group existence probe denied/); return true;
+  });
+  assert.equal(probeFailed, true);
+  assert.match(saved.causalEvidence.native.text, /probe-dispatch-group|group existence probe denied/);
+});

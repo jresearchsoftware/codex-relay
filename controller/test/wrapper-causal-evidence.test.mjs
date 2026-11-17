@@ -96,3 +96,16 @@ test('lock helper failure preserves original stderr and exit without running the
     assert.doesNotMatch(JSON.stringify(evidence), /private-fixture/); return true;
   });
 });
+test('lock release keeps a stream failure and an earlier action cause independently', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-wrapper-lock-release-')); t.after(() => rm(root, { recursive: true, force: true }));
+  let child;
+  const actionCause = Object.assign(new Error('original protected action failed'), { code: 'EIO' });
+  await assert.rejects(withStoreLock(join(root, 'lock'), async () => {
+    child.stdin.emit('error', Object.assign(new Error('lock lifetime pipe failed'), { code: 'EPIPE' }));
+    child.emit('close', 0, null); throw actionCause;
+  }, { spawnImpl() { child = processFixture(value => value.stdout.write('locked\n')); return child; } }), error => {
+    assert.equal(error.code, 'STORE_LOCK_RELEASE_FAILED'); assert.equal(error.cause, actionCause);
+    assert.match(captureCausalDiagnostic({ error }).exception.text, /original protected action failed|lock lifetime pipe failed/);
+    assert.doesNotMatch(JSON.stringify(error), /original protected action failed|lock lifetime pipe failed/); return true;
+  });
+});

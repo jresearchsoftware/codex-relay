@@ -122,7 +122,7 @@ function inside(candidate, root) {
   return value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
-async function assertWritableDirectory(directory, label) {
+async function assertWritableDirectory(directory, label, { onWarning, removeProbe }) {
   const probe = join(directory, `.codex-write-probe-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   try {
     await access(directory, fsConstants.W_OK | fsConstants.X_OK);
@@ -130,7 +130,8 @@ async function assertWritableDirectory(directory, label) {
   } catch (error) {
     throw Object.assign(new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", `Codex runtime path is not writable: ${label}`), { cause: error });
   } finally {
-    await rm(probe, { force: true }).catch(() => undefined);
+    try { await removeProbe(probe, { force: true }); }
+    catch (error) { onWarning(error, 'preflight-probe-cleanup'); }
   }
 }
 
@@ -150,7 +151,7 @@ async function assertNoSymlinkComponents(root, normalized) {
   }
 }
 
-export async function preflightCodexWorkspace({ cwd, sandboxRoot } = {}) {
+export async function preflightCodexWorkspace({ cwd, sandboxRoot, onWarning = () => {}, removeProbe = rm } = {}) {
   if (typeof cwd !== "string" || cwd.trim() === "") throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_INVALID", "Codex checkout root is required");
   const checkoutRoot = resolve(cwd);
   const rootEntry = await lstat(checkoutRoot).catch(error => { throw Object.assign(new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", "Codex checkout root is unavailable"), { cause: error }); });
@@ -169,10 +170,10 @@ export async function preflightCodexWorkspace({ cwd, sandboxRoot } = {}) {
     if (entry.isSymbolicLink() || !entry.isDirectory()) throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", `Codex runtime directory is not a real directory: ${name}`);
   }
   await grantSharedCheckoutAccess(runtimeRoot);
-  await assertWritableDirectory(runtimeRoot, CODEX_SANDBOX_NAME);
-  for (const name of RUNTIME_DIRECTORIES) await assertWritableDirectory(join(runtimeRoot, name), `${CODEX_SANDBOX_NAME}/${name}`);
+  await assertWritableDirectory(runtimeRoot, CODEX_SANDBOX_NAME, { onWarning, removeProbe });
+  for (const name of RUNTIME_DIRECTORIES) await assertWritableDirectory(join(runtimeRoot, name), `${CODEX_SANDBOX_NAME}/${name}`, { onWarning, removeProbe });
 
-  await assertWritableDirectory(checkoutRoot, "repository checkout");
+  await assertWritableDirectory(checkoutRoot, "repository checkout", { onWarning, removeProbe });
   return { checkoutRoot, sandboxRoot: runtimeRoot, directories: RUNTIME_DIRECTORIES.map(name => join(runtimeRoot, name)) };
 }
 
@@ -409,7 +410,7 @@ export async function runGovernedCodexTask({
     // Existing sandboxes may be the last evidence of an earlier failed attempt.
     const existing = await lstat(stagingDir).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (existing) throw new WriterBlockedError('CODEX_SANDBOX_ALREADY_EXISTS', 'Existing runtime artifacts require inspection');
-    await preflightCodexWorkspace({ cwd: checkoutRoot, sandboxRoot: stagingDir });
+    await preflightCodexWorkspace({ cwd: checkoutRoot, sandboxRoot: stagingDir, onWarning: observeAuxiliaryError });
     await checkpoint({ sandboxCreated: true, sandboxIdentity: await captureSandboxIdentity(stagingDir),
       lastSuccessfulBoundary: 'worker', operation: 'input-schema-write', pathContext: 'input' });
     diagnosticPhases.push("sandbox-created", "path-preflight-passed");
@@ -558,6 +559,8 @@ export async function runGovernedCodexTask({
     finalizeStreams();
     if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
     if (launcherDiagnostic) evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
+    const nativeErrors = jsonlParser.diagnostics();
+    const hasNativeErrors = nativeErrors.events.length > 0;
     if (pendingError && launcherDiagnostic) addDiagnosticDetails(pendingError, launcherDiagnostic, undefined, evidence.codexChildStarted);
     state = { ...state, childState: evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : state.childState,
       ...(launcherDiagnostic ? { childExitCode: launcherDiagnostic.childExitCode, signal: launcherDiagnostic.signal } : {}),
@@ -567,13 +570,15 @@ export async function runGovernedCodexTask({
           stage: pendingError.details?.failureDiagnostic?.stage ?? state.stage,
           boundary: pendingError.details?.failureDiagnostic?.boundary ?? state.boundary, operation: state.operation,
           syscall: cause?.syscall, pathContext: state.pathContext } } : {}),
-      ...((pendingError || warningError || auxiliaryErrors.length) ? { causalEvidence: captureCausalDiagnostic({
+      ...((pendingError || warningError || auxiliaryErrors.length || hasNativeErrors) ? { causalEvidence: captureCausalDiagnostic({
         error: cause ?? warningError, executionId, phase: state.stage,
         operation: warningError && !pendingError ? 'thread-name' : state.operation,
         stdout: { text: stdout, bytes: stdoutBytes, truncated: stdoutTruncated },
         stderr: { text: stderr, bytes: stderrBytes, truncated: stderrTruncated },
         exitCode: childExitCode, signal: childSignal,
-        native: { launcherDiagnostic, codexErrors: jsonlParser.diagnostics(), auxiliaryErrors }, secrets }) } : {}) };
+        native: { codexErrors: nativeErrors.events.slice().reverse().map(event => ({ type: event.type,
+          message: event.message?.text, native: event.native?.text })), omittedCodexErrorEvents: nativeErrors.omittedEvents,
+          auxiliaryErrors, launcherDiagnostic }, secrets }) } : {}) };
     let checkpointError;
     try { await checkpoint({ cleanup: 'pending', retention: 'unknown' }); }
     catch (error) {
@@ -581,7 +586,7 @@ export async function runGovernedCodexTask({
       state.recorderFailure = captureCausalDiagnostic({ error, executionId, phase: 'diagnostic-persistence', operation: 'persist-fallback', secrets }, { compact: true });
     }
     try {
-      const shouldPersist = pendingError || warningError || auxiliaryErrors.length || checkpointError || diagnosticMode === 'debug';
+      const shouldPersist = pendingError || warningError || auxiliaryErrors.length || hasNativeErrors || checkpointError || diagnosticMode === 'debug';
       if (shouldPersist) {
         const filesystem = checkoutRoot ? await filesystemSnapshot([
           ['checkout', checkoutRoot], ['git', join(checkoutRoot, '.git')], ['sandbox', stagingDir], ['input', inputPath], ['schema', schemaPath]], secrets) : {};

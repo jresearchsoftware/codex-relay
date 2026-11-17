@@ -100,6 +100,17 @@ test('workspace preflight needs no path list and preserves sandbox and symlink c
   assert.ok(!('GITHUB_TOKEN' in env)); assert.ok(!('SSH_AUTH_SOCK' in env));
   assert.equal(env.GIT_CONFIG_NOSYSTEM, '1'); assert.equal(env.GIT_TERMINAL_PROMPT, '0');
 });
+test('disposable preflight probe cleanup retains its original warning without changing successful preflight', async t => {
+  const cwd = await mkdtemp(join(tmpdir(), 'codex-probe-warning-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const observed = [];
+  const original = Object.assign(new Error('probe unlink denied'), { code: 'EACCES', syscall: 'unlink' });
+  const result = await preflightCodexWorkspace({ cwd,
+    removeProbe: async probe => { await rm(probe, { force: true }); throw original; },
+    onWarning: (error, operation) => observed.push({ error, operation }) });
+  assert.equal(result.checkoutRoot, cwd); assert.equal(observed.length, 8);
+  assert.ok(observed.every(item => item.error === original && item.operation === 'preflight-probe-cleanup'));
+});
 test('missing and malformed diagnostics cannot prove the child did not start', () => {
   for (const input of ['', 'arbitrary stderr', '{broken']) {
     const d = parseLauncherDiagnostic(input); assert.equal(d.childState, 'unknown'); assert.equal(d.childStarted, null);

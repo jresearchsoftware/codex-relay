@@ -23,12 +23,12 @@ function signalProcessTree(child, signal, nestedProcessGroupPids = [], onError) 
   try { child.kill?.(signal); } catch (error) { onError?.(error); }
 }
 
-function processGroupGone(pid) {
+function processGroupGone(pid, onError) {
   if (process.platform === "win32" || !pid) return true;
-  try { process.kill(-pid, 0); return false; } catch (error) { return error.code === "ESRCH"; }
+  try { process.kill(-pid, 0); return false; } catch (error) { if (error.code !== 'ESRCH') onError?.(error, 'probe-dispatch-group'); return error.code === "ESRCH"; }
 }
 
-function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChildClosed) {
+function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChildClosed, onError) {
   return new Promise(resolve => {
     const deadline = Date.now() + timeoutMs;
     const poll = () => {
@@ -36,8 +36,8 @@ function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChild
       // This proves only the runner-owned group. The model UID launcher must
       // separately acknowledge its inner group; successful kill(-pid) does not
       // prove that a different UID was signalled.
-      const ownerGroupGone = process.platform === "win32" || processGroupGone(child.pid);
-      const groupsGone = ownerGroupGone && nestedProcessGroupPids.every(processGroupGone);
+      const ownerGroupGone = process.platform === "win32" || processGroupGone(child.pid, onError);
+      const groupsGone = ownerGroupGone && nestedProcessGroupPids.every(pid => processGroupGone(pid, onError));
       if (childGone && groupsGone) return resolve(true);
       if (Date.now() >= deadline) return resolve(false);
       setTimeout(poll, 25);
@@ -48,9 +48,9 @@ function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChild
 
 async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed, onError) {
   signalProcessTree(child, "SIGTERM", nestedProcessGroupPids, onError);
-  if (await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed)) return true;
+  if (await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed, onError)) return true;
   signalProcessTree(child, "SIGKILL", nestedProcessGroupPids, onError);
-  return await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed);
+  return await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed, onError);
 }
 
 
@@ -83,7 +83,7 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
       let containment = 'not_required';
       const auxiliaryErrors = [];
       const observeError = (error, operation) => { if (auxiliaryErrors.length < 4) auxiliaryErrors.push(captureCausalDiagnostic({ error, executionId: envelope.attemptId, phase: 'dispatcher', operation }, { compact: true })); };
-      const reap = () => termination ??= terminateProcessTree(child, [], () => closed, error => observeError(error, 'terminate-dispatch'));
+      const reap = () => termination ??= terminateProcessTree(child, [], () => closed, (error, operation = 'terminate-dispatch') => observeError(error, operation));
       const preserveFailure = async (error, operation) => {
         const executionId = `${envelope.attemptId}-${operation}`;
         const causalEvidence = captureCausalDiagnostic({ error, executionId: envelope.attemptId, phase: 'dispatcher', operation,
