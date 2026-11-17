@@ -107,13 +107,23 @@ test('a clipped diagnostic receipt cannot be accepted as a complete successful r
 test('a quiet diagnostic helper returns to independent fallback with its observed output and kill failure', async () => {
   let killed = false;
   await assert.rejects(persistExecutionDiagnostic({ executionId: 'run-244', mode: 'normal' }, { timeoutMs: 10,
-    spawnImpl: () => storeProcess(child => {
-      child.stderr.write('native recorder blocked token=hidden-fixture');
+    spawnImpl() {
+      const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
+      child.stdin.resume();
       child.kill = () => { killed = true; throw Object.assign(new Error('native signal denied'), { code: 'EPERM' }); };
-    }) }), error => {
+      const send = child.stdin.end.bind(child.stdin);
+      child.stdin.end = (...args) => {
+        // The helper observes its request after the production data listeners
+        // attach, before it becomes quiet. No timer/immediate ordering race.
+        child.stderr.write('native recorder blocked token=hidden-fixture');
+        return send(...args);
+      };
+      return child;
+    } }), error => {
     assert.equal(error.storeDiagnosticCode, 'DIAGNOSTICS_STORE_TIMEOUT');
     const evidence = captureCausalDiagnostic({ error });
-    assert.match(evidence.exception.text, /native recorder blocked|native signal denied|EPERM/);
+    assert.match(evidence.stderr.text, /native recorder blocked/);
+    assert.match(evidence.exception.text, /native signal denied|EPERM/);
     assert.doesNotMatch(JSON.stringify(evidence), /hidden-fixture/);
     return true;
   });
