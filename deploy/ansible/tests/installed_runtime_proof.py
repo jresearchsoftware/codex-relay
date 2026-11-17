@@ -1081,12 +1081,14 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         diagnostics_before = set(Path('/var/lib/codex-relay/debug').glob('*.json'))
         rust_test = [*node_command, '--test-name-pattern=dedicated Rust development', test_path]
         run_installed(rust_test, env={**env, 'INSTALLED_RUST_LINKER': 'missing', 'INSTALLED_FIXTURE_EVENT_BASE': '960'}, umask=deploy_umask)
-        # The original Cargo cause and the independent retirement archive are
-        # separate records. Bind both exact IDs instead of counting every new
-        # diagnostic as though it were another child execution.
+        # The original Cargo cause, dispatcher failure and retirement archive
+        # are separate records for one child. Bind all exact identities and
+        # inspect their distinct evidence instead of treating a diagnostic as
+        # another child execution.
         diagnostics_root = Path('/var/lib/codex-relay/debug')
         added_diagnostics = set(diagnostics_root.glob('*.json')) - diagnostics_before
         expected_diagnostics = {diagnostics_root / 'run-960.json',
+                                diagnostics_root / 'run-960-dispatch.json',
                                 diagnostics_root / 'run-960-finalization.json'}
         assert added_diagnostics == expected_diagnostics, added_diagnostics
         original_path = diagnostics_root / 'run-960.json'
@@ -1095,6 +1097,25 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         final_path = diagnostics_root / 'run-960-finalization.json'
         final = json.loads(final_path.read_bytes())
         assert original['executionId'] == 'run-960' and original['classification'] == 'CODEX_NONZERO_EXIT'
+        dispatcher_path = diagnostics_root / 'run-960-dispatch.json'
+        dispatcher = json.loads(dispatcher_path.read_bytes())
+        assert dispatcher['executionId'] == 'run-960-dispatch' and dispatcher['phase'] == 'dispatcher', dispatcher
+        assert dispatcher['classification'] == original['classification'], dispatcher
+        assert dispatcher['lifecycle'] == {'operation': 'dispatch', 'containment': 'reaped'}, dispatcher
+        causal = dispatcher['causalEvidence']
+        assert causal['executionId'] == original['executionId'], causal
+        assert causal['phase'] == 'dispatcher' and causal['operation'] == 'dispatch', causal
+        assert len(json.dumps(causal).encode()) <= 64 * 1024, 'RUST_PROOF_DISPATCH_CAUSE_UNBOUNDED'
+        assert causal['process']['observed'] and causal['process']['exitCode'] == 1, causal
+        assert causal['exception']['available'] and original['classification'] in causal['exception']['text'], causal
+        assert causal['stderr']['available'] and not causal['stderr']['truncated'], causal
+        # Preserve the actual emitted dispatch failure, with its original
+        # runtime archive reference, rather than another high-level code alone.
+        emitted = json.loads(causal['stderr']['text'])
+        assert emitted['status'] == 'blocked' and emitted['code'] == original['classification'], emitted
+        assert emitted['diagnostic']['executionId'] == original['executionId'], emitted
+        assert emitted['diagnostic']['observed']['child'] == 'started', emitted
+        assert emitted['diagnostic']['durable']['diagnosticStore']['executionId'] == original['executionId'], emitted
         assert final['executionId'] == 'run-960-finalization' and final['phase'] == 'finalization'
         lifecycle = final['lifecycle']
         assert lifecycle['childState'] == 'started' and lifecycle['containment'] == 'reaped', lifecycle
@@ -1110,9 +1131,13 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         assert capsule['diagnosticStore'] == lifecycle['diagnosticStore'], capsule
         assert capsule['failureDiagnostic'] == lifecycle['failureDiagnostic'], capsule
         for path in expected_diagnostics:
-            assert not path.is_symlink() and (path.stat().st_uid, stat.S_IMODE(path.stat().st_mode)) == (0, 0o600)
+            info = path.lstat()
+            assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1, info
+            assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 0, 0o600), info
+            raw = path.read_bytes()
+            assert len(raw) <= 16 * 1024 * 1024 and b'fixture-only-credential' not in raw, path
         records = launcher_diagnostics_since(diagnostics_before)
-        assert len(records) == 2, 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
+        assert len(records) == len(expected_diagnostics), 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
         child_records = [record for record in records if record['code'] is not None]
         assert len(child_records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
         records = child_records

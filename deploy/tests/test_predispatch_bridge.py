@@ -262,7 +262,10 @@ export function createGithubApi({token,runToken}){log('api');
 export async function token(){log('token');return 'synthetic-writer-token';}''',
         'controller/src/execution-contract.mjs': '''export const REPOSITORY='example/repository',VERSION=2;
 export const fail=code=>{throw Object.assign(Error(code),{code});};''',
-        'controller/src/diagnostics.mjs': 'export const failureDiagnosticFromDetails=()=>undefined;',
+        'controller/src/diagnostics.mjs': '''export const failureDiagnosticFromDetails=()=>undefined;
+export const safeDiagnosticStoreReference=()=>undefined,safeFallbackReference=()=>undefined;''',
+        'controller/src/host-failure-diagnostic.mjs': '''import {log} from './fixture-state.mjs';
+export function recordHostFailure(){log('unexpected-failure-recorder');throw Error('UNEXPECTED_FAILURE_RECORDER');}''',
         'controller/src/owner-run-rejection.mjs': 'export const ownerRunRejectionReason=()=>undefined;',
         'controller/src/admission-cli.mjs': 'export const installedAdmissionControl=()=>({});',
         'controller/src/predispatch-target-compatibility.mjs': 'export const assertCompatibleInstalledWriter=()=>{throw Error("NO_FINALIZATION");};',
