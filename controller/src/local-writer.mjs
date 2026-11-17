@@ -25,9 +25,9 @@ function requestError(error, operation) {
   const result = new WriterBlockedError(code, "The privileged Writer helper failed", {
     ...(reason ? { reason } : {}), ...(safeDiagnosticStoreReference(payload?.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(payload.diagnosticStore) } : {}), ...(safeFallbackReference(payload?.fallbackReference) ? { fallbackReference: safeFallbackReference(payload.fallbackReference) } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {})
   });
-  Object.defineProperty(result, 'cause', { value: error });
+  Object.defineProperty(result, 'cause', { value: error, writable: true });
   Object.defineProperty(result, 'native', { value: { operation, stderr: error.stderr, stdout: error.stdout, exitCode: error.exitCode, signal: error.signal,
-    stderrBytes: error.stderrBytes, stdoutBytes: error.stdoutBytes, truncated: error.truncated } });
+    stderrBytes: error.stderrBytes, stdoutBytes: error.stdoutBytes, truncated: error.truncated }, writable: true });
   return result;
 }
 

@@ -14,6 +14,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { captureCausalDiagnostic } from '../src/diagnostics.mjs';
 import { recordEntrypointFailure } from '../src/repository-entrypoint.mjs';
+import { http as writerHttp, parseEnv } from '../src/writer-auth.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 
 const fail = (code, message = code) => Object.assign(new Error(message), { code });
 async function stores(t) {
@@ -101,6 +103,29 @@ test('native API rejection retains bounded original body/status and network caus
     assert.equal(error.cause.code, 'ECONNRESET'); return true; });
 });
 
+test('Writer authentication keeps safe field predicates and malformed native response causes', async t => {
+  const key = '/synthetic/protected-key';
+  const valid = `GITHUB_APP_ID=${CONSUMER.writerApp.appId}\nGITHUB_APP_INSTALLATION_ID=${CONSUMER.writerApp.installationId}\nGITHUB_APP_PRIVATE_KEY_FILE=${key}\n`;
+  assert.equal(parseEnv(valid, key).GITHUB_APP_ID, CONSUMER.writerApp.appId);
+  for (const [input, check] of [[valid + 'GITHUB_APP_ID=duplicate', 'writer-credential-env.syntax'],
+    [valid.replace(`GITHUB_APP_ID=${CONSUMER.writerApp.appId}`, 'GITHUB_APP_ID=other'), 'writer-credential-env.binding']]) {
+    assert.throws(() => parseEnv(input, key), error => {
+      assert.equal(error.code, 'WRITER_IDENTITY_INVALID'); assert.equal(error.observation.check, check); return true;
+    });
+  }
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async () => new Response('not-json password=private-fixture-value', { status: 200 });
+  await assert.rejects(writerHttp('/app/installations/synthetic/access_tokens'), error => {
+    assert.equal(error.code, 'WRITER_TOKEN_INVALID');
+    assert.equal(error.observation.check, 'writer-token.response-json');
+    assert.equal(error.runtimeCause.name, 'SyntaxError');
+    const evidence = captureCausalDiagnostic({ error });
+    assert.match(JSON.stringify(evidence), /not-json/);
+    assert.doesNotMatch(JSON.stringify(evidence), /private-fixture-value/); return true;
+  });
+});
+
 test('malformed or foreign event is diagnosed before any adapter or journal is constructed', async () => {
   for (const event of ['{', JSON.stringify({ repository: { full_name: 'foreign/repository' } })]) {
     const recorded = [];
@@ -175,4 +200,12 @@ test('the Actions reporting wrapper really exits red for BLOCKED and green for a
       assert.match(result.stderr, /no worker started/);
     } else assert.equal(result.stderr, '');
   }
+  const exceptional = spawnSync(process.execPath, ['--input-type=module', '-e',
+    `import {reportRoutingResult} from ${JSON.stringify(new URL('../src/entrypoint.mjs', import.meta.url).href)};
+     process.exitCode=await reportRoutingResult(async()=>{throw new Error('private original cause')});`],
+  { encoding: 'utf8', env: process.env });
+  assert.equal(exceptional.status, 1);
+  assert.equal(JSON.parse(exceptional.stderr).code, 'ROUTING_FAILED');
+  assert.match(exceptional.stdout, /::error title=Relay routing::/);
+  assert.doesNotMatch(exceptional.stdout + exceptional.stderr, /private original cause/);
 });

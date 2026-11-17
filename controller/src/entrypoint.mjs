@@ -135,7 +135,9 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   if (failure) throw failure;
   return result;
 }
-export async function reportRoutingResult(run, { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value) } = {}) {
+export async function reportRoutingResult(run, options = {}) {
+  const { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value),
+    writeAnnotation = options.write || options.writeError ? () => {} : value => process.stdout.write(value) } = options;
   try {
     const value = await run();
     if (value?.status === 'BLOCKED') {
@@ -160,7 +162,9 @@ export async function reportRoutingResult(run, { write = value => process.stdout
         : code === 'TRUSTED_GIT_FAILED'
           ? 'Inspect the original Git output and branch observations in protected diagnostics before selecting the supported correction.'
           : 'Inspect the protected diagnostic reference and original attempt before selecting a supported correction or recovery.';
-    writeError(`::error title=Relay routing::${code}; the requested operation did not complete. ${action}\n`);
+    // Keep the exceptional stderr envelope parseable by existing collectors.
+    // Actions consumes the separate stdout annotation command.
+    writeAnnotation(`::error title=Relay routing::${code}; the requested operation did not complete. ${action}\n`);
     writeError(JSON.stringify({ status: 'blocked', orchestration: 'FAILED', code, diagnostic }) + '\n');
     return 1;
   }
