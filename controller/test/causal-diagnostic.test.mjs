@@ -75,6 +75,17 @@ test('clipped captures redact a known partial credential and JSON secret values 
   assert.equal(value.stdout.truncated, true);
 });
 
+test('nested native capture metadata redacts a credential cut at the observed stream edge', () => {
+  const error = Object.assign(new Error('native response failed'), { native: {
+    response: { text: 'upstream native partial-credential-pre', bytes: 12345, truncated: true },
+    stderr: { value: 'recorder native partial-credential-pre', total: 12345, truncated: true }
+  } });
+  const value = captureCausalDiagnostic({ error, secrets: { knownSecrets: ['partial-credential-prefix-and-rest'] } });
+  assert.match(value.exception.text, /upstream native|recorder native/);
+  assert.match(value.exception.text, /REDACTED_PARTIAL_SECRET/);
+  assert.doesNotMatch(JSON.stringify(value), /partial-credential-pre/);
+});
+
 function storeProcess(run) {
   const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
   child.stdin.resume(); child.kill = () => true;

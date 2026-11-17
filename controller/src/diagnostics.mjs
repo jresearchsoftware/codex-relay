@@ -72,7 +72,9 @@ function privateNativeValue(value, secrets, depth = 0, seen = new Set()) {
   const entries = Object.entries(value).slice(0, 16).map(([key, item]) => [
     boundedDiagnosticText(key, 80, secrets).text,
     /authorization|cookie|password|passwd|secret|token|api[_-]?key|private[_-]?key/i.test(key)
-      ? '[REDACTED_SECRET]' : privateNativeValue(item, secrets, depth + 1, seen)
+      ? '[REDACTED_SECRET]' : privateNativeValue(item,
+        value.truncated === true && ['text', 'value', 'stdout', 'stderr'].includes(key)
+          ? { ...secrets, inputTruncated: true } : secrets, depth + 1, seen)
   ]);
   return Object.fromEntries(entries);
 }
