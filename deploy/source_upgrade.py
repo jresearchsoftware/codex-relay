@@ -206,7 +206,10 @@ def prepare(preparation, config, guard, pool_guard):
     guards(guard, pool_guard)
     try:
         preparation.values.update(resolve_values(preparation.values, Path(__file__).resolve().parents[1]))
-    except NotEligible:
+    except NotEligible as error:
+        from lifecycle import report_failure
+        error.observation = {**getattr(error, 'observation', {}), 'disposition': 'full-path-fallback'}
+        report_failure(error, 'source-upgrade-eligibility')
         return False
     preparation.values['relay_source_reuse_consumer_digest'] = preparation.desired_digest
     context = invoke(preparation, 'describe', config=config)
@@ -227,7 +230,10 @@ def prepare(preparation, config, guard, pool_guard):
         before = build_catalogue(source, artifact_values(context['oldValues'], context['manifest']))
         after = build_catalogue(source, artifact_values(preparation.values, manifest))
         changes = catalogue_transition(before, after, context['manifest'], manifest, preparation.values['relay_config_root'], preparation.values['relay_release_root'])
-    except NotEligible:
+    except NotEligible as error:
+        from lifecycle import report_failure
+        error.observation = {**getattr(error, 'observation', {}), 'disposition': 'full-path-fallback'}
+        report_failure(error, 'source-upgrade-eligibility')
         return False
     result = invoke(preparation, 'prepare', config=config, context=context,
                     catalogueBefore=before, catalogueAfter=after, changes=changes, manifest=manifest)
@@ -313,6 +319,7 @@ def read_journal(data, helper):
 
 
 def candidate_checks(root, repository):
+    from lifecycle_process import retain_failure
     source = root / 'release/reviewed-source'
     imports = ['entrypoint.mjs', 'recover-attempt-publication.mjs', 'admission-cli.mjs',
                'manual-outcome.mjs', 'privileged-writer-helper.mjs', 'trusted-git.mjs']
@@ -325,15 +332,16 @@ def candidate_checks(root, repository):
     if result.returncode:
         raise RuntimeError('SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN') from subprocess.CalledProcessError(
             result.returncode, command, output=result.stdout, stderr=result.stderr)
-    require(result.returncode == 0 and result.stdout.strip() == b'INTENT_STAGE_IMPORTS_READY',
-            'SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN')
+    if result.stdout.strip() != b'INTENT_STAGE_IMPORTS_READY':
+        raise retain_failure(RuntimeError('SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN'), result)
     result = subprocess.run([str(root / 'release/bin/reviewer-mcp-http'), '--help'],
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root)},
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
     if result.returncode:
         raise RuntimeError('SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN') from subprocess.CalledProcessError(
             result.returncode, result.args, output=result.stdout, stderr=result.stderr)
-    require(result.returncode == 0 and b'Usage:' in result.stdout, 'SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN')
+    if b'Usage:' not in result.stdout:
+        raise retain_failure(RuntimeError('SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN'), result)
 
 
 def normalize_release(destination, values):
@@ -483,13 +491,18 @@ def root_verify(journal, helper, *, final=False, full=False):
 
 
 def admission(prefix, *arguments, payload=None):
+    from lifecycle_process import retain_failure
     result = subprocess.run([*prefix, *arguments], input=None if payload is None else canonical(payload),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=False)
     if result.returncode:
         raise RuntimeError('SOURCE_UPGRADE_ADMISSION_UNPROVEN') from subprocess.CalledProcessError(
             result.returncode, 'fixed-source-upgrade-admission', output=result.stdout, stderr=result.stderr)
-    require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'SOURCE_UPGRADE_ADMISSION_UNPROVEN')
-    return json.loads(result.stdout)
+    if len(result.stdout) > 1024 * 1024:
+        raise retain_failure(RuntimeError('SOURCE_UPGRADE_ADMISSION_UNPROVEN'), result)
+    try:
+        return json.loads(result.stdout)
+    except (ValueError, UnicodeError) as error:
+        raise retain_failure(RuntimeError('SOURCE_UPGRADE_ADMISSION_UNPROVEN'), result) from error
 
 
 def operation_record(values, revision):
@@ -635,7 +648,10 @@ def remote(action, data):
     if action == 'describe':
         try:
             return proof.describe(data['values'], data['config'], data['identity'], data['sourceRoot'])
-        except (NotEligible, ValueError, OSError, subprocess.SubprocessError):
+        except (NotEligible, ValueError, OSError, subprocess.SubprocessError) as error:
+            from lifecycle import report_failure
+            error.observation = {**getattr(error, 'observation', {}), 'disposition': 'full-path-fallback'}
+            report_failure(error, 'source-upgrade-eligibility')
             return {'eligible': False}
     helper = stage_helper(data['sourceRoot'])
     root = helper.stage_root(data['stage'], data['operationId'])
@@ -651,7 +667,10 @@ def remote(action, data):
             before = proof.prove(data['context']['oldValues'], data['config'], data['sourceRoot'],
                 data['catalogueBefore'], expected_binding=data['context']['binding'], stage=data['stage'],
                 operation=data['operationId'], package_reference=package_reference)
-        except (NotEligible, ValueError, OSError, subprocess.SubprocessError):
+        except (NotEligible, ValueError, OSError, subprocess.SubprocessError) as error:
+            from lifecycle import report_failure
+            error.observation = {**getattr(error, 'observation', {}), 'disposition': 'full-path-fallback'}
+            report_failure(error, 'source-upgrade-eligibility')
             return {'eligible': False}
         require(not os.path.lexists(root / 'source-upgrade.json'), 'SOURCE_UPGRADE_STAGE_ALREADY_PREPARED')
         expected = {'operationId': data['operationId'], 'sourceIdentity': data['identity']}

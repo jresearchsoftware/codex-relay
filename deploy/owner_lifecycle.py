@@ -6,18 +6,20 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import ssl
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 
 sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
 from lifecycle import execute, require, progress, report_failure, failure_reporting_source
-from lifecycle_process import run as run_child
+from lifecycle_process import run as run_child, retain_failure
 import git_intent
 import repository_source
 
@@ -77,8 +79,8 @@ def projection_preflight(source, target, consumer, config):
             phase='owner-preflight', dependency='workflow-projection')
     except subprocess.CalledProcessError as error:
         raise ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target') from error
-    require(result.returncode == 0 and result.stdout == 'WORKFLOW_PREFLIGHT=PASS\n',
-            'WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target')
+    if result.stdout != 'WORKFLOW_PREFLIGHT=PASS\n':
+        raise retain_failure(ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target'), result)
 
 
 POOL_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, re, sys
@@ -118,8 +120,8 @@ def pool_preflight(source, config):
         except subprocess.CalledProcessError as error:
             codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', error.stderr, re.MULTILINE)
             raise ValueError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN') from error
-    require(result.stdout == 'MANAGED_POOL_PREFLIGHT=PASS\n',
-            'MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN')
+    if result.stdout != 'MANAGED_POOL_PREFLIGHT=PASS\n':
+        raise retain_failure(ValueError('MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN'), result)
 
 
 def public_main(repository):
@@ -309,8 +311,8 @@ console.log('GIT_CONSUMER_READBACK=PASS');'''
     if proof.returncode:
         raise ValueError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
             proof.returncode, 'fixed-consumer-readback', output=proof.stdout, stderr=getattr(proof, 'stderr', ''))
-    require(proof.returncode == 0 and proof.stdout == 'GIT_CONSUMER_READBACK=PASS\n',
-            'git-consumer-readback-mismatch')
+    if proof.stdout != 'GIT_CONSUMER_READBACK=PASS\n':
+        raise retain_failure(ValueError('git-consumer-readback-mismatch'), proof)
 
 
 def selected_config(source, raw):
@@ -333,10 +335,15 @@ print(json.dumps({'config': c, 'values': compile_inputs(c)}))
     if result.returncode:
         raise ValueError('git-selected-config-invalid') from subprocess.CalledProcessError(
             result.returncode, 'fixed-selected-config-parser', output=result.stdout, stderr=getattr(result, 'stderr', ''))
-    require(result.returncode == 0 and len(result.stdout) <= 524288, 'git-selected-config-invalid')
-    parsed = json.loads(result.stdout)
-    require(isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
-            and isinstance(parsed.get('values'), dict), 'git-selected-config-invalid')
+    if len(result.stdout) > 524288:
+        raise retain_failure(ValueError('git-selected-config-invalid'), result)
+    try:
+        parsed = json.loads(result.stdout)
+    except (ValueError, UnicodeError) as error:
+        raise retain_failure(ValueError('git-selected-config-invalid'), result) from error
+    if not (isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
+            and isinstance(parsed.get('values'), dict)):
+        raise retain_failure(ValueError('git-selected-config-invalid'), result)
     return parsed['config'], parsed['values']
 
 
@@ -607,6 +614,12 @@ def run(request):
 
 def main(arguments=None, token_stream=None):
     arguments = sys.argv[1:] if arguments is None else arguments
+    previous_termination = None
+    if threading.current_thread() is threading.main_thread() and signal.getsignal(signal.SIGTERM) == signal.SIG_DFL:
+        previous_termination = signal.SIG_DFL
+        def interrupted(_signum, _frame):
+            raise InterruptedError('owner-lifecycle-interrupted')
+        signal.signal(signal.SIGTERM, interrupted)
     try:
         require(len(arguments) == 1 or (len(arguments) == 3 and arguments[0].startswith('git:recover:')
                 and arguments[1] == '--installed-source' and Path(arguments[2]).is_absolute()), 'argument-contract')
@@ -619,8 +632,7 @@ def main(arguments=None, token_stream=None):
         else:
             run(arguments[0])
         return 0
-    except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError,
-            http.client.HTTPException) as error:
+    except Exception as error:
         report_failure(error, 'owner-lifecycle')
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
@@ -630,6 +642,9 @@ def main(arguments=None, token_stream=None):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)
         return 1
+    finally:
+        if previous_termination is not None:
+            signal.signal(signal.SIGTERM, previous_termination)
 
 
 if __name__ == '__main__':

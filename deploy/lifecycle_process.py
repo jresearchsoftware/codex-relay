@@ -9,6 +9,18 @@ import time
 
 
 CAPTURE_LIMIT = 256 * 1024
+OMITTED = b'\n[bounded child capture: middle omitted]\n'
+
+
+def retain_failure(error, result):
+    """Keep a zero-exit malformed proof's streams behind its existing safe code."""
+    for channel in ['stdout', 'stderr']:
+        setattr(error, channel, getattr(result, channel, None))
+    error.capture_bytes = getattr(result, 'capture_bytes', {
+        channel: len(value if isinstance(value, bytes) else str(value).encode('utf-8'))
+        for channel in ['stdout', 'stderr'] if (value := getattr(result, channel, None)) is not None})
+    error.observation = {'childExit': result.returncode}
+    return error
 
 
 def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
@@ -29,13 +41,14 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
         if len(failures) < 8:
             failures.append(error)
     options['start_new_session'] = True
-    process = subprocess.Popen(argv, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options)
+    process = None
     forwarding = threading.Event()
     forwarding.set()
 
     def captured(channel):
-        return bytes(captures[channel][0] + captures[channel][1]).decode('utf-8', errors='replace')
+        first, last = captures[channel]
+        separator = OMITTED if sizes[channel] > CAPTURE_LIMIT else b''
+        return (bytes(first) + separator + bytes(last)).decode('utf-8', errors='replace')
 
     def observe(stream, channel):
         pending = bytearray()
@@ -74,29 +87,39 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
         except Exception as error:
             secondary(error)
 
-    readers = [threading.Thread(target=observe, args=(getattr(process, channel), channel), daemon=True)
-               for channel in captures]
-    for reader in readers:
-        reader.start()
+    readers = []
     writer = None
     if input is not None:
         def write():
             try:
                 process.stdin.write(input)
-                process.stdin.close()
-            except BrokenPipeError:
-                pass  # The child's exit/captured cause remains decisive.
             except Exception as error:
                 secondary(error)
+            finally:
+                try:
+                    process.stdin.close()
+                except Exception as error:
+                    secondary(error)
         writer = threading.Thread(target=write, daemon=True)
-        writer.start()
     def evidence(error):
         error.stdout = captured('stdout')
         error.stderr = captured('stderr')
         error.capture_bytes = dict(sizes)
+        if failures:
+            error.observation = {'childChannelFailures': [
+                {'type': type(failure).__name__, 'errno': getattr(failure, 'errno', None)}
+                for failure in failures]}
         return error
     primary = None
     try:
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, **options)
+        readers = [threading.Thread(target=observe, args=(getattr(process, channel), channel), daemon=True)
+                   for channel in captures]
+        for reader in readers:
+            reader.start()
+        if writer is not None:
+            writer.start()
         print(f'RELAY_DEPLOYMENT_PROGRESS={phase};dependency={dependency};state=started', flush=True)
         next_progress = started + interval
         while process.poll() is None:
@@ -125,33 +148,36 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
     finally:
         forwarding.clear()
         try:
-            # The new session binds cleanup to this invocation's own group,
-            # including children retaining a pipe after their parent exited.
-            if process.poll() is None or any(reader.is_alive() for reader in readers):
-                def stop_group(signum):
+            if process is not None:
+                # The new session binds cleanup to this invocation's own group,
+                # including children retaining a pipe after their parent exited.
+                if process.poll() is None or any(reader.is_alive() for reader in readers):
+                    def stop_group(signum):
+                        try:
+                            os.killpg(process.pid, signum)
+                        except ProcessLookupError:
+                            pass
+                    stop_group(signal.SIGTERM)
                     try:
-                        os.killpg(process.pid, signum)
-                    except ProcessLookupError:
-                        pass
-                stop_group(signal.SIGTERM)
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    stop_group(signal.SIGKILL)
-                    process.wait(timeout=5)
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        stop_group(signal.SIGKILL)
+                        process.wait(timeout=5)
+                    for reader in readers:
+                        if reader.ident is not None:
+                            reader.join(timeout=.25)
+                    if any(reader.is_alive() for reader in readers):
+                        stop_group(signal.SIGKILL)
                 for reader in readers:
-                    reader.join(timeout=.25)
-                if any(reader.is_alive() for reader in readers):
-                    stop_group(signal.SIGKILL)
-            for reader in readers:
-                reader.join(timeout=5)
-            if writer is not None:
-                writer.join(timeout=5)
-            if any(reader.is_alive() for reader in readers) or writer is not None and writer.is_alive():
-                raise RuntimeError('lifecycle-child-cleanup-unproven')
-            for channel in captures:
-                if not any(reader.is_alive() for reader in readers):
-                    getattr(process, channel).close()
+                    if reader.ident is not None:
+                        reader.join(timeout=5)
+                if writer is not None and writer.ident is not None:
+                    writer.join(timeout=5)
+                if any(reader.is_alive() for reader in readers) or writer is not None and writer.is_alive():
+                    raise RuntimeError('lifecycle-child-cleanup-unproven')
+                for channel in captures:
+                    if not any(reader.is_alive() for reader in readers):
+                        getattr(process, channel).close()
         except BaseException as cleanup:
             from lifecycle import report_failure
             report_failure(cleanup, 'lifecycle-child-cleanup')

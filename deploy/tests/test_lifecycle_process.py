@@ -1,7 +1,9 @@
 """One real quiet child stays observable without exposing private output."""
 import io
+import os
 from pathlib import Path
 import subprocess
+import signal
 import sys
 import threading
 import time
@@ -74,7 +76,7 @@ def test_nonzero_keeps_bounded_original_channels_and_exit(capsys):
         children.run([sys.executable, '-c', program], phase='owner-apply', dependency='public-deployment-primitive')
     assert stopped.value.returncode == 7
     assert stopped.value.stderr == 'private-cause'
-    assert len(stopped.value.stdout) == children.CAPTURE_LIMIT
+    assert len(stopped.value.stdout) == children.CAPTURE_LIMIT + len(children.OMITTED)
     assert stopped.value.stdout.startswith('early-cause') and stopped.value.stdout.endswith('late-cause')
     assert stopped.value.capture_bytes == {'stdout': 300000, 'stderr': 13}
     public = capsys.readouterr().out
@@ -157,6 +159,15 @@ def test_stdin_and_large_early_stderr_are_drained_together():
     assert stopped.value.capture_bytes['stderr'] == 300011
 
 
+def test_incomplete_input_cannot_be_replaced_by_zero_child_exit():
+    program = 'import os,sys,time;os.close(0);print("private-input-refused",file=sys.stderr,flush=True);time.sleep(.1)'
+    with pytest.raises(RuntimeError, match='^lifecycle-child-channel-unproven$') as stopped:
+        children.run([sys.executable, '-c', program], input=b'x' * 1000000,
+            phase='owner-preflight', dependency='workflow-projection', timeout=5)
+    assert isinstance(stopped.value.__cause__, BrokenPipeError)
+    assert stopped.value.stderr == 'private-input-refused\n'
+
+
 def test_failed_progress_callback_does_not_stop_private_pipe_drain():
     def broken(_line):
         raise OSError('private-display-error')
@@ -200,3 +211,104 @@ def test_progress_forwarder_rejects_unowned_identifiers(line, capsys):
 def test_progress_forwarder_preserves_existing_public_observations(line, capsys):
     owner.child_progress(line)
     assert capsys.readouterr().out == line + '\n'
+
+
+def test_owner_sigterm_preserves_interruption_and_stops_its_child_group(tmp_path):
+    pid = tmp_path / 'child-pid'
+    child = ('import os,pathlib,sys,time;pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));'
+        'print("private-child-cause",file=sys.stderr,flush=True);time.sleep(60)')
+    program = ('import sys;sys.path.insert(0,sys.argv[1]);import owner_lifecycle as owner;'
+        'owner.run=lambda request:owner.public_primitive([sys.executable,"-c",sys.argv[3],sys.argv[2]]);'
+        'sys.exit(owner.main(["fixture"]))')
+    process = subprocess.Popen([sys.executable, '-c', program, str(Path(owner.__file__).parent), str(pid), child],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.monotonic() + 5
+        while not pid.exists() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert pid.exists()
+        os.kill(process.pid, signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        assert process.returncode == 1
+        assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' in stderr
+        assert 'private-child-cause' not in stdout + stderr
+        status = Path('/proc/' + pid.read_text() + '/stat')
+        assert not status.exists() or status.read_text().split()[2] == 'Z'
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
+def test_owner_preserves_custom_sigterm_handler_and_restores_default(monkeypatch):
+    monkeypatch.setattr(owner, 'report_failure', lambda *args: None)
+    observed = []
+    monkeypatch.setattr(owner, 'run', lambda request: observed.append(signal.getsignal(signal.SIGTERM)))
+    previous = signal.getsignal(signal.SIGTERM)
+    try:
+        custom = lambda *_args: None
+        signal.signal(signal.SIGTERM, custom)
+        assert owner.main(['fixture']) == 0 and observed[-1] is custom
+        assert signal.getsignal(signal.SIGTERM) is custom
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        assert owner.main(['fixture']) == 0 and callable(observed[-1])
+        assert signal.getsignal(signal.SIGTERM) == signal.SIG_DFL
+    finally:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def test_reader_startup_failure_still_stops_launched_child(monkeypatch):
+    spawned = []
+    real_spawn = subprocess.Popen
+    def spawn(*args, **options):
+        process = real_spawn(*args, **options)
+        spawned.append(process)
+        return process
+    def fail_start(_thread):
+        raise OSError('original-reader-start-failed')
+    monkeypatch.setattr(children.subprocess, 'Popen', spawn)
+    monkeypatch.setattr(children.threading.Thread, 'start', fail_start)
+    with pytest.raises(OSError, match='original-reader-start-failed'):
+        children.run([sys.executable, '-c', 'import time;time.sleep(60)'],
+            phase='owner-apply', dependency='public-deployment-primitive')
+    assert spawned[0].poll() is not None
+
+
+@pytest.mark.parametrize('kind', [RuntimeError, AssertionError])
+def test_owner_unexpected_failure_keeps_private_cause_behind_safe_terminal(monkeypatch, capsys, kind):
+    original = kind('private-unexpected-cause')
+    recorded = []
+    def fail(_request):
+        raise original
+    monkeypatch.setattr(owner, 'run', fail)
+    monkeypatch.setattr(owner, 'report_failure', lambda error, phase: recorded.append((error, phase)))
+    assert owner.main(['fixture']) == 1
+    assert recorded == [(original, 'owner-lifecycle')]
+    output = capsys.readouterr()
+    assert output.err == 'RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;inspect-state-and-protected-deployment-log\n'
+    assert 'private-unexpected-cause' not in output.out + output.err
+
+
+@pytest.mark.parametrize('kind', ['workflow', 'pool', 'source-admission', 'candidate-imports', 'selected-config'])
+def test_zero_exit_malformed_proof_retains_original_channels(monkeypatch, kind):
+    result = SimpleNamespace(returncode=0, stdout=b'private-malformed-proof', stderr=b'private-original-stderr')
+    monkeypatch.setattr(subprocess, 'run', lambda *args, **kwargs: result)
+    monkeypatch.setattr(owner, 'run_child', lambda *args, **kwargs: result)
+    if kind == 'workflow':
+        invoke = lambda: owner.projection_preflight(Path('/source'), 'a' * 40, Path('/consumer'), {})
+    elif kind == 'pool':
+        from contextlib import nullcontext
+        monkeypatch.setattr(owner, 'acquire', lambda *args: nullcontext())
+        invoke = lambda: owner.pool_preflight(Path('/source'), {'consumer': {'generalRunnerPool': {}},
+            'environment': {'generalRunner': {'name': 'fixture'}}})
+    elif kind == 'source-admission':
+        invoke = lambda: upgrade.admission(['fixed-admission'], 'status')
+    elif kind == 'selected-config':
+        invoke = lambda: owner.selected_config(Path('/source'), b'{}')
+    else:
+        invoke = lambda: upgrade.candidate_checks(Path('/stage'), 'example/project')
+    with pytest.raises((ValueError, RuntimeError)) as stopped:
+        invoke()
+    assert stopped.value.stdout == result.stdout and stopped.value.stderr == result.stderr
+    assert stopped.value.capture_bytes == {'stdout': len(result.stdout), 'stderr': len(result.stderr)}
+    assert stopped.value.observation['childExit'] == 0
