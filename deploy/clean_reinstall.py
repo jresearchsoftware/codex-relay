@@ -19,9 +19,12 @@ import subprocess
 import sys
 
 
-def require(condition, code):
+def require(condition, code, *, observation=None):
     if not condition:
-        raise ValueError('REINSTALL_' + code)
+        error = ValueError('REINSTALL_' + code)
+        if observation is not None:
+            error.observation = observation
+        raise error
 
 
 def present(path):
@@ -820,7 +823,13 @@ def _recovery_bytes(path, root, owner_uid, owner_gid, *, private=False, limit=RE
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                 and before.st_uid == owner_uid and before.st_size <= limit
                 and (not private or (before.st_gid == owner_gid
-                     and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE')
+                     and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE',
+                observation={'check': 'recovery-evidence.metadata',
+                             'expected': {'regularFile': True, 'links': 1, 'uid': owner_uid, 'maxBytes': limit,
+                                          **({'gid': owner_gid, 'mode': 0o600} if private else {})},
+                             'observed': {'regularFile': stat.S_ISREG(before.st_mode), 'links': before.st_nlink,
+                                          'uid': before.st_uid, 'gid': before.st_gid, 'mode': stat.S_IMODE(before.st_mode),
+                                          'bytes': before.st_size}})
         raw = stream.read(limit + 1)
         def stamp(info):
             return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,

@@ -40,7 +40,8 @@ def report_failure(error, phase, *, private_log=None):
                 value = value.replace(secret, '[REDACTED]')
         value = re.sub(r'(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)', '[REDACTED PRIVATE KEY]', value)
         value = re.sub(r'\b(?:github_pat_[A-Za-z0-9_]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]{8,})', '[REDACTED]', value)
-        value = re.sub(r'(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"\x27]?\s*[:=]\s*[\"\x27]?)(?:bearer\s+)?[^\s,\"\x27}]+', r'\1[REDACTED]', value)
+        value = re.sub(r'(?i)("(?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*(?:"|\\?$)', r'\1"[REDACTED]"', value)
+        value = re.sub(r'(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"\x27]?\s*[:=]\s*[\"\x27]?)(?:(?:bearer|basic)\s+)?[^\s,\"\x27}]+', r'\1[REDACTED]', value)
         return value[:65536]
     phase = phase if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', phase) else 'deployment'
     causes, seen, current = [], set(), error

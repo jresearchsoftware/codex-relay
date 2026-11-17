@@ -19,9 +19,12 @@ class ConsumerPublicationError(ValueError):
         self.controller_diagnostic = controller_diagnostic
 
 
-def require(condition, code):
+def require(condition, code, *, observation=None):
     if not condition:
-        raise ConsumerPublicationError(code)
+        error = ConsumerPublicationError(code)
+        if observation is not None:
+            error.observation = observation
+        raise error
 
 
 def _stamp(info):
@@ -38,7 +41,10 @@ def _protected(path, *, directory=False, owner_uid=0, boundary=Path('/')):
     while True:
         info = at.lstat()
         require(not stat.S_ISLNK(info.st_mode) and info.st_uid == owner_uid and not info.st_mode & 0o022,
-                'CONSUMER_PUBLICATION_PATH_UNSAFE')
+                'CONSUMER_PUBLICATION_PATH_UNSAFE',
+                observation={'check': 'consumer-publication.path-metadata',
+                             'expected': {'symlink': False, 'uid': owner_uid, 'writeBits': 0},
+                             'observed': {'symlink': stat.S_ISLNK(info.st_mode), 'uid': info.st_uid, 'writeBits': info.st_mode & 0o022}})
         if at == path:
             target_info = info
             require(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode) and info.st_nlink == 1,

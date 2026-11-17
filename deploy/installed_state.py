@@ -43,7 +43,7 @@ def recipe_digest(source_root):
 # Frozen against the reviewed recipe surface, not an observed installation.
 # Task 244 retains the owned task/module/path/mode/identity catalogue while
 # preserving bounded diagnostic causes and protected manual helper stderr.
-RECIPE_SHA256 = '167ecad2e2340f741b6f6992a658952819de8f59c6275b808a09dfd65c014c99'
+RECIPE_SHA256 = '9adb19e7a795d19e4bd04dbc8a044df55952c4a3af34838c8c643e2e4b2bd64c'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",

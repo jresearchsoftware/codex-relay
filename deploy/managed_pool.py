@@ -26,9 +26,12 @@ class PoolError(RuntimeError):
     pass
 
 
-def require(value, code):
+def require(value, code, *, observation=None):
     if not value:
-        raise PoolError('MANAGED_POOL_' + code)
+        error = PoolError('MANAGED_POOL_' + code)
+        if observation is not None:
+            error.observation = observation
+        raise error
 
 
 def pool_contract(config):

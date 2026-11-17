@@ -18,7 +18,7 @@ from host_preflight import require_probe, HostPreflightError
 def causal_error():
     try:
         try:
-            raise subprocess.CalledProcessError(7, ['fixed-helper'], stderr=b'loader: missing libssl.so\n{"access_token":"opaque-fixture"}\n')
+            raise subprocess.CalledProcessError(7, ['fixed-helper'], stderr=b'loader: missing libssl.so\n{"access_token":"opaque-fixture"}\nAuthorization: Basic opaque-basic-fixture\n{"password":"two word credential"}\n')
         except subprocess.CalledProcessError as child:
             raise RuntimeError('HOST_PROBE_FAILED password=private-fixture') from child
     except RuntimeError as error:
@@ -48,6 +48,7 @@ def test_existing_journal_keeps_redacted_messages_stack_and_child_cause_without_
     assert 'loader: missing libssl.so' in payload['causes'][1]['stderr']
     assert 'CalledProcessError' in payload['stack']
     assert 'private-fixture' not in request['input'] and 'opaque-fixture' not in request['input']
+    assert 'opaque-basic-fixture' not in request['input'] and 'two word credential' not in request['input']
     public = capsys.readouterr().err
     assert 'existing-host-journal' in public and 'libssl.so' not in public and 'HOST_PROBE_FAILED' not in public
 
