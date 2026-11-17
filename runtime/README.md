@@ -130,7 +130,7 @@ cleanup preserve their causes before finalization can remove artifacts. Writer
 receives only safe codes, lifecycle states and references; exception text,
 native response bodies and process output do not enter the public result.
 
-Normal primary diagnostics also retain, independently of diagnostic capture clipping, the last four observed top-level Codex
+Normal primary diagnostics also retain, independently of diagnostic capture clipping, the first and three most recent observed top-level Codex
 JSONL `error` and `turn.failed` messages and their bounded native error fields,
 each redacted and bounded to 4096 UTF-8 bytes, with message clipping,
 omitted-event count and stdout-capture truncation explicit. Native errors without

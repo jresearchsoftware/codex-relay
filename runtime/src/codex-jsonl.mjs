@@ -46,7 +46,7 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
       errorEvents.push({ type: event.type,
         ...(typeof message === 'string' ? { message: boundedDiagnosticText(message, 4096, secrets) } : {}),
         ...(Object.keys(native).length ? { native: captureCausalDiagnostic({ native, secrets }, { compact: true }).native } : {}) });
-      if (errorEvents.length > 4) { errorEvents.shift(); omittedErrors += 1; }
+      if (errorEvents.length > 4) { errorEvents.splice(1, 1); omittedErrors += 1; }
     }
     let candidate;
     if (event.type === 'task_result' || event.kind === 'task_result') candidate = event.result ?? event;

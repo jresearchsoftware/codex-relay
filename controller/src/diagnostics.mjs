@@ -336,7 +336,7 @@ function safePath(value, secrets) { return typeof value === "string" ? boundedDi
 // is protected diagnostic evidence, not a replacement for the child exit code.
 function codexErrorDiagnostics(stdout, stdoutTruncated, secrets, streamed) {
   if (streamed && Array.isArray(streamed.events)) return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true,
-    omittedEvents: streamed.omittedEvents ?? 0, events: streamed.events.slice(-4).map(event => ({ type: event.type, ...(event.native ? { native: observedPrivateText(event.native, 4096, secrets) } : {}), message: typeof event.message === 'object' && typeof event.message?.text === 'string'
+    omittedEvents: streamed.omittedEvents ?? 0, events: (streamed.events.length <= 4 ? streamed.events : [streamed.events[0], ...streamed.events.slice(-3)]).map(event => ({ type: event.type, ...(event.native ? { native: observedPrivateText(event.native, 4096, secrets) } : {}), message: typeof event.message === 'object' && typeof event.message?.text === 'string'
       ? { ...boundedDiagnosticText(event.message.text, 4096, secrets), bytes: event.message.bytes, truncated: event.message.truncated === true }
       : boundedDiagnosticText(event.message, 4096, secrets) })) };
   const events = [];
@@ -351,7 +351,7 @@ function codexErrorDiagnostics(stdout, stdoutTruncated, secrets, streamed) {
       : value?.type === 'turn.failed' ? value.error?.message : undefined;
     if (typeof message !== 'string') continue;
     events.push({ type: value.type, message: boundedDiagnosticText(message, 4096, secrets) });
-    if (events.length > 4) { events.shift(); omittedEvents += 1; }
+    if (events.length > 4) { events.splice(1, 1); omittedEvents += 1; }
   }
   return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true, omittedEvents, events };
 }
