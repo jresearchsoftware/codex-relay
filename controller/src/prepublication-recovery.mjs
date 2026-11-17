@@ -5,7 +5,7 @@ import { revalidateAuthority } from './live-authority.mjs';
 import { dispatchRunName } from './launch-metadata.mjs';
 import { REMOTE } from './trusted-git.mjs';
 import { ATTEMPT_RECORD_BYTES } from './attempt-store.mjs';
-import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { failureDiagnosticFromDetails, captureCausalDiagnostic } from './diagnostics.mjs';
 
 export const prepublicationAuthorizationBody = binding =>
   `Authorize one terminal prepublication Writer recovery:\n\n\`\`\`json\n${JSON.stringify(binding, null, 2)}\n\`\`\``;
@@ -154,16 +154,30 @@ export async function recoverPrepublication({ api, store, publisher, journal, co
     if (Buffer.byteLength(JSON.stringify(r, null, 2)) + 64 * 1024 > ATTEMPT_RECORD_BYTES) fail('ATTEMPT_RECORD_TOO_LARGE');
     await store.put(r.envelope.runId, r);
     let pushDiagnostic = null, observationDiagnostic = null, observed = null;
-    try { await g.push(); } catch (error) { pushDiagnostic = publicationDiagnostic(error, 'push'); }
+    try { await g.push(); } catch (error) {
+      pushDiagnostic = publicationDiagnostic(error, 'push');
+      r.prepublicationRecoveryEvidence = { push: captureCausalDiagnostic({ error, executionId: r.envelope.attemptId, phase: 'writer-publication', operation: 'prepublication-push', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }, { compact: true, maxBytes: 4096 }) };
+    }
     try { observed = await g.observe(); }
-    catch (error) { observationDiagnostic = publicationDiagnostic(error, 'observe', 'GIT_OBSERVATION_UNAVAILABLE'); }
+    catch (error) {
+      observationDiagnostic = publicationDiagnostic(error, 'observe', 'GIT_OBSERVATION_UNAVAILABLE');
+      r.prepublicationRecoveryEvidence = { ...r.prepublicationRecoveryEvidence, observe: captureCausalDiagnostic({ error, executionId: r.envelope.attemptId, phase: 'writer-publication', operation: 'prepublication-observe', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }, { compact: true, maxBytes: 4096 }) };
+    }
     const published = !observationDiagnostic && observed === binding.head;
     recovery.publication = { status: published ? 'PUBLISHED' : 'PUBLICATION_UNCERTAIN',
       publishedHead: published ? binding.head : null, observedHead: exactSha(observed) ? observed : null,
       completedAt: now(), ...(pushDiagnostic ? { pushDiagnostic } : {}),
       ...(observationDiagnostic ? { observationDiagnostic } : {}) };
-    await store.put(r.envelope.runId, r);
-    if (!published) fail('PUBLICATION_UNCERTAIN');
+    try { await store.put(r.envelope.runId, r); }
+    catch (error) {
+      Object.defineProperty(error, 'native', { value: { ...error.native, prepublicationRecovery: r.prepublicationRecoveryEvidence }, configurable: true });
+      throw error;
+    }
+    if (!published) {
+      const error = Object.assign(new Error('PUBLICATION_UNCERTAIN'), { code: 'PUBLICATION_UNCERTAIN' });
+      Object.defineProperty(error, 'native', { value: { prepublicationRecovery: r.prepublicationRecoveryEvidence } });
+      throw error;
+    }
     return finish(recovery);
   });
 }

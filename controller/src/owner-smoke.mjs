@@ -3,7 +3,7 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CONSUMER, CONSUMER_DIGEST, executionConsumer } from '../../consumer/consumer.mjs';
-import { VERSION, exactSha, fail } from './execution-contract.mjs';
+import { VERSION, exactSha } from './execution-contract.mjs';
 import { CODEX_TERMINATION_GRACE_MS, runGovernedCodexTask } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 
@@ -22,11 +22,20 @@ Do not delegate or start helpers.
 `;
 const KEYS = ['approvedHead', 'attemptId', 'consumerDigest', 'kind', 'repository', 'version'].sort().join('\0');
 
+function smokeReject(code, check, observed) {
+  const error = Object.assign(new Error(code), { code });
+  Object.defineProperty(error, 'observation', { value: { check, expected: 'verified fixed owner-smoke binding', observed } });
+  throw error;
+}
+
 export function validateOwnerSmokeRequest(value) {
   if (!value || Object.keys(value).sort().join('\0') !== KEYS || value.version !== VERSION
       || value.kind !== 'owner-smoke' || value.repository !== CONSUMER.repository
       || value.consumerDigest !== CONSUMER_DIGEST || !/^event-[1-9][0-9]{11,12}$/.test(value.attemptId ?? '')
-      || !exactSha(value.approvedHead)) fail('OWNER_SMOKE_REQUEST_INVALID');
+      || !exactSha(value.approvedHead)) smokeReject('OWNER_SMOKE_REQUEST_INVALID', 'owner-smoke-request', {
+        present: Boolean(value), exactFields: Boolean(value && Object.keys(value).sort().join('\0') === KEYS),
+        versionMatches: value?.version === VERSION, repositoryMatches: value?.repository === CONSUMER.repository,
+        consumerMatches: value?.consumerDigest === CONSUMER_DIGEST, headIsExact: exactSha(value?.approvedHead) });
   return value;
 }
 
@@ -45,30 +54,32 @@ export async function assertOwnerSmokeCaller(request, {
     operation = 'owner-smoke-parent-command';
     const argv = (await read(`/proc/${parentPid}/cmdline`, 'utf8')).split('\0').filter(Boolean);
     if (argv.length !== 4 || argv[1] !== producer || argv[2] !== '--approved-head' || argv[3] !== request.approvedHead
-        || (await metadata(`/proc/${parentPid}`)).uid !== uid) fail('SMOKE_OWNER_TRANSITION_REQUIRED');
+        || (await metadata(`/proc/${parentPid}`)).uid !== uid) smokeReject('SMOKE_OWNER_TRANSITION_REQUIRED', operation, {
+          argumentCount: argv.length, producerMatches: argv[1] === producer,
+          approvedHeadMatches: argv[3] === request.approvedHead });
     operation = 'owner-smoke-parent-identity';
     const status = await read(`/proc/${parentPid}/status`, 'utf8');
     const ancestor = /^PPid:\s+([1-9][0-9]*)$/m.exec(status)?.[1];
     if (!ancestor || (await metadata(`/proc/${ancestor}`)).uid !== 0
-        || (await read(`/proc/${ancestor}/comm`, 'utf8')).trim() !== 'runuser') fail('SMOKE_OWNER_TRANSITION_REQUIRED');
+        || (await read(`/proc/${ancestor}/comm`, 'utf8')).trim() !== 'runuser') smokeReject('SMOKE_OWNER_TRANSITION_REQUIRED', operation, { ancestorObserved: Boolean(ancestor), authorizedTransition: false });
     operation = 'owner-smoke-producer-binding';
-    if ((await metadata(producer)).uid !== 0) fail('SMOKE_INSTALLED_HEAD_MISMATCH');
+    if ((await metadata(producer)).uid !== 0) smokeReject('SMOKE_INSTALLED_HEAD_MISMATCH', operation, { producerRootOwned: false });
     const binding = await load(pathToFileURL(producer).href);
     operation = 'owner-smoke-root-command';
     const rootArgv = (await read(`/proc/${ancestor}/cmdline`, 'utf8')).split('\0').filter(Boolean);
     if (rootArgv.length !== 8 || rootArgv[0] !== '/usr/sbin/runuser' || rootArgv[1] !== '-u'
         || rootArgv[2] !== binding.OWNER_SMOKE_RUNNER_USER || rootArgv[3] !== '--'
-        || rootArgv.slice(4).join('\0') !== argv.join('\0')) fail('SMOKE_OWNER_TRANSITION_REQUIRED');
+        || rootArgv.slice(4).join('\0') !== argv.join('\0')) smokeReject('SMOKE_OWNER_TRANSITION_REQUIRED', operation, { argumentCount: rootArgv.length, commandMatches: rootArgv[0] === '/usr/sbin/runuser', runnerMatches: rootArgv[2] === binding.OWNER_SMOKE_RUNNER_USER, forwardedArgumentsMatch: rootArgv.slice(4).join('\0') === argv.join('\0') });
     operation = 'owner-smoke-current-release';
     const release = join(binding.OWNER_SMOKE_RELEASE_ROOT, request.approvedHead);
-    if (await canonical(binding.OWNER_SMOKE_CURRENT) !== release || dirname(reviewed) !== release) fail('SMOKE_INSTALLED_HEAD_MISMATCH');
+    if (await canonical(binding.OWNER_SMOKE_CURRENT) !== release || dirname(reviewed) !== release) smokeReject('SMOKE_INSTALLED_HEAD_MISMATCH', operation, { currentReleaseMatches: false });
     // The fixed root-only helper verified the protected manifest before this
     // exact runuser transition. Reuse that gate: the runner is deliberately
     // unable to read root:root 0640 installation metadata itself.
     operation = 'owner-smoke-scratch-binding';
     const root = executionConsumer().paths.workRoot;
     const cwd = join(root, request.attemptId);
-    if (await canonical(root) !== root || await canonical(cwd) !== cwd || !(await metadata(cwd)).isDirectory()) fail('SMOKE_WORK_ROOT_UNSAFE');
+    if (await canonical(root) !== root || await canonical(cwd) !== cwd || !(await metadata(cwd)).isDirectory()) smokeReject('SMOKE_WORK_ROOT_UNSAFE', operation, { canonicalScratchBindingMatches: false });
     return cwd;
   } catch (error) {
     error.details = { ...error.details, operation, boundary: 'dispatcher',

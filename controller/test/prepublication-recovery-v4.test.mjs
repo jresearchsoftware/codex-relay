@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { readAuthority } from '../src/live-authority.mjs';
-import { prepublicationState, recoverPrepublication } from '../src/prepublication-recovery.mjs';
+import { prepublicationState, recoverPrepublication, prepublicationAuthorizationBody } from '../src/prepublication-recovery.mjs';
 import { dispatchRunName } from '../src/launch-metadata.mjs';
 import { REPOSITORY, OWNER, WRITER, REVIEWER, VERSION, digest } from '../src/execution-contract.mjs';
 import { admissionBinding, authoritySourceDigest, canonicalAuthorityJson, renderAuthorityRecord, sha256Body } from '../../contracts/src/github-authority.mjs';
@@ -141,4 +141,39 @@ test('v4 inspection alone never authorizes collection or publication', async () 
     publisher: { inspect: () => assert.fail('No owner authorization') },
     store: { put: () => assert.fail('No owner authorization') } }), { code: 'RECOVERY_OWNER_AUTHORIZATION_REQUIRED' });
   assert.equal(f.r.prepublicationRecovery, undefined);
+});
+
+test('uncertain prepublication retains separate native causes privately and never pushes on replay', async () => {
+  const f = await fixture(); const { binding } = await f.state();
+  const identity = f.api.userIdentity; const get = f.api.get;
+  f.api.userIdentity = async login => login === OWNER ? { login: OWNER, id: 59, type: 'User' } : identity(login);
+  f.api.get = async path => path === '/issues/comments/901' ? {
+    id: 901, user: { login: OWNER, id: 59, type: 'User' },
+    issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`,
+    created_at: '2026-09-04T12:03:00Z', updated_at: '2026-09-04T12:03:00Z',
+    body: prepublicationAuthorizationBody(binding)
+  } : get(path);
+  let pushes = 0; let attempted = false;
+  const options = { api: f.api, journal: f.journal, record: f.r,
+    request: { head, authorizationId: 901 }, store: { put: async () => {} },
+    collect: async () => ({ head, clean: true, bundle: 'fixture' }),
+    checkPullRequest: async () => {}, finish: () => assert.fail('uncertain publication'),
+    publisher: { inspect: async (_e, _bundle, run) => run({
+      head, remoteHead: null, commits: [head], ancestor: async () => true,
+      push: async () => { attempted = true; pushes++; throw Object.assign(new Error('native prepublication EPIPE'), { code: 'EPIPE', stderr: 'token=private-fixture-secret' }); },
+      observe: async () => { if (!attempted) return null; throw Object.assign(new Error('native post-push observation ENETDOWN'), { code: 'ENETDOWN' }); }
+    }) }
+  };
+  await assert.rejects(recoverPrepublication(options), error => {
+    assert.equal(error.code, 'PUBLICATION_UNCERTAIN');
+    assert.ok(!JSON.stringify(error).includes('native prepublication EPIPE'));
+    return true;
+  });
+  const evidence = JSON.stringify(f.r.prepublicationRecoveryEvidence);
+  assert.match(evidence, /native prepublication EPIPE/);
+  assert.match(evidence, /native post-push observation ENETDOWN/);
+  assert.ok(!evidence.includes('private-fixture-secret'));
+  assert.ok(!JSON.stringify((await f.state()).recovery).includes('native prepublication EPIPE'));
+  await assert.rejects(recoverPrepublication(options), { code: 'PUBLICATION_UNCERTAIN' });
+  assert.equal(pushes, 1);
 });

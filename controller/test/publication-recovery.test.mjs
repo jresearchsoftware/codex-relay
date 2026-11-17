@@ -309,6 +309,24 @@ test('a nonzero recovery push with an exact successful observation reconciles wi
   await f.broker.invoke(request); assert.equal(f.pushes(), 2);
 });
 
+test('reconciled recovery retains original native cause only in protected record evidence', async t => {
+  const f = await uncertain(t); const { request } = await f.authorize();
+  f.failPush({ afterPush: true, error: Object.assign(new Error('original native accepted-push EPIPE'), {
+    code: 'EPIPE', stderr: 'native socket closed; token=fixture-secret-value'
+  }) });
+  const result = await f.broker.invoke(request);
+  const record = await f.store.get(99);
+  const evidence = record.publicationRecoveryEvidence[request.authorizationId].push;
+  assert.match(JSON.stringify(evidence), /original native accepted-push EPIPE/);
+  assert.ok(!JSON.stringify(evidence).includes('fixture-secret-value'));
+  assert.ok(Buffer.byteLength(JSON.stringify(evidence)) <= 4096);
+  assert.ok(!JSON.stringify(result).includes('original native accepted-push'));
+  const state = await f.broker.invoke({ operation: 'publication-state', runId: 99,
+    attemptId: f.envelope.attemptId, authorizationId: request.authorizationId });
+  assert.ok(!JSON.stringify(state).includes('original native accepted-push'));
+  await f.broker.invoke(request); assert.equal(f.pushes(), 2);
+});
+
 for (const failedPush of [false, true]) {
   test(`ambiguous observation after a ${failedPush ? 'failed' : 'successful'} recovery push retains diagnostics and cannot retry`, async t => {
     const f = await uncertain(t); const { request } = await f.authorize();

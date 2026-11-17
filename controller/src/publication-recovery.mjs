@@ -2,7 +2,7 @@ import { CONSUMER } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, positive, exactSha, fail } from './execution-contract.mjs';
 import { revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
 import { dispatchRunName } from './launch-metadata.mjs';
-import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { failureDiagnosticFromDetails, captureCausalDiagnostic } from './diagnostics.mjs';
 import { ATTEMPT_RECORD_BYTES } from './attempt-store.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { assertStep, assertPrStepTitle } from './step-metadata.mjs';
@@ -53,11 +53,13 @@ function diagnostic(error, operation, fallback = 'GIT_UNKNOWN_FAILURE') {
   { fallbackCode: 'PUBLICATION_UNCERTAIN', fallbackStage: 'writer-publication', fallbackBoundary: 'writer-publication' });
 }
 
-function replay(recovery) {
+function replay(recovery, evidence) {
   if (recovery.result?.status === 'PUBLISHED') return recovery.result;
-  throw Object.assign(new Error('PUBLICATION_UNCERTAIN'), { code: 'PUBLICATION_UNCERTAIN', details: {
+  const error = Object.assign(new Error('PUBLICATION_UNCERTAIN'), { code: 'PUBLICATION_UNCERTAIN', details: {
     failureDiagnostic: recovery.result?.failureDiagnostic ?? diagnostic(null, 'push', 'RECOVERY_AUTHORIZATION_CONSUMED')
   } });
+  if (evidence) Object.defineProperty(error, 'native', { value: { publicationRecovery: evidence } });
+  throw error;
 }
 
 // Read-only access uses the existing exact recovery authorization. It neither
@@ -69,7 +71,7 @@ export async function authorizeRecoveryCollection({ api, record: r, authorizatio
   const index = recoveries.findIndex(value => value.authorizationId === authorizationId);
   const consumed = index < 0 ? null : recoveries[index];
   if (consumed) {
-    const result = replay(consumed);
+    const result = replay(consumed, r.publicationRecoveryEvidence?.[authorizationId]);
     const intent = consumed.binding;
     const previous = index > 0 ? recoveries[index - 1] : null;
     if (e.route !== 'auto' || r.publicationIntent || !exactSha(intent?.head)
@@ -102,7 +104,7 @@ export async function recoverPublication({ api, store, publisher, record: r, req
   if (!positive(request.authorizationId)) fail('RECOVERY_OWNER_AUTHORIZATION_REQUIRED');
   const recoveries = r.publicationRecoveries ?? [];
   const consumed = recoveries.find(value => value.authorizationId === request.authorizationId);
-  if (consumed) return replay(consumed);
+  if (consumed) return replay(consumed, r.publicationRecoveryEvidence?.[request.authorizationId]);
   const intent = r.publicationIntent;
   if (e.route !== 'auto' || r.finalHead || !intent || !exactSha(intent.head)
     || (intent.previous !== null && !exactSha(intent.previous)) || intent.head === intent.previous
@@ -137,11 +139,21 @@ export async function recoverPublication({ api, store, publisher, record: r, req
     if (Buffer.byteLength(JSON.stringify(r, null, 2)) + 16384 > ATTEMPT_RECORD_BYTES) fail('ATTEMPT_RECORD_TOO_LARGE');
     await store.put(e.runId, r);
 
+    // Two compact causes share the existing 16-KiB pre-mutation reserve with
+    // the unchanged safe push/observe/failure projections.
+    let evidence;
     let pushDiagnostic = null;
-    try { await g.push(); } catch (error) { pushDiagnostic = diagnostic(error, 'push'); }
+    try { await g.push(); } catch (error) {
+      pushDiagnostic = diagnostic(error, 'push');
+      evidence = { push: captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'writer-publication', operation: 'recovery-push', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }, { compact: true, maxBytes: 2048 }) };
+    }
     let observed = null; let observationDiagnostic = null;
     try { observed = await g.observe(); }
-    catch (error) { observationDiagnostic = diagnostic(error, 'observe', 'GIT_OBSERVATION_UNAVAILABLE'); }
+    catch (error) {
+      observationDiagnostic = diagnostic(error, 'observe', 'GIT_OBSERVATION_UNAVAILABLE');
+      evidence = { ...evidence, observe: captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'writer-publication', operation: 'recovery-observe', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }, { compact: true, maxBytes: 2048 }) };
+    }
+    if (evidence) r.publicationRecoveryEvidence = { ...r.publicationRecoveryEvidence, [request.authorizationId]: evidence };
     const published = !observationDiagnostic && observed === intent.head;
     recovery.completedAt = now();
     recovery.result = { status: published ? 'PUBLISHED' : 'PUBLICATION_UNCERTAIN',
@@ -151,7 +163,11 @@ export async function recoverPublication({ api, store, publisher, record: r, req
       ...(!published ? { failureDiagnostic: pushDiagnostic ?? observationDiagnostic
         ?? diagnostic(null, 'observe', observed === null ? 'GIT_OBSERVATION_UNCERTAIN' : 'GIT_REMOTE_HEAD_CONFLICT') } : {}) };
     if (published) { r.publishedHead = intent.head; r.publicationIntent = null; }
-    await store.put(e.runId, r);
-    return replay(recovery);
+    try { await store.put(e.runId, r); }
+    catch (error) {
+      Object.defineProperty(error, 'native', { value: { ...error.native, publicationRecovery: evidence }, configurable: true });
+      throw error;
+    }
+    return replay(recovery, evidence);
   });
 }

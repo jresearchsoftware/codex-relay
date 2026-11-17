@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { submit } from '../src/manual-outcome-client.mjs';
+import { submit, manualClientFailureSummary } from '../src/manual-outcome-client.mjs';
 
 // Native Unix-socket client qualification. This does not install or impersonate
 // a root Writer service, publish GitHub content, or read any credential file.
@@ -87,9 +87,30 @@ test('fixed client CLI rejects extra arguments and oversized streamed input with
     const result = spawnSync(process.execPath, [cli, ...arguments_], { input, encoding: 'utf8',
       env: { PATH: '/usr/bin:/bin', RELAY_MANUAL_OUTCOME_SOCKET: '/nonexistent-fixed-fixture.sock' }, timeout: 5000 });
     assert.equal(result.status, 1);
-    assert.equal(result.stderr, '');
+    const diagnostic = JSON.parse(result.stderr);
+    assert.equal(diagnostic.code, 'MANUAL_SUBMISSION_INVALID');
+    assert.equal(diagnostic.event, 'manual_outcome_transport_failure');
+    assert.ok(!result.stderr.includes('private-input'));
     assert.deepEqual(JSON.parse(result.stdout), { error_code: 'MANUAL_PUBLICATION_UNCERTAIN' });
   }
+});
+
+test('native client preserves bounded private receipt metadata and exposes only safe errno/counts', native, async t => {
+  const privateText = 'private-native-receipt ';
+  const path = await socketFixture(t, socket => {
+    socket.resume(); socket.on('end', () => socket.end(privateText.repeat(2000)));
+  });
+  await assert.rejects(submit(path, Buffer.from('{}')), error => {
+    assert.equal(error.code, 'MANUAL_RECEIPT_INVALID');
+    assert.ok(error.native.receipt.value.includes(privateText));
+    assert.ok(error.native.receipt.captured <= 4096);
+    assert.equal(error.native.receipt.truncated, true);
+    assert.ok(!JSON.stringify(error).includes(privateText));
+    const summary = manualClientFailureSummary(error);
+    assert.equal(summary.receiptText, 'unavailable_without_standalone_redactor');
+    assert.ok(!JSON.stringify(summary).includes(privateText));
+    return true;
+  });
 });
 
 test('manual root helper refuses a nonroot caller before Writer access', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async t => {
