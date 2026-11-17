@@ -16,7 +16,7 @@ sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
-from lifecycle import execute, require, progress
+from lifecycle import execute, require, progress, report_failure
 import git_intent
 import repository_source
 
@@ -575,6 +575,7 @@ def main(arguments=None, token_stream=None):
         return 0
     except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError,
             http.client.HTTPException) as error:
+        report_failure(error, 'owner-lifecycle')
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
         from git_intent import GitIntentError

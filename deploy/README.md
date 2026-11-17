@@ -1431,10 +1431,27 @@ the original operation result and private evidence.
 Backend progress names the observed package, artifact, activation or verification
 dependency without copying task output or configuration into Actions. Long waits
 report elapsed time for that child/dependency. `child-completed` or a zero backend
-exit alone is not installed verification. The protected backend log path is shown
-before execution, and retains the complete backend failure evidence. A failed
+exit alone is not installed verification. A logical protected-log reference is
+shown before execution; the exact host path stays in the existing protected log
+and causal evidence. The authorized host reader resolves the logical filename
+under the existing configured deployment log root. The log retains the complete
+backend failure evidence. A failed
 guard release or recovery-state write remains a visible warning alongside the
 original failure and requires inspection before recovery.
+
+Failed Python deployment, owner lifecycle, host preflight and source/package
+qualification operations retain bounded original messages, stacks, OS causes and
+child stdout/stderr with credential redaction. Once a protected backend log exists,
+the existing log receives the causal record. Earlier target failures use the
+existing host journal under `codex-relay-deployment` when available; successful
+submission does not claim a journal readback. The public failure points to that
+channel and preserves its original high-level code. An absent journal, unavailable
+source recorder or failed write reports an independent recorder-failure reason;
+it does not invent another root directory or hide the operation failure. No host
+store is configured for an ordinary unprivileged standalone process. Inspect the
+existing protected record through the authorized host channel before claiming
+that a deployed failure was captured. Optional negative eligibility lookups retain
+their existing fallback/classification and add no qualification gate.
 
 Repeated lifecycle runs on the same configuration SHA have distinct run numbers
 and rerun attempts in the generated run name. The job summary separates the

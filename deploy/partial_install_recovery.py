@@ -106,7 +106,8 @@ def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
 def remote_inspect(target, key, config, operation, retained):
     # Same bounded protected transport as the original recovery adapter. No
     # worker input or installed old controller chooses executable code here.
-    program = ('import json,sys\ncontext={"__name__":"bounded_observer"}\nexec('
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + ('import json,sys\ncontext={"__name__":"bounded_observer"}\nexec('
         + repr(Path(bounded.__file__).read_text()) + ',context)\n'
         'import types\nm=types.ModuleType("bounded_recovery");m.__dict__.update(context);'
         'sys.modules["bounded_recovery"]=m\n'
@@ -114,7 +115,7 @@ def remote_inspect(target, key, config, operation, retained):
         + repr(source_inspect.getsource(require) + '\n' + source_inspect.getsource(old_reviewer)
                + '\n' + source_inspect.getsource(inspect)) + ',scope)\n'
         'try:\n p=json.load(sys.stdin);print(json.dumps(scope["inspect"](**p)))\n'
-        'except Exception as error:\n import re\n code=str(error);'
+        'except Exception as error:\n report_failure(error,"partial-install-recovery")\n import re\n code=str(error);'
         'print(code if re.fullmatch(r"(?:PARTIAL_INSTALL|BOUNDED_RECOVERY)_[A-Z_]{1,100}",code) '
         'else "PARTIAL_INSTALL_PROOF_UNAVAILABLE",file=sys.stderr);sys.exit(1)\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],
@@ -276,10 +277,10 @@ def run(args, root, identity, *, guard_factory=None):
             **({'controller_diagnostic': error.controller_diagnostic} if hasattr(error, 'controller_diagnostic') else {}),
             'hostMutation': 'possible' if args._partial_mutation_started else False,
             'automaticRetrySafe': False, 'recovery': 'same-operation-evidence-requires-readback',
-            'log': str(args.log_root),
+            'log': 'protected-deployment-log',
             'next': 'Inspect the named stage and retained operation; keep the frozen Git pair and original evidence. Do not rerun full Apply or edit the gate/history.'},
             sort_keys=True), flush=True)
-        raise ValueError(code) from None
+        raise ValueError(code) from error
 
 
 def _run(args, root, identity, *, guard_factory=None):

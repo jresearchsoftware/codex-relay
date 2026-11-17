@@ -17,6 +17,8 @@ import stat
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
+
 
 MAX_INPUT = 256 * 1024
 MAX_OUTPUT = 64 * 1024
@@ -387,6 +389,18 @@ def _execute(argv, *, env=None, input=None):
     return result
 
 
+def require_probe(result, value, code, resource, remedy='repair-prerequisite-on-existing-installation'):
+    """Keep the classified contract while retaining the failing native output."""
+    try:
+        require(value, code, resource, remedy)
+    except HostPreflightError as error:
+        if result.returncode:
+            raise error from subprocess.CalledProcessError(result.returncode,
+                getattr(result, 'args', 'host-prerequisite-probe'), output=result.stdout,
+                stderr=getattr(result, 'stderr', None))
+        raise
+
+
 def qualify_app(source_root, settings, *, execute=_execute):
     script = Path(source_root) / 'deploy/ansible/roles/relay_runtime/files/relay-app-qualification.py'
     environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'OPENSSL_CONF': '/dev/null',
@@ -401,7 +415,7 @@ def qualify_app(source_root, settings, *, execute=_execute):
         environment['RELAY_MANAGED_POOL_BINDING'] = json.dumps(settings['pool'], separators=(',', ':'))
     result = execute(['/usr/bin/python3', '-I', '-B', str(script)], env=environment)
     code = re.fullmatch(rb'APP_QUALIFICATION_FAIL code=([A-Z][A-Z0-9_]{0,79})\n?', result.stdout)
-    require(result.returncode == 0 and result.stdout.startswith(b'APP_QUALIFICATION_PASS '),
+    require_probe(result, result.returncode == 0 and result.stdout.startswith(b'APP_QUALIFICATION_PASS '),
             'HOST_APP_' + code[1].decode() if code else 'HOST_APP_QUALIFICATION_FAILED',
             settings['role'] + '-app', 'repair-selected-app-installation-or-repository-grant-and-repeat-install')
 
@@ -412,7 +426,7 @@ def qualify_tls(source_root, certificate, private_key, hostname, legacy, *, exec
             '--hostname', hostname]
     if legacy: argv.append('--allow-letsencrypt-lineage')
     result = execute(argv)
-    require(result.returncode == 0, 'HOST_TLS_MATERIAL_INVALID', 'tls-material',
+    require_probe(result, result.returncode == 0, 'HOST_TLS_MATERIAL_INVALID', 'tls-material',
             'repair-configured-certificate-key-chain-or-validity-and-repeat-install')
 
 
@@ -431,7 +445,7 @@ def qualify_ca(source_root, ca_path, *, execute=_execute):
     for certificate in certificates:
         result = execute(['/usr/bin/openssl', 'x509', '-noout', '-checkend', '0', '-fingerprint', '-sha256'], input=certificate)
         match = re.search(rb'(?:SHA256|sha256) Fingerprint=([A-Fa-f0-9:]+)', result.stdout)
-        require(result.returncode == 0 and match is not None, 'HOST_CLIENT_CA_INVALID', 'client-ca')
+        require_probe(result, result.returncode == 0 and match is not None, 'HOST_CLIENT_CA_INVALID', 'client-ca')
         actual.add(match[1].decode().replace(':', '').upper())
     require(actual == expected, 'HOST_CLIENT_CA_IDENTITY_MISMATCH', 'client-ca')
 
@@ -461,7 +475,7 @@ except Exception as e:
     result = execute(['/usr/bin/python3', '-I', '-B', '-c', program, str(source_root)],
                      input=json.dumps(settings, separators=(',', ':')).encode())
     code = re.fullmatch(rb'([A-Z][A-Z0-9_]{0,79})\n?', result.stdout)
-    require(result.returncode == 0, 'HOST_' + code[1].decode() if code else 'HOST_TLS_ACME_PREREQUISITE_UNAVAILABLE',
+    require_probe(result, result.returncode == 0, 'HOST_' + code[1].decode() if code else 'HOST_TLS_ACME_PREREQUISITE_UNAVAILABLE',
             'tls-acme', 'repair-known-acme-dns-container-mount-routing-or-certbot-prerequisite-and-repeat-install')
     value = json.loads(result.stdout)
     require(isinstance(value, dict) and set(value) == {'container', 'certbotGlobalConfig'},
@@ -476,7 +490,7 @@ def qualify_pool(source_root, contract, *, execute=_execute):
     result = execute(['/usr/bin/python3', '-I', '-B', str(source / 'deploy/managed_pool.py'), '--preflight'],
                      input=json.dumps(payload, separators=(',', ':')).encode())
     code = re.fullmatch(rb'(MANAGED_POOL_[A-Z0-9_]{1,80})\n?', result.stderr or b'')
-    require(result.returncode == 0, 'HOST_' + code[1].decode() if code else 'HOST_POOL_INSTALLATION_UNPROVEN',
+    require_probe(result, result.returncode == 0, 'HOST_' + code[1].decode() if code else 'HOST_POOL_INSTALLATION_UNPROVEN',
             'managed-pool-installation', 'repair-owning-pool-installation-prerequisite-on-existing-version-before-repeat-install')
     value = json.loads(result.stdout)
     require(isinstance(value, dict) and set(value) == {'status', 'createParents', 'members'} and value['status'] == 'PASS'
@@ -583,7 +597,7 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
     for label, unit in dict.fromkeys(services):
         require(re.fullmatch(r'[A-Za-z0-9_.@-]{1,160}', unit), 'HOST_SERVICE_INPUT_INVALID', label)
         result = execute(['systemctl', 'show', '--no-pager', '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,User,Group,FragmentPath,DropInPaths', unit])
-        require(result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
+        require_probe(result, result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
         state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
         require(state.get('LoadState') in ('loaded', 'not-found') and state.get('ActiveState') in ('active', 'inactive', 'failed'),
                 'HOST_SERVICE_STATE_AMBIGUOUS', label)
@@ -632,7 +646,7 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
                              modes={0o600, 0o640} if role == 'reviewer' else {0o600}, limit=65536)
         if info is None or not required and not source: continue
         material = execute(['/usr/bin/openssl', 'pkey', '-in', str(probe.physical(path)), '-passin', 'pass:', '-check', '-noout'])
-        require(material.returncode == 0, 'HOST_APP_PRIVATE_KEY_INVALID', label, 'provide-valid-selected-app-key-and-repeat-install')
+        require_probe(material, material.returncode == 0, 'HOST_APP_PRIVATE_KEY_INVALID', label, 'provide-valid-selected-app-key-and-repeat-install')
         script = str(Path(source_root) / 'deploy/ansible/roles/relay_runtime/files/relay-app-qualification.py')
         probe.inspect('app-qualifier-source', script, protected=True, required=True)
         repositories = v['relay_reviewer_repositories'] if role == 'reviewer' else v.get('relay_writer_repositories', [v['relay_github_repository']])
@@ -741,10 +755,16 @@ def main():
         require(len(output) <= MAX_OUTPUT, 'HOST_OUTPUT_TOO_LARGE', 'output')
         print(output)
     except HostPreflightError as error:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from lifecycle import report_failure
+        report_failure(error, 'host-preflight')
         print(json.dumps({'version': 1, 'status': 'FAIL', 'error_code': str(error),
                           'resource': error.resource, 'next_action': error.remedy}, sort_keys=True))
         return 1
-    except Exception:
+    except Exception as error:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from lifecycle import report_failure
+        report_failure(error, 'host-preflight')
         print(json.dumps({'version': 1, 'status': 'FAIL', 'error_code': 'HOST_PREFLIGHT_UNAVAILABLE',
                           'resource': 'host-prerequisites', 'next_action': 'inspect-protected-prerequisite-through-existing-owner-diagnostics'}))
         return 1

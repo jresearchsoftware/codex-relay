@@ -312,12 +312,18 @@ def candidate_checks(root, repository):
         'stage-import', *[str(source / 'controller/src' / name) for name in imports]]
     environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root),
                    'RELAY_CONSUMER_CONFIG': str(root / 'consumer.json'), 'RELAY_REPOSITORY': repository}
-    result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
+    result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    if result.returncode:
+        raise RuntimeError('SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, command, output=result.stdout, stderr=result.stderr)
     require(result.returncode == 0 and result.stdout.strip() == b'INTENT_STAGE_IMPORTS_READY',
             'SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN')
     result = subprocess.run([str(root / 'release/bin/reviewer-mcp-http'), '--help'],
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root)},
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    if result.returncode:
+        raise RuntimeError('SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, result.args, output=result.stdout, stderr=result.stderr)
     require(result.returncode == 0 and b'Usage:' in result.stdout, 'SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN')
 
 
@@ -705,13 +711,15 @@ def remote(action, data):
 
 
 if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         require(os.geteuid() == 0 and sys.argv[1:] in [['describe'], ['prepare'], ['verify'], ['promote']])
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
         raw = sys.stdin.buffer.read(MAX_INPUT + 1)
         require(len(raw) <= MAX_INPUT)
         print(json.dumps(remote(sys.argv[1], json.loads(raw))))
     except Exception as error:
+        from lifecycle import report_failure
+        report_failure(error, 'source-upgrade')
         # The private journal contains proof, environment and paths. Never
         # include it, the request, or child diagnostics in the public failure.
         print(failure_code(error), file=sys.stderr)

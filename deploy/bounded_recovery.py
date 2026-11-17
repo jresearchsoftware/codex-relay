@@ -648,12 +648,13 @@ def fixed_probe(config, binding, source, lease, desired_digest, *, controller_re
 def remote_probe(target, key, config, binding, guard, pool_guard=None):
     """Transport static protected reads from this exact owner source."""
     from ansible_transport import run_target
+    from lifecycle import failure_reporting_source
     require(guard is not None and guard.poll() is None
             and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
-    program = ('context={"__name__":"relay_bounded_recovery"}\nexec(' + repr(Path(__file__).read_text()) + ',context)\n'
+    program = failure_reporting_source() + ('context={"__name__":"relay_bounded_recovery"}\nexec(' + repr(Path(__file__).read_text()) + ',context)\n'
         'import json,sys,re\n'
         'try:\n p=json.load(sys.stdin);print(json.dumps(context["inspect"](p["config"],p["binding"])))\n'
-        'except Exception as error:\n code=str(error);print(code if isinstance(error,ValueError) and '
+        'except Exception as error:\n report_failure(error,"bounded-recovery")\n code=str(error);print(code if isinstance(error,ValueError) and '
         're.fullmatch(r"BOUNDED_RECOVERY_[A-Z_]{1,96}",code) else "BOUNDED_RECOVERY_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],
         input=json.dumps({'config': config, 'binding': binding}), timeout=120)

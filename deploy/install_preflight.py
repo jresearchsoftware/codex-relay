@@ -613,7 +613,8 @@ class PreparedInstall:
             require(False, 'RESULT_UNPROVEN')
 
     def action(self, action, **extra):
-        return self.execute(['/usr/bin/python3', '-I', '-c', Path(__file__).read_text()], payload={
+        from lifecycle import failure_reporting_source
+        return self.execute(['/usr/bin/python3', '-I', '-c', failure_reporting_source() + Path(__file__).read_text()], payload={
             'values': self.values, 'action': action, 'operation': self.operation,
             'target': self.identity['revision'], 'stage': self.stage, 'reinstall': self.reinstall, **extra})
 
@@ -930,8 +931,10 @@ try {
             try:
                 self.execute([*self.admission_prefix(), 'phase', '--operation', self.operation,
                               '--phase', 'recovery-required'])
-            except Exception:
-                pass
+            except Exception as secondary:
+                from lifecycle import report_failure
+                report_failure(secondary, 'predispatch-recovery-state')
+                print('RELAY_DEPLOYMENT_WARNING=predispatch-recovery-state-unproven;primary-failure-preserved', file=sys.stderr)
             raise
 
     def abort(self):
@@ -1009,6 +1012,10 @@ if __name__ == '__main__':
         require(len(raw) <= 1024 * 1024, 'INPUT_SIZE')
         print(json.dumps(remote(json.loads(raw))))
     except Exception as error:
+        if 'report_failure' in globals():
+            report_failure(error, 'install-preflight')
+        else:
+            print('RELAY_DEPLOYMENT_FAILURE_EVIDENCE={"phase":"install-preflight","status":"unavailable","reason":"NO_CONFIGURED_HOST_STORE"}', file=sys.stderr)
         code = str(error)
         print(code if re.fullmatch('INSTALL_PREFLIGHT_[A-Z_]{1,100}', code) else 'INSTALL_PREFLIGHT_UNPROVEN', file=sys.stderr)
         sys.exit(40)

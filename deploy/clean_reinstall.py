@@ -1343,7 +1343,8 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
     require(action in ['prepare', 'decommission', 'complete', 'recover', 'continuation', 'continue'], 'ACTION_INVALID')
     source = Path(__file__).read_text()
     inventory_source = Path(__file__).with_name('inventory.py').read_text()
-    program = source + '\nimport sys\ntry:\n'
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + source + '\nimport sys\ntry:\n'
     program += '    value = __relay_payload\n'
     if 'generalRunnerPool' in config.get('consumer', {}):
         adapter = recovery_admission_program(config, source_base='__REINSTALL_SOURCE_BASE__/')
@@ -1395,6 +1396,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '    result = complete(value["config"], value["revision"]' + pool_arguments + ')\n'
     program += '    print(json.dumps(result, sort_keys=True))\n'
     program += ('except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:\n'
+                '    report_failure(error,"clean-reinstall")\n'
                 '    diagnostic = safe_reinstall_diagnostic(str(error)) or safe_reinstall_diagnostic("REINSTALL_BLOCKED")\n'
                 '    print(diagnostic, file=sys.stderr)\n'
                 '    raise SystemExit(1)\n')

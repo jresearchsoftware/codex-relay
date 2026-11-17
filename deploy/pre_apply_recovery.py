@@ -52,12 +52,13 @@ def inspect(config, operation, retained, *, root=Path('/'), owner_uid=0):
 
 def remote_inspect(target, key, config, operation, retained):
     from ansible_transport import run_target
-    program = ('import json,sys,types,os\nfrom pathlib import Path\n'
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + ('import json,sys,types,os\nfrom pathlib import Path\n'
         'b=types.ModuleType("bounded_recovery");exec(' + repr(Path(bounded.__file__).read_text()) + ',b.__dict__)\n'
         'scope={"bounded":b,"Path":Path,"os":os}\nexec('
         + repr(source_inspect.getsource(require) + '\n' + source_inspect.getsource(inspect)) + ',scope)\n'
         'try:\n p=json.load(sys.stdin);print(json.dumps(scope["inspect"](**p)))\n'
-        'except Exception as error:\n import re\n code=str(error);print(code if '
+        'except Exception as error:\n report_failure(error,"pre-apply-recovery")\n import re\n code=str(error);print(code if '
         're.fullmatch(r"(?:PRE_APPLY_RECOVERY|BOUNDED_RECOVERY)_[A-Z_]{1,100}",code) '
         'else "PRE_APPLY_RECOVERY_PROOF_UNAVAILABLE",file=sys.stderr);sys.exit(1)\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-B', '-c', program],
@@ -102,9 +103,10 @@ def run(args, root, identity, *, guard_factory=None):
             'automaticRetrySafe': False, 'recovery': 'same-operation-evidence-requires-readback',
             'next': 'Inspect the named stage and original operation before retrying; preserve the frozen pair, receipt and history.'}
         if getattr(inner, '_intent_log_path', None):
-            failure['log'] = inner._intent_log_path
+            from lifecycle import public_log_reference
+            failure['log'] = public_log_reference(inner._intent_log_path)
         print('RELAY_INSTALL_FAILURE=' + json.dumps(failure, sort_keys=True), flush=True)
-        raise ValueError(code) from None
+        raise ValueError(code) from error
 
 
 def _run(args, root, identity, *, guard_factory=None):

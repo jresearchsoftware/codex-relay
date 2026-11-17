@@ -246,13 +246,14 @@ def remote_probe(target, key, config, revision, expected_installed, guard, pool_
             and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
     clean_source = Path(retained.__file__).read_text()
     source = Path(__file__).read_text()
-    program = ('import json,sys,types\n'
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + ('import json,sys,types\n'
         'module=types.ModuleType("clean_reinstall");module.__file__="/owner-source/clean_reinstall.py"\n'
         'sys.modules["clean_reinstall"]=module\nexec(' + repr(clean_source) + ',module.__dict__)\n'
         'context={"__name__":"relay_install_recovery"}\nexec(' + repr(source) + ',context)\n'
         'try:\n value=json.load(sys.stdin); result=context["inspect"](value["config"],value["revision"],'
         'value["installed"]);print(json.dumps(result))\n'
-        'except Exception as error:\n code=str(error);print(code if isinstance(error,ValueError) and '
+        'except Exception as error:\n report_failure(error,"install-recovery")\n code=str(error);print(code if isinstance(error,ValueError) and '
         '__import__("re").fullmatch(r"(?:RELAY_INSTALL_RECOVERY_|REINSTALL_)[A-Z_]{1,96}",code) '
         'else "RELAY_INSTALL_RECOVERY_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],

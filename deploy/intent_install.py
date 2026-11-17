@@ -810,10 +810,11 @@ def run(args, primitive, root, identity, *, guard_factory=None):
             'automaticRetrySafe': False, 'next': getattr(error, 'next_action',
                 'Inspect the reported prerequisite or retained operation evidence before retrying.')}
         if inner is not None and getattr(inner, '_intent_log_path', None):
-            failure['log'] = inner._intent_log_path
+            from lifecycle import public_log_reference
+            failure['log'] = public_log_reference(inner._intent_log_path)
         if prerequisites:
             failure['productPrerequisites'] = 'fresh-host-package-preparation-requested'
         if old_restored:
             failure['oldAvailability'] = 'verified-restored-original-open-gate'
         print('RELAY_INSTALL_FAILURE=' + json.dumps(failure, sort_keys=True), flush=True)
-        raise RuntimeError('RELAY_INSTALL_FAILED;stage=' + stage + ';cause=' + code) from None
+        raise RuntimeError('RELAY_INSTALL_FAILED;stage=' + stage + ';cause=' + code) from error
