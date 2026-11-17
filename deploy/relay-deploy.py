@@ -1461,6 +1461,11 @@ def main():
             message = 'INVALID_DEPLOYMENT_CONFIG:' + field[1]
             if field[2]:
                 message += field[2] + 'protected-details'
+            # Preserve source-owned inspection instructions independently of
+            # private paths/observations in the same legacy diagnostic string.
+            for action in ['inspect-file-type-and-access', 'diagnose-operation-before-retry']:
+                if re.search(r'(?:;|;next=)' + action + r'(?:;|$)', candidate):
+                    message += ';next=' + action
         else:
             message = candidate if re.fullmatch(r'(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?:;[A-Za-z0-9_./:;= -]{0,450})?', candidate) else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)
