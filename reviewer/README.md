@@ -253,6 +253,24 @@ retains its reservation and must reconcile against GitHub. Diagnostics identify
 the failure phase without another durable event history. A local lock alone
 does not replace the persistent decisive-POST reservation.
 
+Native transport, parser, OS and SQLite errors retain a bounded original cause
+in the existing `relay_failure_cause` host log, with public code, phase and source
+location. GitHub rejection logs include status, request ID and a bounded native
+response with explicit truncation/read gaps; successful credential responses and
+key bytes are never logged. Request credentials and common credential patterns
+are redacted. Mutation rejection status/request ID is logged immediately before
+returning the existing retry classification; its bounded body capture runs
+separately to avoid delaying a definite-rejection refund. A pending capture with
+no later response record is an explicit body-evidence gap, including service exit
+before capture completes. Writer helper stderr is drained concurrently, bounded and retained
+even on cancellation; helper exit status and receipt failures remain attributable
+to the submitted Task/run. Managed service stdout/stderr is retained by the
+existing systemd journal; standalone process output is the corresponding surface,
+whose actual host retention must be established before claiming durable evidence.
+MCP output keeps its existing safe codes and bounded public
+diagnostics, and no raw host cause enters a review, authority record or Outcome.
+Logging changes no reservation, retry budget or uncertain-publication classification.
+
 The auxiliary Check Run has a proportionate recovery policy. Bounded complete
 paginated `filter=all` readback verifies the exact operation `external_id`, SHA,
 configured App ID/slug, name, status and conclusion. Reuse an existing valid

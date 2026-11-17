@@ -47,6 +47,12 @@ guidance as a source candidate. Its projection invocation freezes accepted Relay
 text is not independently accepted or live-applied by generation. Changed complete
 text retains TH-029 owner reconciliation after accepted integration.
 
+Task 244's capability and Small Improvements candidate was projected against
+accepted `7f95a60c485ccf40025dae78f652adc8df3b19ea` with its
+[owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/244#issuecomment-6943093940).
+The unchanged 8,000-character budget still applies; generation does not verify
+or update live Project Settings.
+
 The first projection used accepted starting source
 `b9de15342525da0144edf18b457f7e640a9bf087` (Shared 7.0.0 adoption, PR 214),
 under the Task 101 Decision above. The native validator consumes its committed
@@ -131,7 +137,7 @@ checks authored/generated instruction coverage with these tabletop fixtures:
 
 | Planning situation | Expected disposition from the instructions |
 | --- | --- |
-| Suitable source Task; relevant bounded candidate on a later result page | Use `repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement`, inspect all pages, read relevant Issues, assess relevance/dependencies/conflicts/ownership, and propose IDs, reasons and receiving scope. |
+| Suitable source Task; relevant bounded candidate on a later result page | Use `repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement`, inspect all pages, assess relevant Issues/dependencies/conflicts/ownership, and automatically include eligible candidates under Relay's standing preference after recording selected IDs, bounded scope and provenance in authenticated receiving authority. |
 | First source-changing Step after analysis; relevant CR | Discover at preparation; a CR still cannot enlarge Task-wide authority. |
 | Analysis-only work | Skip discovery; no tracker prerequisite. |
 | Unchanged subsequent Step or inner correction | Skip ceremonial rescanning; refresh on materially changed scope/information. |
@@ -154,6 +160,8 @@ The following owner/client exercises remain explicit acceptance evidence:
 | --- | --- |
 | Normal discussion and new Task planning | Relevant complete accepted guidance is retrieved JIT; planning alone allocates no Step. |
 | Exact-head PR assessment | Live authority, entire candidate and primary checks/warnings are inspected; native verdict requires the qualified independent capability. |
+| ChatGPT lacks a deployment App; assigned Codex has an already authorized shell/SSH path | Apply the [shared capability distinction](../packages/codex-relay/skill/references/workflow.md#owner-acceptance-and-execution-routes) and accepted shell routing; the missing App alone does not block the Codex operation. No additional probe or credentials are implied. |
+| Required Codex transport is actually unavailable or unauthorized | Stop the affected operation and identify that concrete capability/authority boundary; another client's tools do not supply it. |
 | Dependency/transitive update | Reviewed VibeVM closure is consumed; meaningful output diff or no-op determines the actual settings/cache action. |
 | Missing/stale Sources | Canonical retrieval works without mandatory upload; version uncertainty is visible. |
 | GitHub unavailable | Qualified read-only discussion remains possible; protected actions stop. |

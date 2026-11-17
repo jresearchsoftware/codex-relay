@@ -12,6 +12,71 @@ use std::{
 const API: &str = "https://api.github.com";
 pub const USER_AGENT: &str = "codex-relay-reviewer/0.1.0";
 
+// Native rejected responses belong only in the existing protected host journal.
+// Bound the read, redact actual request credentials before generic redaction,
+// and retain read gaps explicitly. Never call this for token success payloads.
+async fn rejected_response(
+    mut response: reqwest::Response,
+    code: &'static str,
+    secrets: &[&str],
+) -> &'static str {
+    let status = response.status().as_u16();
+    let url = response.url().to_string();
+    let request_id = response
+        .headers()
+        .get("x-github-request-id")
+        .map(|value| format!("{value:?}"));
+    let mut bytes = Vec::new();
+    let mut truncated = false;
+    let mut read_error = None;
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => {
+                let remaining = 4096 - bytes.len();
+                bytes.extend_from_slice(&chunk[..remaining.min(chunk.len())]);
+                if chunk.len() >= remaining {
+                    truncated = true;
+                    break;
+                }
+            }
+            Ok(None) => break,
+            Err(error) => {
+                read_error = Some(format!("{error:?}"));
+                break;
+            }
+        }
+    }
+    let mut cause = format!("status={status} url={url} request_id={request_id:?} native_response_truncated={truncated} native_response_read_error={read_error:?} native_response={}", String::from_utf8_lossy(&bytes));
+    for secret in secrets.iter().filter(|secret| !secret.is_empty()) {
+        cause = cause.replace(secret, "[REDACTED]");
+        if let Some(token) = secret.strip_prefix("Bearer ") {
+            cause = cause.replace(token, "[REDACTED]");
+        }
+    }
+    crate::diagnostics::record(code, "http-response", &cause);
+    code
+}
+
+fn rejected_mutation_response(
+    response: reqwest::Response,
+    code: &'static str,
+    credential: Option<String>,
+) {
+    use tracing::instrument::WithSubscriber;
+    // Preserve the known rejection and return its retry classification before
+    // awaiting diagnostic I/O. Cancellation must not turn a definite 4xx into
+    // an uncertain send. A process exit can leave only this explicit body gap.
+    crate::diagnostics::record(code, "http-response", &format!(
+        "status={} url={} request_id={:?} native_response_capture=pending; body unavailable unless a subsequent bounded response record is present",
+        response.status().as_u16(), response.url(), response.headers().get("x-github-request-id")));
+    tokio::spawn(
+        async move {
+            rejected_response(response, code, &[credential.as_deref().unwrap_or("")]).await;
+        }
+        .with_current_subscriber(),
+    );
+}
+
 /// Authentication and request construction have completed, but no mutation has
 /// been sent. Callers reserve the possible external effect after this boundary.
 pub(crate) struct PreparedMutation {
@@ -118,18 +183,21 @@ impl Github {
         }
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|_| "GITHUB_AUTH_FAILED")?
+            .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?
             .as_secs();
-        let key =
-            fs::read(env::var("GITHUB_APP_PRIVATE_KEY_FILE").map_err(|_| "GITHUB_AUTH_FAILED")?)
-                .map_err(|_| "GITHUB_AUTH_FAILED")?;
-        let claims = json!({"iat":now.saturating_sub(30),"exp":now + 540,"iss":env::var("GITHUB_APP_ID").map_err(|_| "GITHUB_AUTH_FAILED")?});
+        let key = fs::read(
+            env::var("GITHUB_APP_PRIVATE_KEY_FILE")
+                .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?,
+        )
+        .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?;
+        let claims = json!({"iat":now.saturating_sub(30),"exp":now + 540,"iss":env::var("GITHUB_APP_ID").map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?});
         let jwt = encode(
             &Header::new(Algorithm::RS256),
             &claims,
-            &EncodingKey::from_rsa_pem(&key).map_err(|_| "GITHUB_AUTH_FAILED")?,
+            &EncodingKey::from_rsa_pem(&key)
+                .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?,
         )
-        .map_err(|_| "GITHUB_AUTH_FAILED")?;
+        .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?;
         Ok(jwt)
     }
 
@@ -143,11 +211,13 @@ impl Github {
             if let Some(id) = &self.test_installation_id {
                 id.clone()
             } else {
-                env::var("GITHUB_APP_INSTALLATION_ID").map_err(|_| "GITHUB_AUTH_FAILED")?
+                env::var("GITHUB_APP_INSTALLATION_ID")
+                    .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?
             }
             #[cfg(not(test))]
             {
-                env::var("GITHUB_APP_INSTALLATION_ID").map_err(|_| "GITHUB_AUTH_FAILED")?
+                env::var("GITHUB_APP_INSTALLATION_ID")
+                    .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?
             }
         };
         let response = self
@@ -161,26 +231,36 @@ impl Github {
             }))
             .send()
             .await
-            .map_err(|_| "GITHUB_AUTH_FAILED")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?;
         if !response.status().is_success() {
-            return Err("GITHUB_AUTH_FAILED");
+            return Err(rejected_response(response, "GITHUB_AUTH_FAILED", &[&jwt]).await);
         }
         let payload = response
             .json::<Value>()
             .await
-            .map_err(|_| "GITHUB_AUTH_FAILED")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?;
         if payload
             .get("expires_at")
             .and_then(Value::as_str)
             .is_none_or(|value| value.is_empty())
         {
+            crate::diagnostics::record(
+                "GITHUB_TOKEN_LIFETIME_UNAVAILABLE",
+                "token-response",
+                "Successful installation token response lacks expires_at",
+            );
             return Err("GITHUB_TOKEN_LIFETIME_UNAVAILABLE");
         }
         payload
             .get("token")
             .and_then(Value::as_str)
             .map(ToOwned::to_owned)
-            .ok_or("GITHUB_AUTH_FAILED")
+            .ok_or_else(|| {
+                crate::diagnostics::failure(
+                    "GITHUB_AUTH_FAILED",
+                    "Successful installation token response lacks token",
+                )
+            })
     }
 
     async fn request(
@@ -194,15 +274,19 @@ impl Github {
             .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|_| "GITHUB_REQUEST_FAILED")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))?;
         if !response.status().is_success() {
-            return Err(if response.status().as_u16() == 404 {
+            let code = if response.status().as_u16() == 404 {
                 "GITHUB_NOT_FOUND"
             } else {
                 "GITHUB_REQUEST_FAILED"
-            });
+            };
+            return Err(rejected_response(response, code, &[&token]).await);
         }
-        response.json().await.map_err(|_| "GITHUB_REQUEST_FAILED")
+        response
+            .json()
+            .await
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))
     }
 
     async fn prepare_mutation(
@@ -219,7 +303,13 @@ impl Github {
             .timeout(std::time::Duration::from_secs(5))
             .header("Authorization", format!("Bearer {token}"))
             .build()
-            .map_err(|_| MutationFailure::new(failure_code, true, "request-build"))?;
+            .map_err(|error| {
+                MutationFailure::new(
+                    crate::diagnostics::failure(failure_code, error),
+                    true,
+                    "request-build",
+                )
+            })?;
         Ok(PreparedMutation {
             request,
             failure_code,
@@ -230,10 +320,24 @@ impl Github {
         &self,
         prepared: PreparedMutation,
     ) -> Result<Value, MutationFailure> {
-        let mut response = self.client.execute(prepared.request).await.map_err(|_| {
-            // A transport failure does not prove that GitHub rejected the POST.
-            MutationFailure::new(prepared.failure_code, false, "request-send")
-        })?;
+        let credential = prepared
+            .request
+            .headers()
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        let mut response = self
+            .client
+            .execute(prepared.request)
+            .await
+            .map_err(|error| {
+                // A transport failure does not prove that GitHub rejected the POST.
+                MutationFailure::new(
+                    crate::diagnostics::failure(prepared.failure_code, error),
+                    false,
+                    "request-send",
+                )
+            })?;
         let status = response.status().as_u16();
         let request_id = response
             .headers()
@@ -256,26 +360,36 @@ impl Github {
         };
         if !response.status().is_success() {
             // Explicit rejection is different from a timeout or a server error
-            // after a possibly accepted mutation. Never retain response bodies.
-            return Err(failure(
+            // after a possibly accepted mutation. The bounded native response
+            // remains in the host journal, never in public diagnostics.
+            let rejected = failure(
                 "http-response",
                 (400..500).contains(&status) && status != 408,
-            ));
+            );
+            rejected_mutation_response(response, prepared.failure_code, credential);
+            return Err(rejected);
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| failure("response-body", false))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|error| {
+            crate::diagnostics::failure(prepared.failure_code, error);
+            failure("response-body", false)
+        })? {
             if bytes.len() + chunk.len() > 256 * 1024 {
+                crate::diagnostics::record(
+                    prepared.failure_code,
+                    "response-body",
+                    "Native mutation response exceeded 262144 bytes; publication remains uncertain",
+                );
                 return Err(failure("response-body", false));
             }
             bytes.extend_from_slice(&chunk);
         }
         serde_json::from_slice::<crate::strict_json::StrictJson>(&bytes)
             .map(|value| value.0)
-            .map_err(|_| failure("response-body", false))
+            .map_err(|error| {
+                crate::diagnostics::failure(prepared.failure_code, error);
+                failure("response-body", false)
+            })
     }
 
     // Preserve pagination completion metadata without following GitHub URLs.
@@ -290,14 +404,18 @@ impl Github {
             .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|_| "GITHUB_REQUEST_FAILED")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))?;
         if !response.status().is_success() {
-            return Err("GITHUB_REQUEST_FAILED");
+            return Err(rejected_response(response, "GITHUB_REQUEST_FAILED", &[&token]).await);
         }
         let has_next = response
             .headers()
             .get(reqwest::header::LINK)
-            .map(|value| value.to_str().map_err(|_| "GITHUB_RESPONSE_INVALID"))
+            .map(|value| {
+                value
+                    .to_str()
+                    .map_err(|error| crate::diagnostics::failure("GITHUB_RESPONSE_INVALID", error))
+            })
             .transpose()?
             .is_some_and(|links| {
                 links.split(',').any(|link| {
@@ -310,7 +428,7 @@ impl Github {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| "GITHUB_REQUEST_FAILED")?
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))?
         {
             if bytes.len() + chunk.len() > 256 * 1024 {
                 return Err("GITHUB_RESPONSE_TOO_LARGE");
@@ -319,7 +437,7 @@ impl Github {
         }
         let payload = serde_json::from_slice::<crate::strict_json::StrictJson>(&bytes)
             .map(|value| value.0)
-            .map_err(|_| "GITHUB_RESPONSE_INVALID")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_RESPONSE_INVALID", error))?;
         Ok((payload, has_next))
     }
 
@@ -330,11 +448,14 @@ impl Github {
             .header("Authorization", format!("Bearer {jwt}"))
             .send()
             .await
-            .map_err(|_| "GITHUB_REQUEST_FAILED")?;
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))?;
         if !response.status().is_success() {
-            return Err("GITHUB_REQUEST_FAILED");
+            return Err(rejected_response(response, "GITHUB_REQUEST_FAILED", &[&jwt]).await);
         }
-        response.json().await.map_err(|_| "GITHUB_REQUEST_FAILED")
+        response
+            .json()
+            .await
+            .map_err(|error| crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))
     }
 
     pub async fn get_pr(&self, repository: &str, number: i64) -> Result<Value, &'static str> {

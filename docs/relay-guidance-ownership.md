@@ -138,8 +138,15 @@ repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement
 ```
 
 Inspect the complete result set, following pagination when needed, and read
-relevant candidates before notifying the owner with their IDs and proposed
-bounded inclusion. An Issue title is not a discovery key. Check whether the label
+relevant candidates. Task [#244](https://github.com/jresearchsoftware/codex-relay/issues/244)
+records Relay's standing owner preference to assess and include
+eligible relevant candidates automatically at the first suitable source-changing
+Task, first source-changing Step after analysis, or relevant CR. Identify selected
+Issue IDs, bounded corrections and discovery provenance in the receiving
+authenticated Task/Decision/CR authority before execution, and notify the owner
+through that existing record. No separate case-by-case selection prompt is needed
+when this standing preference and valid receiving authority cover the inclusion.
+An Issue title is not a discovery key. Check whether the label
 exists; create or apply it only through an authorized repository label path.
 Unavailable label capability or permissions must be reported; an unlabelled item
 is not queued through SI. Capture deferred corrections in ordinary Issues with
@@ -163,7 +170,7 @@ superseded disposition follows SI-008 with evidence, without claiming a fix.
 
 | Planning or disposition example | Application |
 | --- | --- |
-| Suitable source-changing Task, first source-changing Step after analysis, or relevant CR | Inspect the exact-label open Issues once at preparation; propose only eligible related corrections to the owner. An empty result or no suitable candidate permits the receiving work to proceed. |
+| Suitable source-changing Task, first source-changing Step after analysis, or relevant CR | Inspect the exact-label open Issues once at preparation; automatically assess/include eligible related corrections under the standing preference, recording selected IDs, bounded scope and provenance in authenticated receiving authority before execution. An empty result or no suitable candidate permits the receiving work to proceed. |
 | Analysis-only Task | Skip the SI scan; do not introduce tracker access as an analytical-work prerequisite. |
 | Inner correction or later Step with unchanged scope and no new relevant information | Do not rescan solely as ceremony; refresh when the receiving scope or relevant information materially changes. |
 | Receiver cancelled, drops a candidate or delivers only part | Record the disposition and exact remaining work; keep the source Issue open and discoverable. Scheduling or tests alone do not establish accepted integration. |

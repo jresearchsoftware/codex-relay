@@ -25,10 +25,29 @@ impl PreSendReservation {
 impl Drop for PreSendReservation {
     fn drop(&mut self) {
         if self.armed {
-            if let Ok(store) = self.store.lock() {
-                // Failure retains RESERVED and is therefore safe, though it
-                // requires explicit operator reconciliation rather than retry.
-                let _ = store.retryable_failure(&self.operation);
+            match self.store.lock() {
+                Ok(store) => {
+                    // Failure retains RESERVED and is therefore safe, though it
+                    // requires explicit operator reconciliation rather than retry.
+                    if let Err(error) = store.retryable_failure(&self.operation) {
+                        crate::diagnostics::record(
+                            "INTERNAL_RELAY_ERROR",
+                            "pre-send-refund",
+                            &format!(
+                                "operation={} cause={error:?}; RESERVED retained",
+                                self.operation
+                            ),
+                        );
+                    }
+                }
+                Err(error) => crate::diagnostics::record(
+                    "INTERNAL_RELAY_ERROR",
+                    "pre-send-refund",
+                    &format!(
+                        "operation={} cause={error:?}; RESERVED retained",
+                        self.operation
+                    ),
+                ),
             }
         }
     }
@@ -144,18 +163,32 @@ pub(crate) async fn ensure_check(
     let reservation = app
         .store
         .lock()
-        .map_err(|_| CheckFailure::observed("INTERNAL_RELAY_ERROR"))?
+        .map_err(|error| {
+            CheckFailure::observed(crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))
+        })?
         .reserve_check_send(operation)
-        .map_err(|_| CheckFailure::observed("INTERNAL_RELAY_ERROR"))?
+        .map_err(|error| {
+            CheckFailure::observed(crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))
+        })?
         .ok_or_else(|| CheckFailure::observed("CHECK_RETRY_EXHAUSTED"))?;
     let sent = app.github.send_mutation(prepared).await;
     if let Err(failure) = &sent {
         if failure.safe_to_retry {
             app.store
                 .lock()
-                .map_err(|_| CheckFailure::observed("INTERNAL_RELAY_ERROR"))?
+                .map_err(|error| {
+                    CheckFailure::observed(crate::diagnostics::failure(
+                        "INTERNAL_RELAY_ERROR",
+                        error,
+                    ))
+                })?
                 .restore_check_send(operation, reservation)
-                .map_err(|_| CheckFailure::observed("INTERNAL_RELAY_ERROR"))?;
+                .map_err(|error| {
+                    CheckFailure::observed(crate::diagnostics::failure(
+                        "INTERNAL_RELAY_ERROR",
+                        error,
+                    ))
+                })?;
             return Err(CheckFailure {
                 code: failure.code,
                 diagnostics: failure.diagnostics(),
@@ -183,6 +216,7 @@ pub(crate) async fn ensure_check(
     }
 }
 
+#[tracing::instrument(skip_all, fields(repository = app.repository, pr_number = ?arguments["pr_number"], head = ?arguments["expected_head_sha"], action = ?arguments["action"]))]
 pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value) -> Value {
     let future = async {
         let operation = operation_id(&app.policy.validation_names, arguments);
@@ -190,9 +224,9 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         let known = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .known(&operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         let identity = app.github.app_identity().await?;
         if !identity_matches(&app.policy, &identity) {
             return Err("ACTOR_VERIFICATION_FAILED");
@@ -243,9 +277,9 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         let retained = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .publication_body(&operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         let expected = retained.unwrap_or_else(|| {
             if known.is_some() {
                 legacy_body.clone()
@@ -265,9 +299,9 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
             let (_, frozen) = app
                 .store
                 .lock()
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
                 .recover_publication(&operation, body, &legacy_body)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
             if frozen != body {
                 return Err("REVIEW_CONTRACT_VERIFICATION_FAILED");
             }
@@ -285,9 +319,9 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
         let (reserved, body) = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .reserve_publication(&operation, &current_body, &legacy_body)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if !reserved {
             return Err("PUBLICATION_UNCERTAIN");
         }
@@ -342,9 +376,13 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
                 if failure.safe_to_retry {
                     app.store
                         .lock()
-                        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                        .map_err(|error| {
+                            crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error)
+                        })?
                         .retryable_failure(&operation)
-                        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                        .map_err(|error| {
+                            crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error)
+                        })?;
                 }
                 let mut result = task_authority::error(failure.code);
                 result["structuredContent"] = json!({"operation":operation,"diagnostics":failure.diagnostics(),"operator_action":"Repeat the identical input to reconcile this original operation; an uncertain decisive POST is never repeated."});
@@ -354,7 +392,7 @@ pub(crate) async fn publish_review(app: &RepositoryTarget<'_>, arguments: &Value
     };
     tokio::time::timeout(std::time::Duration::from_secs(60), future)
         .await
-        .unwrap_or(Err("PUBLICATION_UNCERTAIN"))
+        .unwrap_or_else(|error| Err(crate::diagnostics::failure("PUBLICATION_UNCERTAIN", error)))
         .unwrap_or_else(task_authority::error)
 }
 

@@ -16,6 +16,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use unicode_normalization::UnicodeNormalization;
+mod diagnostics;
 mod executable_cr;
 mod github;
 mod loaded_inputs;
@@ -91,6 +92,11 @@ fn repository_schema(repositories: &BTreeSet<String>) -> Value {
     }
 }
 fn err(id: Value, code: i32, message: &str) -> Value {
+    diagnostics::record(
+        message,
+        "json-rpc-rejection",
+        &format!("code={code} message={message}"),
+    );
     json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message}})
 }
 fn tools(validation_names: &[String], repositories: &BTreeSet<String>) -> Value {
@@ -628,8 +634,15 @@ fn new_cr_step_rejection(pr: &Value, arguments: &Value) -> Option<&'static str> 
 async fn mcp(
     State(app): State<App>,
     headers: HeaderMap,
-    Json(strict_json::StrictJson(request)): Json<strict_json::StrictJson>,
+    request: Result<Json<strict_json::StrictJson>, axum::extract::rejection::JsonRejection>,
 ) -> impl IntoResponse {
+    let Json(strict_json::StrictJson(request)) = match request {
+        Ok(request) => request,
+        Err(error) => {
+            diagnostics::failure("MCP_REQUEST_INVALID", &error);
+            return error.into_response();
+        }
+    };
     if headers.get("origin").is_some() {
         return (
             StatusCode::FORBIDDEN,
@@ -686,7 +699,10 @@ async fn mcp(
             .and_then(|()| app.target(arguments));
             let app = match target {
                 Ok(target) => target,
-                Err(code) => return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response(),
+                Err(code) => {
+                    diagnostics::record(code, "input-validation", code);
+                    return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
+                }
             };
             if name == "submit_manual_outcome" {
                 manual_outcome::submit(&app, arguments).await
@@ -723,6 +739,7 @@ async fn mcp(
                             if let Some(code) =
                                 target_binding_rejection(&app.policy, &pr, arguments)
                             {
+                                diagnostics::record(code, "target-binding", code);
                                 return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
                             }
                             let state = pr.get("state").and_then(Value::as_str);
@@ -767,6 +784,11 @@ async fn mcp(
         }
         _ => return (StatusCode::OK, Json(err(id, -32601, "Method not found"))).into_response(),
     };
+    if result["isError"] == true {
+        if let Some(code) = result.pointer("/content/0/text").and_then(Value::as_str) {
+            diagnostics::record(code, "tool-result", code);
+        }
+    }
     (
         StatusCode::OK,
         Json(json!({"jsonrpc":"2.0","id":id,"result":result})),
@@ -1007,7 +1029,14 @@ async fn current_approval_authority(
                 }
             }
             Err(code) if governed => return Err(code),
-            Err(_) => {}
+            Err(code) => diagnostics::record(
+                code,
+                "optional-linked-issue",
+                &format!(
+                    "repository={} issue={candidate}; optional authority inspection failed",
+                    app.repository
+                ),
+            ),
         }
     }
     let Some(issue) = issue else {
@@ -1070,23 +1099,26 @@ fn verify_approval_authority(
     if current["source_pr"].is_object() {
         binding["source_pr"] = current["source_pr"].clone();
     }
-    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    let store = app
+        .store
+        .lock()
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     let original = store
         .authority_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     if let Some(original) = original {
-        let original: Value =
-            serde_json::from_str(&original).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let original: Value = serde_json::from_str(&original)
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if original != binding {
             return Err("AUTHORITY_APPROVAL_STALE_REQUEST");
         }
     } else if prepare {
         store
             .bind_authority(operation, &binding.to_string())
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     } else if store
         .known(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
         .is_some()
         && current["authority"] != current["original_authority"]
     {
@@ -1348,15 +1380,17 @@ async fn main() {
         match loaded_inputs::capture(&loaded_config, &trusted_client_ca) {
             Ok(proof) => {
                 tokio::spawn(async move {
-                    if loaded_inputs::serve(&path, proof).await.is_err() {
+                    if let Err(error) = loaded_inputs::serve(&path, proof).await {
+                        diagnostics::failure("LOADED_INPUT_PROOF_UNAVAILABLE", error);
                         tracing::warn!(event = "loaded_input_proof_unavailable");
                     }
                 });
             }
-            Err(_) => {
+            Err(error) => {
                 // Adoption evidence is optional. Missing or unreadable proof
                 // inputs retain normal service startup and Apply restart proof.
-                // Never disclose filesystem paths or private input diagnostics.
+                // Details remain in the host journal, outside MCP responses.
+                diagnostics::failure("LOADED_INPUT_PROOF_UNAVAILABLE", error);
                 tracing::warn!(event = "loaded_input_proof_unavailable");
             }
         }

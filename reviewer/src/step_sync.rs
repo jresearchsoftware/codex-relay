@@ -337,12 +337,16 @@ fn save_binding(
     operation: &str,
     fresh: &Value,
 ) -> Result<(), &'static str> {
-    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    let store = app
+        .store
+        .lock()
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     let prior = store
         .step_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     if let Some(prior) = prior {
-        let prior = serde_json::from_str::<Value>(&prior).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let prior = serde_json::from_str::<Value>(&prior)
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if !prior["initial_pr_title"].is_string() {
             return Err("LEGACY_STEP_BINDING_REQUIRED");
         }
@@ -352,7 +356,7 @@ fn save_binding(
     } else {
         store
             .bind_step(operation, &fresh.to_string())
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     }
     Ok(())
 }
@@ -406,14 +410,14 @@ async fn verified_state(
     let anchor = app
         .store
         .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
         .step_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     let title = projection_title(linked_issue(&pr)?, args)?;
     let authority = authority_binding(app, &pr, &issue, next)?;
     if let Some(prior_text) = anchor.as_ref() {
-        let mut prior =
-            serde_json::from_str::<Value>(prior_text).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let mut prior = serde_json::from_str::<Value>(prior_text)
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if let Some(initial_title) = prior["initial_pr_title"].as_str() {
             if pr["title"] != initial_title && pr["title"] != title {
                 return Err("AUTHORITY_CHANGED");
@@ -437,9 +441,9 @@ async fn verified_state(
         let upgraded = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .upgrade_step_binding(operation, prior_text, &prior.to_string())
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if !upgraded {
             return Err("INTERNAL_RELAY_ERROR");
         }

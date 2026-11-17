@@ -359,7 +359,7 @@ pub(crate) fn parse(body: &str) -> Result<Option<Value>, &'static str> {
     }
     let (payload, _) = rest.split_once("\n```").ok_or("AUTHORITY_RECORD_INVALID")?;
     let record = serde_json::from_str::<strict_json::StrictJson>(payload)
-        .map_err(|_| "AUTHORITY_RECORD_INVALID")?
+        .map_err(|error| crate::diagnostics::failure("AUTHORITY_RECORD_INVALID", error))?
         .0;
     validate_record(&record)?;
     if serde_json::to_string_pretty(&record).unwrap() != payload {
@@ -1736,14 +1736,14 @@ async fn bind_projection(
     let previous = app
         .store
         .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
         .step_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     let identity = json!({"charter":record["charter_sha256"],"pr_body_sha256":hash(pr["body"].as_str().ok_or("AUTHORITY_PR_BINDING_MISMATCH")?),
         "branch":pr["head"]["ref"],"head":pr["head"]["sha"],"base":pr["base"]["ref"]});
     if let Some(previous) = previous {
-        let previous: Value =
-            serde_json::from_str(&previous).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let previous: Value = serde_json::from_str(&previous)
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if previous["identity"] != identity
             || (pr["title"] != previous["initial_title"] && pr["title"] != projection_title(record))
         {
@@ -1771,12 +1771,12 @@ async fn bind_projection(
         let initial_title = pr["title"].as_str().ok_or("STEP_DISPLAY_MISMATCH")?;
         app.store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .bind_step(
                 operation,
                 &json!({"identity":identity,"initial_title":initial_title}).to_string(),
             )
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     }
     Ok(())
 }
@@ -1853,7 +1853,9 @@ async fn project(
     Ok(())
 }
 
+#[track_caller]
 pub(crate) fn error(code: &str) -> Value {
+    crate::diagnostics::record(code, "tool-rejection", code);
     let mut result = json!({"content":[{"type":"text","text":code}],"isError":true});
     let guidance = match code {
         "MANUAL_PR_TARGET_MISMATCH" => Some("Check result.parent.number against the intended PR and any immutable existing-PR admission. Correct an unreserved input in the same attempt; do not create a replacement PR or Step."),
@@ -1888,10 +1890,13 @@ async fn verify_publication_authority(
     let select_compatibility_request = app
         .store
         .lock()
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
         .authority_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
-        .map(|binding| serde_json::from_str::<Value>(&binding).map_err(|_| "INTERNAL_RELAY_ERROR"))
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
+        .map(|binding| {
+            serde_json::from_str::<Value>(&binding)
+                .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))
+        })
         .transpose()?
         .is_some_and(|binding| !binding["compatibility_request"].is_null());
     let authority = effective_authority(
@@ -1904,10 +1909,13 @@ async fn verify_publication_authority(
     )
     .await?
     .0;
-    let store = app.store.lock().map_err(|_| "INTERNAL_RELAY_ERROR")?;
+    let store = app
+        .store
+        .lock()
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     if let Some(body) = store
         .publication_body(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
     {
         let prefix = "<!-- jresearchsoftware-reviewer-task-binding:v1 authority_sha256=";
         if body.contains(prefix)
@@ -1921,16 +1929,17 @@ async fn verify_publication_authority(
     }
     if let Some(binding) = store
         .authority_binding(operation)
-        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+        .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
     {
-        let original: Value = serde_json::from_str(&binding).map_err(|_| "INTERNAL_RELAY_ERROR")?;
+        let original: Value = serde_json::from_str(&binding)
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if original != authority {
             return Err("AUTHORITY_CHANGED");
         }
     } else if prepare {
         store
             .bind_authority(operation, &authority.to_string())
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
     }
     // Pre-upgrade reservations retain their original source/body checks. Never
     // fabricate an earlier effective-authority observation for a historical row.
@@ -2037,9 +2046,9 @@ async fn published_native(
         let original_binding = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .authority_binding(operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         let allow_send = record["schema_version"] != "4.0"
             || original_binding.is_some()
             || body.contains("<!-- jresearchsoftware-reviewer-task-binding:v1 authority_sha256=");
@@ -2112,6 +2121,7 @@ async fn published_native(
     )
 }
 
+#[tracing::instrument(skip_all, fields(repository = app.repository, task = ?args["record"]["task"], kind = ?args["record"]["kind"]))]
 pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
     if !app.enabled {
         return error("RELAY_DISABLED");
@@ -2134,9 +2144,9 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         let known = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .known(&operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         let state = load(app, record).await?;
         let original_authority =
             verify_publication_authority(app, &state, record, &operation, false).await?;
@@ -2153,9 +2163,9 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         let retained = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .publication_body(&operation)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         let body = retained.unwrap_or_else(|| {
             if known.is_some() {
                 legacy_body.clone()
@@ -2206,9 +2216,9 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
             let (_, frozen) = app
                 .store
                 .lock()
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
                 .recover_publication(&operation, original, &legacy_body)
-                .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
             if frozen != original {
                 return Err("AUTHORITY_PUBLICATION_VERIFICATION_FAILED");
             }
@@ -2236,9 +2246,9 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         let (reserved, body) = app
             .store
             .lock()
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
             .reserve_publication(&operation, &current_body, &legacy_body)
-            .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+            .map_err(|error| crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
         if !reserved {
             return Err("AUTHORITY_PUBLICATION_UNCERTAIN");
         }
@@ -2304,9 +2314,13 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
                 if failure.safe_to_retry {
                     app.store
                         .lock()
-                        .map_err(|_| "INTERNAL_RELAY_ERROR")?
+                        .map_err(|error| {
+                            crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error)
+                        })?
                         .retryable_failure(&operation)
-                        .map_err(|_| "INTERNAL_RELAY_ERROR")?;
+                        .map_err(|error| {
+                            crate::diagnostics::failure("INTERNAL_RELAY_ERROR", error)
+                        })?;
                 }
                 let mut result = error(failure.code);
                 result["structuredContent"] = json!({"operation":operation,"diagnostics":failure.diagnostics(),
@@ -2318,7 +2332,12 @@ pub(crate) async fn publish(app: &RepositoryTarget<'_>, args: &Value) -> Value {
     let result: Result<Value, &'static str> =
         tokio::time::timeout(std::time::Duration::from_secs(60), future)
             .await
-            .unwrap_or(Err("AUTHORITY_PUBLICATION_UNCERTAIN"));
+            .unwrap_or_else(|cause| {
+                Err(crate::diagnostics::failure(
+                    "AUTHORITY_PUBLICATION_UNCERTAIN",
+                    cause,
+                ))
+            });
     result.unwrap_or_else(error)
 }
 
