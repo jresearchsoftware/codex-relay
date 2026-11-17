@@ -10,7 +10,35 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **7.0.0** is a **MAJOR** candidate from independently accepted **6.1.0**
+Guidance **8.0.0** is a **MAJOR** candidate from independently accepted **7.0.0**
+at `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Task #266 changes supported
+automatic execution behavior: trusted boundary prose or acceptance/validation requirements
+no longer terminate admitted automatic source progress, contained collection or
+safe Writer publication merely by arriving. Admission remains immutable;
+current requirements govern independent exact-head acceptance. Already-admitted
+manual handoffs retain conservative predispatch boundary/validation checks,
+while their result reporting records valid later Decision drift.
+
+Task boundaries and acceptance requirements define the work and its evaluation.
+Manual owner stop/control goes directly to the active Codex session; automatic
+execution control uses native Actions cancellation and its existing containment
+path. Structured holds remain internal safety guards, alongside actual scope,
+permission, source/pin and protected-effect checks. Bounded contained collection
+may preserve useful progress when publication must stop. No live steering,
+new stop command, protected permission or installed activation is introduced.
+
+Task #194's independently accepted 7.0.0 supplies the closure workflow and
+Shared 10.0.0 baseline below. Its accepted registry bytes and all earlier frozen
+versions remain unchanged; the former parallel 7.0.0 proposals are reconciled
+sequentially under PV-009. The current candidate retains the `>=10.0.0` native
+floor, exact standalone snapshot and included publisher closure evidence.
+
+### Earlier version-scoped classification
+
+The following paragraphs retain historical release rationale; their then-current
+floors, snapshots and adoption facts do not replace the current 8.0.0 selection.
+
+Guidance **7.0.0** was a **MAJOR** change from independently accepted **6.1.0**
 at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It changes closure timing and
 owner continuation: only a verified genuinely completing PR uses native closing
 linkage under `close-authorized`; `keep-open` remains neutral until its adjacent
@@ -36,12 +64,7 @@ generation proves neither independent source acceptance, publication nor install
 qualification. Legacy fallback remains bounded to previously qualified combinations
 and its separately recorded verified-publication window.
 
-### Earlier version-scoped classification
-
-The following paragraphs retain historical release rationale; their then-current
-floors, snapshots and adoption facts do not replace the current 7.0.0 selection.
-
-Guidance **6.1.0** is a **MINOR** candidate from independently accepted **6.0.0**.
+Guidance **6.1.0** was a **MINOR** change from independently accepted **6.0.0**.
 It adds compatible engineering-autonomy methods, unchanged-authority technical
 continuation, meaningful evidence-only/no-change results and findings on stopped
 or Draft results. It preserves authenticated owner launch, protected actor
@@ -135,8 +158,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 6.1.0 uses `contract_source: source-tree` and records the accepted
-Task 57 baseline `cfeb633c86408327bf9941a5dfaaa41f98706ac1` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 8.0.0 uses `contract_source: source-tree` and records the accepted
+Task 266 baseline `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -148,7 +171,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 7.0.0 is a candidate. Native source
+release. Before independent acceptance, 8.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

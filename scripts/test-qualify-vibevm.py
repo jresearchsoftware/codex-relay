@@ -123,7 +123,7 @@ class CommittedFlowTests(unittest.TestCase):
                               (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
                               (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
                               (b'@=10.0.0', b'@=6.0.0'),
-                              (b'version = "7.0.0"', b'version = "5.0.0"'),
+                              (b'version = "8.0.0"', b'version = "5.0.0"'),
                               (lock["meta"]["generated_by"].encode(), b'other'),
                               (b'file://', b'file:///foreign/')):
             with self.subTest(field=before):
@@ -145,7 +145,7 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["project_skill"], "PASS")
         self.assertEqual(facts["payload_files"], 22)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "7.0.0")
+        self.assertEqual(facts["first_party_version"], "8.0.0")
         self.assertEqual(facts["standalone_snapshot"], "10.0.0")
         self.assertEqual({name: value["version"] for name, value in facts["landscape"].items()}, {
             "org.jresearch.ai/landscape-model-guidance": "1.0.3",
@@ -284,7 +284,7 @@ class CommittedFlowTests(unittest.TestCase):
                                    (selection["revision"], "0" * 40),
                                    ('name = "' + selection["name"] + '"', 'name = "development-governance"'),
                                    ('name = "' + selection["name"] + '"',
-                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=7.0.0"]')])):
+                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=8.0.0"]')])):
                 path = self.root / name
                 original = path.read_text()
                 for before, after in changes:

@@ -1,11 +1,33 @@
 # Relay Skill and Shared Governance compatibility
 
-Relay **7.0.0** requires Shared Governance **`>=10.0.0`**. Its native delivery
+Relay **8.0.0** requires Shared Governance **`>=10.0.0`**. Its native delivery
 reads the consumer's reviewed lock/slot; standalone and included publisher closure
 evidence use immutable Shared 10.0.0. Root project policy independently pins
 `=10.0.0`. This is a semantic minimum for the current product contract, not a
 promise about unknown future releases. Historical compatibility evidence below
 belongs to the frozen versions it assessed and does not qualify current semantics.
+
+## Task 266: execution-control correction from accepted 7.0.0
+
+The 8.0.0 candidate is MAJOR from independently accepted Relay 7.0.0 at
+`c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Arrival of trusted boundary prose or
+acceptance/validation requirements no longer terminates admitted automatic
+source work or safe collection/publication. Current requirements still govern
+independent acceptance; original admission/profile/permissions stay immutable.
+Conservative manual predispatch and truthful manual drift reporting remain.
+
+Task/Decision requirements describe work and acceptance. Manual owner stop/control
+is direct to the active Codex session. Automatic execution uses native Actions
+cancellation and its existing signal/containment path; cancelled status alone
+does not establish containment or resolve uncertain effects. Quiescence prevents
+new admissions only. Structured holds remain internal safety guards along with
+actual scope/permission, source/pin and protected-effect checks. No new stop
+command, steering service or Decision polling is introduced.
+
+Task #194's accepted closure semantics, Shared 10.0.0 floor, standalone snapshot
+and publisher closure evidence remain the baseline. Frozen accepted 7.0.0 and
+all earlier registry bytes remain unchanged. The following Task #194 assessment
+records that baseline rather than another newly proposed 7.0.0 release.
 
 ## Task 194: current migration through 10.0.0
 
@@ -19,7 +41,7 @@ publication, project adoption and qualified installation remain separate.
 
 | Shared change | Relay disposition and boundaries |
 | --- | --- |
-| 7.0.0 TH-026 / RA-006 | **Implemented in the 7.0.0 product candidate**: final completing PR only, effective `close-authorized`, verified native closing link and guarded default-branch merge; `keep-open` uses neutral references and closes after its adjacent preauthorized condition is verified. No policy-release Decision solely to verify satisfaction. Genuine changed conditions require trusted owner authority. Historical admitted terms, explicit holds, no-PR acceptance, exact-head independent review and protected operations remain intact. |
+| 7.0.0 TH-026 / RA-006 | **Implemented in accepted Relay 7.0.0**: final completing PR only, effective `close-authorized`, verified native closing link and guarded default-branch merge; `keep-open` uses neutral references and closes after its adjacent preauthorized condition is verified. No policy-release Decision solely to verify satisfaction. Genuine changed conditions require trusted owner authority. Historical admitted terms, explicit holds, no-PR acceptance, exact-head independent review and protected operations remain intact. |
 | 8.0.0 TH-006/008/010/013/018/019/026, IR-003/012/014/018, RA-006 | **Adopted**: separate bounded deliverable, findings, execution obstruction and whole-Task completion; continue independent authorized work and verify requested orchestration at its actual boundary. Apply procedures to their governed actor, action and trigger; preserve native statuses, terminal identity, owner choices and real protected stops. No invented wait, launch, status engine or approval stage. |
 | 9.0.0 TH-018; IR-007/009/010/014/016 | **Adopted**: confirmed material residual defects get a discoverable existing/authorized tracking or owner-risk disposition. Link accepted fixes elsewhere and reconcile remaining criteria. Operational claims match exercised or otherwise adequate evidence; modeled TEST is valid with limitations. Origin alone neither includes unrelated debt nor defers defects undermining a required outcome. No compulsory live service, new registry, speculative ticket or retrospective review. |
 | 10.0.0 RA-007, TH-001, CL-003, ChatGPT bootstrap | **Adopted**: accepted Relay context owns local lifecycle control. Access, common ownership, URLs, external instructions or an explicit foreign-control request do not transfer project role. External inspection and ordinary incoming proposals remain permitted; foreign controlling actions get a compact handoff in their own context. Preserve explicitly accepted multi-repository scope, local work, independent review and protected authority. Default unqualified queries to Relay. |

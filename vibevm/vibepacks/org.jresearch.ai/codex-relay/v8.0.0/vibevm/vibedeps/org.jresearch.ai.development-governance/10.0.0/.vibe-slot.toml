@@ -1,0 +1,95 @@
+schema = 1
+source_hash = "sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3"
+spec_format = "mixed"
+
+[[file]]
+path = "CHANGELOG.md"
+sha256 = "b2c51fbd1d5a42f8ef339ad73c7e1b3f81d94ce3994328c60c1309fdb444b0a2"
+
+[[file]]
+path = "DISTRIBUTION.json"
+sha256 = "926895f737911c5794a4b898bf3c25b3e0d2e7deda6728f9160f5d19d5c1d994"
+
+[[file]]
+path = "LICENSE"
+sha256 = "89a08ec77ff61e57c9e2da6d604d696bbe894f7f6f70de0d557022b2a9a8b853"
+
+[[file]]
+path = "README.md"
+sha256 = "feaa899eae73d74600991d71a021fd1db9dbfce55bcce26f9a96671ce247d30d"
+
+[[file]]
+path = "tools/chatgpt/README.md"
+sha256 = "4e94c177ee49715812baa1740ab478b56667b0b019a197b717c8deb35f899c78"
+
+[[file]]
+path = "tools/chatgpt/base.md"
+sha256 = "10a27bce7229f261ac23a121e1e583d1c259d5c522304667917649a0e8c620c0"
+
+[[file]]
+path = "tools/chatgpt/project.py"
+sha256 = "e5cf6978ddbb8c63f713afccc62cd6c993e76f70074b57cd35bbf062c9f46668"
+
+[[file]]
+path = "vibe.toml"
+sha256 = "ec0aeedc175412fc89833c30892ee0c6921d690f10a316386f410019f383a393"
+
+[[file]]
+path = "vibevm/vibespecs/boot/development-governance.md"
+sha256 = "0cdc2aa91a81c69fbb108c7488c1827e06edcffa32c936f391c63f89ccaf52f9"
+
+[[file]]
+path = "vibevm/vibespecs/guides/engineering-methods.md"
+sha256 = "01103c8d52ab6ebd1acfecbce35e7b425db4d747094c6a2ac76289b875906248"
+
+[[file]]
+path = "vibevm/vibespecs/guides/onboarding-examples.md"
+sha256 = "08c41389f4625208be2d47ba7559b9012e9f6a31189d604a8ab5cb4214aead9e"
+
+[[file]]
+path = "vibevm/vibespecs/guides/onboarding.md"
+sha256 = "ab05873ed59a2b849e7b6bb3ebff393babacc6746f41397229b158c41d6e8dd9"
+
+[[file]]
+path = "vibevm/vibespecs/guides/small-improvements.md"
+sha256 = "9526a80119602c1bd57f7ddf70cf22873ed7e6fcde636f8d9a54f9c66bc67084"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/context-loading.md"
+sha256 = "a65b20cae499cb443d2abc2e0f4176e0d191ce848249daab859fe8056abddf48"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/contract-and-decision-maintenance.md"
+sha256 = "9ebf6f5760e7368d1091f6033e8d5c4d1d6d64bc82c3537b8f9af1c28cafdd3b"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/github-repository-governance.md"
+sha256 = "d65dc2acd6bacdacd06f47e010b210ce046384998f73ebfe3b0e7842f885a016"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/independent-review.md"
+sha256 = "d5f6972f64dab08c2b7a078490191d1b20b55613c822bb1386e44a985269711a"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/package-versioning.md"
+sha256 = "f4397c68b574780646e192beb71154cd2af1a29f00c63462be25f223d758a2de"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/proportional-controls.md"
+sha256 = "9d4995184b84665c3e1a8912d53438cdaa6e0b4fcef2af1f04e9111021e729ab"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/requirement-authority.md"
+sha256 = "44bc5f5c6515ffa33d3fd8944bed26ea85bc0db9f5e4cc9eb08c32e216b72a21"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/self-adoption.md"
+sha256 = "d49a3a8bdb648cfbc24a823e7f6e9abb6315f71ded6677453c0260849255ece4"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/small-improvements.md"
+sha256 = "cf6a205b14686254f1458c48d96fd143278e523966a9fc3591172f9fe7240590"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/task-handoff.md"
+sha256 = "86941ea291ef79dd3fbff9f9bee682a280345fc03501d95bd6a20ffb93da0222"

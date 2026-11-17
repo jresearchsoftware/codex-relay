@@ -8,7 +8,7 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **7.0.0** becomes a first-party source release only on independent
+Version **8.0.0** becomes a first-party source release only on independent
 acceptance and squash merge. Repository self-adoption travels with that accepted
 source; it is not an external Skill registry/package/tag publication or proof
 that another consumer adopted it. An unmerged artifact remains a candidate.
@@ -26,7 +26,7 @@ its included README before updating. These shipped interface changes determine
 Relay's major version. Relay's own `scripts/project.py` installer receipts,
 native Skill receipts and consumer-selected Shared requirement are unchanged.
 
-Version 7.0.0 is MAJOR from accepted 6.1.0: completing-PR versus verified-
+Accepted version 7.0.0 was MAJOR from accepted 6.1.0: completing-PR versus verified-
 condition closure timing changes, and Shared 8/9 result/evidence duties plus
 Shared 10 project-context authority become part of the guidance. Native requires
 `>=10.0.0` because RA-007 and its TH/CL semantics first appear there; historical
@@ -35,12 +35,26 @@ to exact Shared 10.0.0. Frozen 6.1.0 and earlier payloads remain unchanged.
 Source acceptance, external publication and installed qualification/activation
 remain separate; preserve explicitly retained old admitted contracts.
 
+Version 8.0.0 is MAJOR from accepted 7.0.0: new trusted boundary
+prose or acceptance/validation requirements no longer implicitly terminate
+admitted automatic source work or safe Writer publication merely by arriving.
+Task #194's accepted closure workflow and Shared 10.0.0 semantics remain the
+baseline. Already-admitted manual handoffs retain conservative predispatch
+boundary/validation checks, and manual reporting records valid later Decision
+drift. Structured safety holds, scope removal, exact identity/pin checks and
+protected-effect guards remain. Task/Decision requirements govern the work and
+independent acceptance; ordinary manual stop/control goes directly to Codex,
+and automatic execution uses native Actions cancellation and containment.
+See the [workflow control guidance](workflow.md).
+This adds no live steering, new stop command or installed upgrade.
+Frozen 7.0.0 and earlier package bytes remain unchanged.
+
 ## Choose a delivery form
 
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `7.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `8.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 10.0.0

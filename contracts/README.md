@@ -235,6 +235,19 @@ known changed fields, comparison gaps and the review signal.
 This report is not a claim that amended work was performed or permission to
 exercise newly granted protected operations.
 
+Trusted chronological Decisions may arrive during automatic source execution. Added
+boundary prose and acceptance checks are reported as drift rather than blocking
+safe source collection/publication. The admitted execution and its permissions
+are unchanged. Task content and Decisions define requirements and acceptance,
+not live stop, pause, cancel or steering commands. Owners control manual Codex
+directly; automatic execution uses native Actions cancellation and the supported
+controller containment path. The structured `continuation.hold` remains an internal
+safety guard, not the ordinary execution-control interface. Removed admitted scope,
+changed starting pins and native source or
+identity failures retain their stops. Bounded contained collection can preserve
+source under reporting validation even when publication is held. See the
+[controller contract](../controller/README.md) for action-time checks and limits.
+
 Task acceptance binds the current authority while preserving the exact
 Outcome/admission and immutable result. The reviewer explicitly evaluates
 admitted versus current requirements: missing work needs remediation, unused

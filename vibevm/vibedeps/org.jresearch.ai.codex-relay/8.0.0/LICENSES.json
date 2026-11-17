@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "package": "org.jresearch.ai/codex-relay",
-  "version": "7.0.0",
+  "version": "8.0.0",
   "license": "MIT",
   "redistribution_authority": "https://github.com/jresearchsoftware/codex-relay/issues/169#issuecomment-6314092881",
   "components": [
@@ -16,7 +16,7 @@
       "copyright": "Copyright (c) 2026 Codex Relay contributors",
       "license_file": "LICENSE",
       "source": "https://github.com/jresearchsoftware/codex-relay",
-      "contract_revision": "4f0990c4b676a45f7e37d37ecb10fecc871b7a25"
+      "contract_revision": "c8e990bef9aabefe9ec0bd74141afdba7d2dfde1"
     },
     {
       "paths": [

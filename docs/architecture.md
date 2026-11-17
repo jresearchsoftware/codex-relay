@@ -232,6 +232,20 @@ Schema-v4 result reporting verifies the original immutable admission and its
 native source integrity independently of current Task semantics. Valid later
 trusted Decisions are recorded as authority drift in the same Writer Outcome;
 they do not rewrite the execution or imply newly required work was performed.
+Added boundary prose and validation requirements do not terminate useful automatic source
+execution or collection/publication merely because their bytes changed. Existing
+structured holds, removed admitted scope, changed source pins and native
+identity/effect guards still stop active effects. Bounded contained collection
+can preserve source even when publication is held; it grants no new external
+effect. Writer reports drift for current exact-head review rather than attempting
+to classify arbitrary prose as a revocation. The immutable worker input/profile
+is not live-steered by Decision arrival. Task boundaries and acceptance
+requirements define work and assessment. Manual owner stop/control goes directly
+to the active Codex session; automatic execution control uses native Actions
+cancellation of the active run and its existing signal/containment path. A
+cancelled run alone does not prove child containment or resolve uncertain
+effects. Admission quiescence stops only new admissions. Structured holds remain
+internal safety guards, not the ordinary owner execution-control interface.
 Execution actions retain admitted/current permission boundaries. Independent
 PR or no-PR acceptance compares the delivered result with current authority,
 and later Task changes invalidate stale continuation acceptance. Historical

@@ -2,14 +2,14 @@
 
 Relay selects Shared Governance **10.0.0** for project-wide adoption under
 Task [#194](https://github.com/jresearchsoftware/codex-relay/issues/194), following
-the accepted 7.0.1 adoption in Task #199. Candidate Relay **7.0.0** updates its
-standalone snapshot and publisher closure evidence to exact Shared 10.0.0 and
+the accepted 7.0.1 adoption in Task #199. Candidate Relay **8.0.0** retains its
+standalone snapshot and publisher closure evidence at exact Shared 10.0.0 and
 requires **`>=10.0.0`** for the current semantic contract. The
 [compatibility assessment](relay-skill-compatibility.md#task-194-current-migration-through-1000)
 reconciles Shared 7/8/9/10 closure, bounded-result, residual-defect, evidence and
 project-context behavior; the [release contract](relay-guidance.md#version-and-provenance)
-classifies Relay's own MAJOR from 6.1.0. Historical frozen releases retain their
-original bytes, floors and snapshots. Human-owned [AGENTS](../AGENTS.md) adopts
+classifies Task #266's MAJOR from independently accepted Relay 7.0.0.
+Historical frozen releases retain their original bytes, floors and snapshots. Human-owned [AGENTS](../AGENTS.md) adopts
 all ten applicable complete shared topics, including the separately selected
 [Small Improvements binding](relay-guidance-ownership.md#small-improvements-binding).
 The [ownership mapping](relay-guidance-ownership.md) retains native actors,
@@ -127,8 +127,9 @@ not prove actual model-visible traversal, child profiles, access or usefulness.
 Under PV-015/018 the accepted Landscape and project-only Small Improvements
 integration stays outside the product's standalone snapshot and release-evidence
 closure. That historical integration changed no product requirement or payload.
-Task 194 separately changes the Relay product and prepares 7.0.0; current source
-work publishes neither Landscape nor Relay and authorizes no installed Apply.
+Task 194 separately changed the Relay product and prepared accepted 7.0.0;
+Task 266 prepares 8.0.0 from that baseline. Current source work publishes neither
+Landscape nor Relay and authorizes no installed Apply.
 
 During candidate development, freeze independently accepted source guidance via
 the admitted Task binding before reading candidate AGENTS/INDEX/package routes.
@@ -150,7 +151,7 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 ## Selected immutable identities
 
 The [manifest](../vibe.toml) pins Shared `=10.0.0` by anonymous public Git
-source and exact commit. The native local registry supplies Relay `=7.0.0`,
+source and exact commit. The native local registry supplies Relay `=8.0.0`,
 whose `>=10.0.0` semantic edge resolves to that explicit root. The root exact
 selection is project policy, separate from other consumers' locks and topic
 adoption. The schema-7 [lock](../vibe.lock), complete versioned slots, receipt,
@@ -162,7 +163,7 @@ generated index and projected Skill belong to the same reviewed source change.
 | Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
 | Shared annotated tag | `v10.0.0`, tag object `a2ed1184aa249793a8a1981234c9686088a48c26`, peels to that distribution |
 | Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
-| Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `4f0990c4b676a45f7e37d37ecb10fecc871b7a25` |
+| Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1` |
 
 The producer source and distribution commit are distinct identities. The
 receipt's payload hashes and native tree hash use different recipes: the tree
@@ -172,14 +173,19 @@ against the accepted producer path `packages/development-governance`; a tag or
 The enclosing accepted Relay commit identifies its guidance release; the
 contract baseline does not claim that the candidate has already been accepted.
 
-Guidance 7.0.0 changes the closure workflow and mandatory semantic guidance,
-updates its included Shared bytes and raises the floor for RA-007's project-context
-contract first present in Shared 10.0.0. It is MAJOR from accepted 6.1.0 under
-PV-002/018, independently of upstream version arithmetic. Frozen first-party
-1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0, 4.1.0, 4.1.1, 5.0.0, 6.0.0 and 6.1.0
-registry payloads remain intact for history/rollback; they are not active
-requirements. Earlier floors and snapshots remain version-scoped historical
-facts in [the release contract](relay-guidance.md#version-and-provenance).
+Guidance 8.0.0 is MAJOR from independently accepted 7.0.0 under PV-002/009:
+Task #266 removes implicit automatic source termination from arriving boundary
+prose or acceptance/validation requirements. Task #194's closure workflow,
+Shared 10.0.0 bytes and semantic floor remain the accepted baseline. Manual
+predispatch checks, truthful reporting and actual scope/permission/source/pin
+and protected-effect guards remain. Requirements govern work and acceptance;
+manual owner stop/control is direct to Codex, while automatic execution uses
+native Actions cancellation with containment reconciliation. Structured holds
+remain internal safety guards. No new stop command or live steering is added.
+Frozen first-party 1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0, 4.1.0, 4.1.1,
+5.0.0, 6.0.0, 6.1.0 and 7.0.0 registry payloads remain intact for history/rollback;
+they are not active requirements. Earlier floors and snapshots remain
+version-scoped historical facts in [the release contract](relay-guidance.md#version-and-provenance).
 Project `0.0.0` is not a Relay release identity.
 
 Another consumer can deliberately select a compatible Shared version

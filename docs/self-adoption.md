@@ -7,16 +7,16 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **7.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **8.0.0** candidate uses the
 native export. Registry, slot, lock, boot index and projected native Skill travel
 together. Root [AGENTS](../AGENTS.md) adopts Shared **10.0.0**, independently
 pinned at the exact Git identity in [the identity contract](vibevm.md#selected-immutable-identities).
 The native product requires `>=10.0.0` for its actual RA-007/TH/CL and TH/IR
 semantics; standalone and publisher evidence use immutable Shared 10.0.0.
 [Release classification](relay-guidance.md#version-and-provenance) explains the
-MAJOR change from accepted 6.1.0 and [compatibility](relay-skill-compatibility.md)
+MAJOR change from accepted 7.0.0 and [compatibility](relay-skill-compatibility.md)
 distinguishes that semantic floor from historical layout proof. Frozen accepted
-1.0.0 through 6.1.0 registry payloads remain unchanged. Source acceptance does not
+1.0.0 through 7.0.0 registry payloads remain unchanged. Source acceptance does not
 imply external publication, installed activation or another consumer's adoption.
 
 ## Accepted-source binding and ordinary use
@@ -36,7 +36,17 @@ its historical Skill product-contract baseline was
 at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`; its 7.0.0 artifact uses source-tree
 input hashes and that accepted baseline as provenance context. Candidate schema bytes do not replace the
 accepted guidance governing this execution. These are distinct identities, and the
-candidate cannot replace its own execution/review authority. Use supported Git/file reads, for example
+candidate cannot replace its own execution/review authority. Task #266's
+reconciled 8.0.0 candidate freezes independently accepted guidance at
+`c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. The accepted 7.0.0 registry is immutable;
+its Task #194 closure and Shared 10.0.0 behavior remains the baseline. Task #266
+changes automatic prose-drift stopping while keeping conservative manual
+predispatch, truthful reporting and actual permission/effect guards. Task and
+Decision requirements govern work and acceptance; manual stop/control is direct
+to Codex and automatic control uses native Actions cancellation/containment,
+with structured holds retained as internal safety guards.
+
+Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
 developer instructions and current admitted Task authority. File qualification
@@ -76,9 +86,9 @@ and separately validates the root consumer lock/slot. Native install prunes the
 obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v7.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v8.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0` or `v6.1.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0`, `v6.1.0` or `v7.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

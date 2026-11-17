@@ -266,9 +266,11 @@ export async function revalidateAuthority(api, e, { reporting = false, handoff =
   if (a.branch !== e.branch || a.startHead !== e.startHead
     || a.issueNumber !== e.issueNumber || (a.review?.id ?? null) !== e.reviewId) fail('AUTHORITY_CHANGED');
   if (a.request && a.request.route !== e.route) fail('AUTHORITY_CHANGED');
-  // Source publication and lifecycle effects stay inside the admitted/live
-  // intersection. Do not interpret permission prose or execute new scope.
-  // Reporting remains possible after a revoked or ambiguous permission.
+  // Keep exact source pins and explicit execution revocations. Boundary prose
+  // and acceptance checks can change legitimately during source work: their
+  // arrival is review evidence, not a deterministic revocation signal. This
+  // never grants new protected effects or changes the admitted worker profile.
+  // Reporting/contained source collection remains possible after revocation.
   const old = a.originalRequest; const current = a.currentRequest;
   if (!reporting && ['branch', 'base_sha', 'starting_head', 'existing_pr'].some(field =>
     canonicalAuthorityJson(old[field]) !== canonicalAuthorityJson(current[field]))) fail('AUTHORITY_CHANGED');
@@ -276,8 +278,8 @@ export async function revalidateAuthority(api, e, { reporting = false, handoff =
   // executes amended scope nor accepts it. Keep exact artifact pins above;
   // current review/approval constraints still govern independent acceptance.
   if (!reporting && !handoff && (old.scope.some(value => !current.scope.includes(value))
-    || current.boundaries.some(value => !old.boundaries.includes(value))
-    || current.validation.some(value => !old.validation.includes(value))
+    || e.route === 'manual' && (current.boundaries.some(value => !old.boundaries.includes(value))
+      || current.validation.some(value => !old.validation.includes(value)))
     || current.continuation.hold && !old.continuation.hold)) fail('AUTHORITY_CHANGED');
   // This starting-state observation belongs only to active execution actions.
   // Exact retained result/recovery authority does not acquire a new main gate.

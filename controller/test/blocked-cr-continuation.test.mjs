@@ -38,7 +38,7 @@ async function admissionControl({ root, store, journal }) {
   await control.initialize(); return control;
 }
 
-async function blockedContinuation(t, { resolvingDecision = true, initialAmendments, complete = true } = {}) {
+async function blockedContinuation(t, { resolvingDecision = true, initialAmendments, complete = true, progress = true } = {}) {
   const decisions = initialAmendments ? [taskDecision(initialAmendments, { id: 700 })] : [];
   const commentMetadata = new Map();
   const f = await fixture(t, { remediation: true, issueBody: charter, labelLaunch: true,
@@ -99,7 +99,7 @@ async function blockedContinuation(t, { resolvingDecision = true, initialAmendme
   f.broker = { invoke: request => broker.dispatch(request) };
   const originalReview = copy(f.review);
   const result = await runAttempt({ ...f, execute: async e => {
-    await f.commit();
+    if (progress) await f.commit();
     return { version: 2, attemptId: e.attemptId, child: 'started', containment: 'reaped',
       result: { status: 'blocked', summary: 'Writer preserves useful remediation progress before the owner decision.',
         validation: ['Fixture local source change'], blockedReason: 'A bounded owner direction is required before continuing.' } };
@@ -108,15 +108,15 @@ async function blockedContinuation(t, { resolvingDecision = true, initialAmendme
   if (complete) await f.admissionControl.complete({ runId: 99, attemptId: f.envelope.attemptId });
   const prior = await f.store.get(99);
   const publishedHead = await f.remoteHead();
-  assert.notEqual(publishedHead, originalReview.commit_id);
-  assert.equal(prior.publishedHead, publishedHead);
-  assert.equal(prior.outcome.head, publishedHead);
+  assert.equal(publishedHead === originalReview.commit_id, !progress);
+  assert.equal(prior.publishedHead, progress ? publishedHead : null);
+  assert.equal(prior.outcome.head, progress ? publishedHead : null);
   assert.equal(prior.outcome.prNumber, 43);
   const originalComment = copy(f.comments.find(comment => comment.id === prior.outcome.outcomeId));
   const outcome = extractAuthorityRecord(originalComment.body);
   assert.equal(outcome.schema_version, '4.0');
   assert.equal(outcome.status, 'blocked');
-  assert.equal(outcome.result.kind, 'git');
+  assert.equal(outcome.result.kind, progress ? 'git' : 'no-change');
   assert.equal(outcome.result.revision, publishedHead);
   assert.deepEqual(outcome.admission, admissionBinding(f.envelope.request));
   const originalLifecycle = await f.lifecycleStore.get(f.review.id);
@@ -446,4 +446,111 @@ test('a fresh owner event cannot reuse the physical slot held by the active succ
   assert.equal(await f.store.get(101), null);
   assert.deepEqual((await f.store.get(100)).envelope, admitted.envelope);
   assert.deepEqual(await f.store.get(99), f.prior);
+});
+
+for (const route of ['auto', 'manual']) test(`same-head ${route} admission after a new Decision preserves the settled original CR receipt`, async t => {
+  const f = await blockedContinuation(t, { progress: false });
+  const original = copy(await f.lifecycleStore.get(f.review.id));
+  assert.equal(original.lifecycleIntent, null);
+  assert.equal(f.prior.publishedHead, null);
+  assert.equal(f.publishedHead, f.originalReview.commit_id);
+  await f.removeCheckout(); // Fresh execution does not require old-worktree salvage.
+  const request = f.nextReady({ route });
+  const admitted = await f.broker.invoke(request);
+  assert.notEqual(admitted.status, 'BLOCKED');
+  const e = admitted.envelope;
+  assert.equal(e.step, 2);
+  assert.equal(e.startHead, f.originalReview.commit_id);
+  assert.notEqual(e.authorityDigest, f.prior.envelope.authorityDigest);
+  assert.deepEqual(await f.lifecycleStore.get(f.review.id), original);
+  const lifecycle = await f.admissionLifecycleStore.get(e.runId);
+  assert.equal(lifecycle.binding.admission, digest(e));
+  assert.equal(lifecycle.lifecycleIntent, null);
+  assert.equal((await f.api.get('/pulls/43')).draft, true);
+  assert.equal(f.pushes(), 0);
+  assert.deepEqual(await f.store.get(99), f.prior);
+  assert.deepEqual(f.review, f.originalReview);
+  if (route === 'manual') {
+    assert.equal((await f.broker.invoke({ operation: 'handoff', runId: e.runId, attemptId: e.attemptId })).status, 'handed-off');
+    assert.deepEqual(await f.lifecycleStore.get(f.review.id), original);
+  } else {
+    const cwd = join(dirname(f.cwd), e.attemptId);
+    let executions = 0;
+    const options = { ...f, envelope: e,
+      collect: envelope => collectProgress(cwd, envelope, { root: f.root, remote: f.remote }),
+      execute: async envelope => {
+        executions++;
+        assert.equal(await f.command(cwd, ['rev-parse', 'HEAD']), f.originalReview.commit_id);
+        await writeFile(join(cwd, 'docs/continued.md'), 'Safe same-head continuation after trusted Decision drift.\n');
+        await f.command(cwd, ['add', 'docs/continued.md']);
+        await f.command(cwd, ['commit', '-m', 'continue same-head remediation'], f.identity);
+        return { version: 2, attemptId: envelope.attemptId, child: 'started', containment: 'reaped',
+          result: { status: 'success', summary: 'Same-head continuation completed.', validation: ['Fixture source correction'] } };
+      } };
+    const completed = await runAttempt(options);
+    assert.equal(completed.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.deepEqual(await runAttempt({ ...options, admissionResumed: true }), completed);
+    assert.equal(executions, 1);
+    assert.equal(f.pushes(), 1);
+    assert.deepEqual(await f.lifecycleStore.get(f.review.id), original);
+    assert.deepEqual(await f.store.get(99), f.prior);
+    assert.deepEqual(f.review, f.originalReview);
+  }
+});
+
+for (const field of ['lifecycleIntent', 'repository', 'prNumber', 'reviewId', 'head', 'authorityDigest']) {
+  test(`same-head changed-authority admission does not bypass an uncertain or mismatched original ${field}`, async t => {
+    const f = await blockedContinuation(t, { progress: false });
+    const original = await f.lifecycleStore.get(f.review.id);
+    if (field === 'lifecycleIntent') original.lifecycleIntent = { number: 43, head: f.publishedHead, draft: true };
+    else original.binding[field] = field === 'repository' ? 'foreign/repository'
+      : field === 'head' ? 'f'.repeat(40) : field === 'authorityDigest' ? 'invalid' : 999;
+    await f.lifecycleStore.put(f.review.id, original);
+    const request = f.nextReady();
+    await assert.rejects(f.broker.invoke(request), { code: 'PR_LIFECYCLE_BINDING_CHANGED' });
+    assert.equal(await f.store.get(request.runId), null);
+    assert.equal(await f.admissionLifecycleStore.get(request.runId), null);
+    assert.deepEqual(await f.lifecycleStore.get(f.review.id), original);
+    assert.equal(f.pushes(), 0);
+    assert.equal(f.comments.length, 1);
+  });
+}
+
+test('a trusted Decision arriving between admission resolution and Draft reservation preserves immutable lifecycle identity', async t => {
+  const f = await blockedContinuation(t, { progress: false });
+  const original = copy(await f.lifecycleStore.get(f.review.id));
+  const get = f.lifecycleStore.get.bind(f.lifecycleStore);
+  let changed = false;
+  f.lifecycleStore.get = async key => {
+    if (!changed) {
+      changed = true;
+      f.decisions.push(taskDecision({ validation: ['diff-check', 'late-acceptance-check'] }, { id: 902 }));
+    }
+    return get(key);
+  };
+  const admitted = await f.broker.invoke(f.nextReady());
+  assert.notEqual(admitted.status, 'BLOCKED');
+  const e = admitted.envelope;
+  assert.ok(!e.request.authority.decisions.some(reference => reference.id === 902));
+  assert.equal((await f.admissionLifecycleStore.get(e.runId)).binding.authorityDigest, e.authorityDigest);
+  assert.deepEqual(await f.lifecycleStore.get(f.review.id), original);
+  assert.equal((await f.api.get('/pulls/43')).draft, true);
+  assert.equal(f.pushes(), 0);
+});
+
+for (const progress of [false, true]) test(`${progress ? 'later-head' : 'same-head'} run receipt retains its namespace when the original review receipt is absent`, async t => {
+  const f = await blockedContinuation(t, { progress });
+  const admitted = await f.broker.invoke(f.nextReady({ route: 'manual' }));
+  const e = admitted.envelope;
+  assert.notEqual(admitted.status, 'BLOCKED');
+  const retained = copy(await f.admissionLifecycleStore.get(e.runId));
+  assert.ok(retained);
+  await f.lifecycleStore.put(f.review.id, null);
+  f.api.draft = () => assert.fail('missing original receipt cannot grant another mutation');
+  const handoff = f.broker.invoke({ operation: 'handoff', runId: e.runId, attemptId: e.attemptId });
+  if (progress) assert.equal((await handoff).status, 'handed-off');
+  else await assert.rejects(handoff, { code: 'PR_LIFECYCLE_BINDING_CHANGED' });
+  assert.equal(await f.lifecycleStore.get(f.review.id), null);
+  assert.deepEqual(await f.admissionLifecycleStore.get(e.runId), retained);
+  assert.equal(f.pushes(), progress ? 1 : 0);
 });

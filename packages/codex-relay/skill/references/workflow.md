@@ -235,10 +235,42 @@ CD's material operator-change and durable-decision rules to canonical native
 Task/Decision authority; candidate code or guidance cannot amend that authority.
 
 Permission for every action must remain within admitted and current protected
-boundaries. A later Decision may allow truthful reporting of the original work
-without proving newly added requirements were performed or granting a revoked
-operation. Consumer-specific TEST/PROD, deployment, credentials and recovery
-authority must be explicit; the Skill creates none.
+boundaries. Later trusted Decisions may add or clarify boundary prose and
+validation requirements during automatic execution without automatically
+stopping the admitted automatic source work or safe Writer collection/publication.
+Writer preserves
+the original admission, attributes the current Decision set and changed fields,
+and exposes the drift for independent exact-head review. Added requirements are
+not evidence that the executor performed them. Codex follows available current
+guidance within its admitted permissions; Relay adds no live steering or polling.
+
+Task boundaries and acceptance requirements describe the work and the result
+that independent review must assess; they are not ordinary execution controls.
+For manual Codex, the owner gives stop or control instructions directly in the
+active Codex session. For automatic work, use native GitHub Actions cancellation
+of the active execution run, through its supported cancellation path. Cancellation
+must still establish child containment and reconcile uncertain effects; a cancelled
+run label alone is not proof that execution stopped. Quiescing admissions only
+prevents new work and does not cancel an active execution. Relay adds no new stop
+command, live steering service or Decision polling.
+
+An existing structured `continuation.hold` remains a safety guard wherever the
+current effect checks apply; it is not the ordinary owner stop/control route.
+Removal of admitted structured scope also stops active effects. Changed exact
+starting pins, native identity/source tampering,
+conflicting CRs, uncertain publication and protected operations retain their
+stops. Bounded collection of the contained attempt may still preserve source
+for truthful reporting after a hold; it does not authorize a push or another
+execution. New boundary wording alone no longer supplies the earlier implicit
+stop for automatic source progress. Already-admitted manual handoffs retain
+their conservative predispatch checks for added boundary prose and validation
+requirements. Manual result reporting still preserves the original admission
+and records valid later Decision drift. A fresh manual admission resolves
+current trusted Decisions normally. Human executors must still stop on a concrete unsafe boundary,
+and independent review assesses the delivered result against current authority.
+No Decision expands an already admitted permission or profile automatically.
+Consumer-specific TEST/PROD, deployment, credentials and recovery authority must
+be explicit; the Skill creates none.
 
 ## Isolated disposable TEST qualification
 
