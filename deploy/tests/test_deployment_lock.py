@@ -63,8 +63,9 @@ def assert_cli_rejected(path, cwd=None):
     result = subprocess.run(invocation(path), input='', text=True, capture_output=True, timeout=5, cwd=cwd)
     assert result.returncode != 0
     assert result.stdout == ''
-    assert len(result.stderr) < 160
-    assert result.stderr == 'DEPLOYMENT_LOCK_BLOCKED\n'
+    assert len(result.stderr) < 1024
+    assert result.stderr.endswith('DEPLOYMENT_LOCK_BLOCKED\n')
+    assert 'RELAY_DEPLOYMENT_FAILURE_EVIDENCE=' in result.stderr
 
 
 def test_owner_holder_excludes_local_apply_until_eof(lock_path):

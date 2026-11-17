@@ -41,6 +41,7 @@ def report_failure(error, phase, *, private_log=None):
         value = re.sub(r'(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)', '[REDACTED PRIVATE KEY]', value)
         value = re.sub(r'\b(?:github_pat_[A-Za-z0-9_]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|sk-[A-Za-z0-9_-]{8,})', '[REDACTED]', value)
         value = re.sub(r'(?i)("(?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*(?:"|\\?$)', r'\1"[REDACTED]"', value)
+        value = re.sub(r"(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"']?\s*[:=]\s*)'[^']*(?:'|$)", r"\1'[REDACTED]'", value)
         value = re.sub(r'(?i)((?:authorization|access[_-]?token|refresh[_-]?token|token|password|secret|api[_-]?key)[\"\x27]?\s*[:=]\s*[\"\x27]?)(?:(?:bearer|basic)\s+)?[^\s,\"\x27}]+', r'\1[REDACTED]', value)
         return value[:65536]
     phase = phase if re.fullmatch(r'[A-Za-z0-9_-]{1,80}', phase) else 'deployment'
@@ -53,12 +54,22 @@ def report_failure(error, phase, *, private_log=None):
             row['errno'] = errno.errorcode[current.errno]
         if isinstance(current, subprocess.CalledProcessError):
             row['exit'] = current.returncode
+        if isinstance(current, (subprocess.CalledProcessError, subprocess.TimeoutExpired)):
+            for channel in ['stdout', 'stderr']:
+                captured = getattr(current, channel, None)
+                row[channel + 'Availability'] = 'available' if captured is not None else 'unavailable'
+                if captured is not None:
+                    row[channel + 'Bytes'] = len(captured if isinstance(captured, bytes) else str(captured).encode('utf-8'))
             if current.stderr:
                 stderr = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr)
                 row['stderr'], row['stderrTruncated'] = stderr[:8192], len(stderr) > 8192
+                if '[REDACTED' in stderr:
+                    row['stderrAvailability'] = 'redacted'
             if current.stdout:
                 stdout = redact(current.stdout.decode('utf-8', errors='replace') if isinstance(current.stdout, bytes) else current.stdout)
                 row['stdout'], row['stdoutTruncated'] = stdout[:8192], len(stdout) > 8192
+                if '[REDACTED' in stdout:
+                    row['stdoutAvailability'] = 'redacted'
         if isinstance(current, subprocess.TimeoutExpired):
             row['timeoutSeconds'] = current.timeout
         if hasattr(current, 'observation'):
@@ -141,7 +152,7 @@ def progress(phase, target):
 
 
 DRAIN_PROGRESS_PATTERN = (
-    r'ADMISSION_DRAIN_PROGRESS phase=drain active=[0-9]{1,10} unknown=[0-9]{1,10}'
+    r'ADMISSION_DRAIN_PROGRESS phase=drain active=(?:[0-9]{1,10}|UNAVAILABLE) unknown=(?:[0-9]{1,10}|UNAVAILABLE)'
     r' elapsedSeconds=[0-9]{1,10}'
     r'(?: pending=(?:Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}'
     r'(?:,Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}){0,19}|none))?'

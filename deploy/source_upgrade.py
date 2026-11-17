@@ -283,7 +283,8 @@ def guarded_promote(preparation, config, holders):
         output, errors = process.communicate(timeout=10)
         if process.returncode:
             codes = re.findall(r'(?m)^(?:SOURCE_UPGRADE|INSTALL_PREFLIGHT|INTENT_STAGE|HOST|ADMISSION)_[A-Z_]{1,100}$', errors)
-            raise RuntimeError(codes[-1] if codes else 'SOURCE_UPGRADE_PROMOTION_UNPROVEN')
+            raise RuntimeError(codes[-1] if codes else 'SOURCE_UPGRADE_PROMOTION_UNPROVEN') from subprocess.CalledProcessError(
+                process.returncode, 'fixed-source-promotion', output=output, stderr=errors)
         return json.loads(output)
     finally:
         if process.poll() is None:

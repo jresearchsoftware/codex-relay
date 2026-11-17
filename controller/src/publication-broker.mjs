@@ -455,7 +455,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       nextAction: 'correct-authority-before-new-owner-attempt', orchestration: 'COMPLETED' };
   }
 
-  async function terminalOutcome(r, { terminalCode, diagnostic, publishedHead } = {}) {
+  async function terminalOutcome(r, { terminalCode, diagnostic, publishedHead, executionWarnings = [] } = {}) {
     if (r.outcome) return r.outcome;
     if (r.successOutcomeIntent) fail('SUCCESS_OUTCOME_PUBLICATION_UNCERTAIN');
     const e = r.envelope;
@@ -472,8 +472,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
     }
     const number = e.target === 'pull_request' ? e.number : pr?.number ?? e.issueNumber;
-    const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic }),
-      { pr, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
+    const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic, executionWarnings }),
+      { pr, executionWarnings, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
     const outcome = await commentOnce(r, 'outcome', number, body);
     r.outcome = { status: 'BLOCKED', head: exactSha(publishedHead ?? r.publishedHead) ? (publishedHead ?? r.publishedHead) : null,
       prNumber: pr?.number ?? null, outcomeId: outcome.id, bodySha256: sha256Body(outcome.body) };
@@ -1120,8 +1120,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'terminal-outcome') {
         if (e.route !== 'auto' || request.status !== 'blocked') fail('TERMINAL_OUTCOME_NOT_ADMITTED');
+        const executionWarnings = request.executionWarnings ?? [];
+        if (!Array.isArray(executionWarnings) || executionWarnings.length > 4
+          || executionWarnings.some(code => !['UNCOMMITTED_WORK_REMAINS', 'WORKTREE_OBSERVATION_INCOMPLETE', 'RUNTIME_CLEANUP_FAILED', 'PRESENTATION_REPAIR_UNAVAILABLE'].includes(code))) fail('EXECUTION_WARNING_INVALID');
         return receipt(await terminalOutcome(r, { publishedHead: request.publishedHead ?? r.publishedHead,
-          terminalCode: request.terminalCode, diagnostic: request.diagnostic }));
+          terminalCode: request.terminalCode, diagnostic: request.diagnostic, executionWarnings }));
       }
       if (request.operation === 'observe-readiness') {
         if (r.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW' || !r.finalHead

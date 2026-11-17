@@ -38,6 +38,7 @@ def test_existing_journal_keeps_redacted_messages_stack_and_child_cause_without_
     monkeypatch.setattr(subprocess, 'run', logger)
     error = causal_error()
     error.observation = {'mode': {'expected': 420, 'observed': 436}}
+    error.__cause__.stderr += b"password='single quoted credential value'\n"
     evidence = report_failure(error, 'host-preflight')
     assert evidence['status'] == 'submitted' and evidence['destination'] == 'existing-host-journal'
     argv, request = captured[0]
@@ -49,6 +50,7 @@ def test_existing_journal_keeps_redacted_messages_stack_and_child_cause_without_
     assert 'CalledProcessError' in payload['stack']
     assert 'private-fixture' not in request['input'] and 'opaque-fixture' not in request['input']
     assert 'opaque-basic-fixture' not in request['input'] and 'two word credential' not in request['input']
+    assert 'single quoted credential value' not in request['input']
     public = capsys.readouterr().err
     assert 'existing-host-journal' in public and 'libssl.so' not in public and 'HOST_PROBE_FAILED' not in public
 
@@ -139,3 +141,28 @@ def test_known_credential_is_redacted_before_clipping_the_causal_message(monkeyp
     monkeypatch.setattr(subprocess, 'run', logger)
     report_failure(ValueError('x' * 32700 + secret), 'installer')
     assert secret not in calls[0] and 'synthetic-sensitive-value' not in calls[0]
+
+
+@pytest.mark.parametrize('channel', ['stdout', 'stderr'])
+def test_timeout_retains_partial_output_counts_redaction_and_capture_state(monkeypatch, channel):
+    monkeypatch.setattr(os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(os, 'getuid', lambda: 0)
+    original_stat = os.stat
+    monkeypatch.setattr(os, 'stat', lambda path, *args, **kwargs: SimpleNamespace(st_mode=stat.S_IFSOCK, st_uid=0)
+        if path == '/run/systemd/journal/socket' else original_stat(path, *args, **kwargs))
+    captured = []
+    def logger(argv, **kwargs):
+        captured.append(kwargs['input'])
+        return subprocess.CompletedProcess(argv, 0, '', '')
+    monkeypatch.setattr(subprocess, 'run', logger)
+    partial = b'original loader failure\npassword=private-timeout-value\n' + b'x' * 10000
+    error = subprocess.TimeoutExpired('fixed-child', 12, **{'output' if channel == 'stdout' else channel: partial})
+    report_failure(error, 'source-preparation')
+    cause = json.loads(captured[0].split('MESSAGE=', 1)[1])['causes'][0]
+    assert cause['timeoutSeconds'] == 12
+    assert cause[channel + 'Bytes'] == len(partial)
+    assert cause[channel + 'Truncated']
+    assert cause[channel + 'Availability'] == 'redacted'
+    assert cause[('stderr' if channel == 'stdout' else 'stdout') + 'Availability'] == 'unavailable'
+    assert 'original loader failure' in cause[channel]
+    assert 'private-timeout-value' not in captured[0]

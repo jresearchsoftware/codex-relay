@@ -47,6 +47,8 @@ try:
     process.stdin.write(request['input'].encode('utf-8'))
     process.stdin.close()
     pending = b''
+    observations = []
+    progress_truncated = False
     while True:
         chunk = process.stderr.read1(65536)
         if not chunk: break
@@ -59,7 +61,15 @@ try:
                 try:
                     temporary = directory / 'next'
                     fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
-                    with os.fdopen(fd, 'wb') as stream: stream.write(line + b'\n')
+                    observations.append(line + b'\n')
+                    while sum(map(len, observations)) > 65000:
+                        observations.pop(0)
+                        if not progress_truncated:
+                            print('ANSIBLE_PROGRESS_CHANNEL_TRUNCATED', file=sys.stderr, flush=True)
+                        progress_truncated = True
+                    with os.fdopen(fd, 'wb') as stream:
+                        if progress_truncated: stream.write(b'ANSIBLE_PROGRESS_CHANNEL_TRUNCATED\n')
+                        stream.write(b''.join(observations))
                     os.replace(temporary, directory / 'progress')
                 except OSError:
                     print('ANSIBLE_PROGRESS_CHANNEL_UNPROVEN', file=sys.stderr, flush=True)
@@ -91,9 +101,9 @@ try:
     fd = os.open(directory / 'progress', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     with os.fdopen(fd, 'rb') as stream:
         info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 4096: raise ValueError()
-        raw = stream.read(4097)
-        if len(raw) > 4096: raise ValueError()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 65536: raise ValueError()
+        raw = stream.read(65537)
+        if len(raw) > 65536: raise ValueError()
     sys.stdout.buffer.write(raw)
 except FileNotFoundError:
     pass
@@ -162,6 +172,7 @@ class TargetProcess:
         self.progress = progress
         self.remote_progress = None
         self.last_progress = None
+        self.forwarded_progress = {}
         self.progress_warning = False
 
     def start(self, value=None):
@@ -290,10 +301,13 @@ class TargetProcess:
 
     def forward_progress(self, line):
         from lifecycle import drain_progress
-        if line == self.last_progress:
+        if line in self.forwarded_progress:
             return True
         if drain_progress(line):
             self.last_progress = line
+            self.forwarded_progress[line] = None
+            if len(self.forwarded_progress) > 2048:
+                self.forwarded_progress.pop(next(iter(self.forwarded_progress)))
             return True
         return False
 
@@ -302,8 +316,10 @@ class TargetProcess:
                             str(self.remote_progress)], timeout=timeout, local=self.local)
         if result.returncode:
             self.warn_progress()
-        elif result.stdout and not self.forward_progress(result.stdout.rstrip('\n')):
-            self.warn_progress()
+        elif result.stdout:
+            for line in result.stdout.splitlines():
+                if not self.forward_progress(line):
+                    self.warn_progress()
 
     def collect_native(self):
         try:
@@ -397,9 +413,14 @@ class TargetProcess:
                 from lifecycle import DRAIN_PROGRESS_PATTERN
                 import re
                 lines = re.findall('(?m)^' + DRAIN_PROGRESS_PATTERN + '$', result['stderr'])
-                if lines:
-                    self.forward_progress(lines[-1])
-                if re.search(r'(?m)^ANSIBLE_PROGRESS_CHANNEL_(?:UNPROVEN|CLEANUP_UNPROVEN)$', result['stderr']):
+                if self.last_progress in lines:
+                    # Final private stderr is chronological. Resume after the
+                    # latest live observation so bounded dedup eviction cannot
+                    # make old activity appear again after a later drain.
+                    lines = lines[len(lines) - lines[::-1].index(self.last_progress):]
+                for line in lines:
+                    self.forward_progress(line)
+                if re.search(r'(?m)^ANSIBLE_PROGRESS_CHANNEL_(?:UNPROVEN|CLEANUP_UNPROVEN|TRUNCATED)$', result['stderr']):
                     self.warn_progress()
         except (OSError, ValueError, TypeError):
             self.result = {'rc': 255, 'stdout': '', 'stderr': 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n'}

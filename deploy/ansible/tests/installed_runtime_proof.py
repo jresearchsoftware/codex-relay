@@ -91,11 +91,22 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
         result = subprocess.run([str(helper), 'stop:' + values['relay_release_commit']
                                  + ':' + values['relay_release_commit']],
                                 text=True, capture_output=True, timeout=15)
-        assert result.returncode == 1 and result.stdout == '', result
+        assert result.returncode == 1, result
         if accepted:
-            assert result.stderr == ('RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;'
-                                     'inspect-state-and-protected-deployment-log\n'), result.stderr
+            assert result.stdout == ('RELAY_LIFECYCLE_PROGRESS=PREFLIGHT;target='
+                                     + values['relay_release_commit'] + '\n'), result.stdout
+            evidence, blocked = result.stderr.splitlines()
+            prefix = 'RELAY_DEPLOYMENT_FAILURE_EVIDENCE='
+            assert evidence.startswith(prefix), evidence
+            receipt = json.loads(evidence[len(prefix):])
+            assert receipt['phase'] == 'owner-lifecycle', receipt
+            assert receipt['status'] in ['stored', 'submitted', 'unavailable'], receipt
+            if receipt['status'] == 'unavailable':
+                assert receipt['reason'] in ['HOST_JOURNAL_UNAVAILABLE', 'NO_CONFIGURED_HOST_STORE'], receipt
+            assert blocked == ('RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;'
+                               'inspect-state-and-protected-deployment-log'), blocked
         else:
+            assert result.stdout == '', result.stdout
             assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' not in result.stderr, result.stderr
             assert 'AssertionError' in result.stderr, result.stderr
 

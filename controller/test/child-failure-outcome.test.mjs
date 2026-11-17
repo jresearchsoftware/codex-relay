@@ -121,6 +121,35 @@ test('public child evidence rejects free text, invalid numbers and raw diagnosti
   assert.doesNotMatch(body, /private-prompt-fixture|protected\/private-file|synthetic-private-secret/);
 });
 
+test('later unknown recorder state preserves definite child observations without strengthening containment', () => {
+  for (const example of [
+    { inherited: 'started', expected: 'started' },
+    { inherited: 'not_started', expected: 'not_started' },
+    { inherited: 'unknown', expected: 'unknown' },
+    { inherited: privateText, expected: 'unknown' },
+    { inherited: 'unknown', childStarted: true, expected: 'started' },
+    { inherited: 'unknown', childStarted: false, expected: 'not_started' },
+    { inherited: 'unknown', child: 'started', expected: 'started' },
+    { inherited: 'not_started', current: 'started', expected: 'started' }
+  ]) {
+    const diagnostic = causalEvidence({ code: 'CODEX_RUNTIME_TIMEOUT', details: {
+      causal: { observed: { child: example.inherited, exitCode: null, signal: 'SIGTERM' } },
+      failureDiagnostic: { childState: example.current ?? 'unknown', childStarted: example.childStarted,
+        containment: 'unknown', cleanup: 'retained' }
+    } }, { child: example.child });
+    assert.equal(diagnostic.observed.child, example.expected);
+    assert.equal(diagnostic.observed.signal, 'SIGTERM');
+    assert.equal(diagnostic.executionState, example.expected === 'started' ? 'confirmed'
+      : example.expected === 'not_started' ? 'known-not-executed' : 'uncertain');
+    assert.equal(diagnostic.containment, 'unknown');
+    assert.equal(diagnostic.runtime.cleanup, 'retained');
+    assert.equal(diagnostic.runtime.containment, 'unknown');
+    const body = terminalOutcomeBody({}, { terminalCode: 'CODEX_RUNTIME_TIMEOUT', diagnostic });
+    assert.match(body, new RegExp(`Codex child: ${example.expected}; exit code: UNAVAILABLE; signal: SIGTERM`));
+    assert.doesNotMatch(body, /private-prompt-fixture|protected\/private-file|synthetic-private-secret/);
+  }
+});
+
 test('normal and debug truncation retain total observed bytes without raising capture limits', () => {
   for (const debug of [false, true]) {
     const value = buildChildDiagnostic({ code: 'CHILD_STDERR', stderr: privateText, stderrBytes: observedBytes, debug });

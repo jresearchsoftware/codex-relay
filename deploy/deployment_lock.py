@@ -46,6 +46,15 @@ if __name__ == '__main__':
             # timeout-based stealing, or removal/replacement of the lock inode.
             while sys.stdin.buffer.read(65536):
                 pass
-    except (ValueError, OSError):
+    except (ValueError, OSError) as error:
+        if 'report_failure' not in globals():
+            try:
+                from lifecycle import report_failure
+            except ImportError:
+                report_failure = None
+        if report_failure is not None:
+            report_failure(error, 'deployment-lock')
+        else:
+            print('RELAY_DEPLOYMENT_FAILURE_EVIDENCE={"phase":"deployment-lock","status":"unavailable","reason":"NO_CONFIGURED_HOST_STORE"}', file=sys.stderr)
         print('DEPLOYMENT_LOCK_BLOCKED', file=sys.stderr)
         raise SystemExit(1)

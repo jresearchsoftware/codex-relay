@@ -199,3 +199,174 @@ def test_remote_progress_failures_report_a_bounded_warning_once(result, monkeypa
     output = capsys.readouterr().out
     assert output == 'RELAY_LIFECYCLE_WARNING=remote-drain-progress-unproven;inspect-protected-transport-evidence\n'
     assert process.process is None
+
+
+@pytest.mark.parametrize('active,unknown,reason', [('UNAVAILABLE', 'UNAVAILABLE', 'lock-or-inventory-unavailable'),
+    ('0', '2', 'inventory-unknown')])
+def test_unknown_inventory_observations_are_forwarded_without_claiming_drain(active, unknown, reason, capsys):
+    line = (f'ADMISSION_DRAIN_PROGRESS phase=drain active={active} unknown={unknown}'
+            f' elapsedSeconds=3 pending=none reason={reason}')
+    assert drain_progress(line)
+    assert capsys.readouterr().out == line + '\n'
+
+
+def test_preflight_transport_retains_private_child_output_behind_safe_code(monkeypatch, capsys):
+    result = subprocess.CompletedProcess([], 40, 'original-private-output',
+        'original-private-error\nADMISSION_DRAIN_STATUS_UNAVAILABLE\n')
+    monkeypatch.setattr(ansible_transport, 'run_target', lambda *args, **kwargs: result)
+    prepared = PreparedInstall(None, None, {'relay_release_root': '/opt/fixture/releases'},
+                               {'revision': 'a' * 40}, '12345678-1234-1234-1234-123456789abc')
+    with pytest.raises(RuntimeError, match='^ADMISSION_DRAIN_STATUS_UNAVAILABLE$') as caught:
+        prepared.execute(['fixed-helper'])
+    assert caught.value.__cause__.stdout == result.stdout
+    assert caught.value.__cause__.stderr == result.stderr
+    assert capsys.readouterr().out == ''
+
+
+def test_source_promotion_transport_retains_original_output_and_specific_code(monkeypatch):
+    import source_upgrade as upgrade
+    result = ('private-original-output', 'private-original-error\nSOURCE_UPGRADE_GENERAL_CHANGED\n')
+    class Process:
+        returncode = 40
+        def __init__(self, *args, **kwargs): pass
+        def start(self, payload): pass
+        def poll(self): return self.returncode
+        def communicate(self, **kwargs): return result
+    monkeypatch.setattr(ansible_transport, 'TargetProcess', Process)
+    holder = SimpleNamespace(poll=lambda: None)
+    prepared = SimpleNamespace(target=None, key=None, source='/fixture', local=True,
+        values={}, identity={}, operation='op', stage='/stage', lease_path='/stage/lease',
+        admission_prefix=lambda: [])
+    with pytest.raises(RuntimeError, match='^SOURCE_UPGRADE_GENERAL_CHANGED$') as caught:
+        upgrade.guarded_promote(prepared, {}, [holder])
+    assert caught.value.__cause__.stdout == result[0]
+    assert caught.value.__cause__.stderr == result[1]
+
+
+@pytest.mark.parametrize('active,unknown', [('UNAVAILABLE', 'UNAVAILABLE'), ('0', '2')])
+def test_remote_channel_keeps_multiple_observed_pending_changes_and_unknowns(active, unknown, monkeypatch, capsys):
+    process = ansible_transport.TargetProcess(None, None, [])
+    process.remote_progress = '/run/relay-ansible-progress-' + 'b' * 32
+    first = ('ADMISSION_DRAIN_PROGRESS phase=drain active=2 unknown=0 elapsedSeconds=0'
+             ' pending=Task-244/Step-1/run-123,Task-245/Step-2/run-124 reason=waiting-for-controllers')
+    second = LINE
+    third = (f'ADMISSION_DRAIN_PROGRESS phase=drain active={active} unknown={unknown} elapsedSeconds=3'
+             ' pending=none reason=inventory-unknown')
+    result = subprocess.CompletedProcess([], 0, '\n'.join([first, second, third]) + '\n', '')
+    monkeypatch.setattr(ansible_transport, 'run_target', lambda *args, **kwargs: result)
+    process.observe_remote_progress(1)
+    process.observe_remote_progress(1)
+    assert capsys.readouterr().out.splitlines() == [first, second, third]
+
+
+def test_remote_wrapper_keeps_rapid_changes_before_the_next_read(tmp_path):
+    directory = tmp_path / ('relay-ansible-progress-' + 'a' * 32)
+    observations = [LINE.replace('active=1', 'active=2'), LINE,
+        LINE.replace('active=1', 'active=0').replace('reason=waiting-for-controllers', 'reason=drained')]
+    marker = tmp_path / 'release-child'
+    private = 'original-private-stderr'
+    code = ('import sys,time,pathlib;print(' + repr('\n'.join(observations) + '\n' + private)
+            + ',file=sys.stderr,flush=True);p=pathlib.Path(sys.argv[1]);'
+            '\nwhile not p.exists(): time.sleep(.01)\n')
+    wrapper = ansible_transport.DRAIN_PROGRESS_WRAPPER.replace("pathlib.Path('/run')", 'pathlib.Path(' + repr(str(tmp_path)) + ')')
+    from lifecycle import DRAIN_PROGRESS_PATTERN
+    process = subprocess.Popen([sys.executable, '-I', '-c', wrapper, str(directory), DRAIN_PROGRESS_PATTERN],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        import json, time
+        process.stdin.write(json.dumps({'argv': [sys.executable, '-c', code, str(marker)], 'input': ''}))
+        process.stdin.close()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if (directory / 'progress').exists() and (directory / 'progress').read_text().splitlines() == observations:
+                break
+            time.sleep(.01)
+        assert process.poll() is None
+        assert (directory / 'progress').read_text().splitlines() == observations
+        assert private not in (directory / 'progress').read_text()
+    finally:
+        marker.touch()
+        process.wait(timeout=5)
+    assert private in process.stderr.read()
+    assert not directory.exists()
+
+
+
+def test_remote_admission_failure_keeps_cause_behind_the_existing_public_code(monkeypatch):
+    spec = importlib.util.spec_from_file_location('lifecycle_admission_deploy', ROOT / 'deploy/relay-deploy.py')
+    cli = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cli)
+    result = subprocess.CompletedProcess([], 7, 'original-private-stdout',
+        'original-private-stderr\nADMISSION_DRAIN_STATUS_UNAVAILABLE\n')
+    monkeypatch.setattr(cli, 'run_target', lambda *args, **kwargs: result)
+    with pytest.raises(ValueError, match='^ADMISSION_DRAIN_STATUS_UNAVAILABLE;inspect-before-recovery$') as caught:
+        cli.remote_admission(None, None, 'fixture', 'drain')
+    assert caught.value.__cause__.stdout == result.stdout
+    assert caught.value.__cause__.stderr == result.stderr
+
+
+
+def test_progress_dedup_history_is_bounded_and_preserves_the_recent_batch(capsys):
+    process = ansible_transport.TargetProcess(None, None, [])
+    for elapsed in range(2100):
+        process.forward_progress(LINE.replace('elapsedSeconds=2', f'elapsedSeconds={elapsed}'))
+    capsys.readouterr()
+    process.forward_progress(LINE.replace('elapsedSeconds=2', 'elapsedSeconds=2099'))
+    assert capsys.readouterr().out == ''
+    assert len(process.forwarded_progress) <= 2048
+
+
+def test_remote_progress_overflow_is_explicit_and_keeps_latest_observations(tmp_path):
+    import json, time
+    from lifecycle import DRAIN_PROGRESS_PATTERN
+    directory = tmp_path / ('relay-ansible-progress-' + 'b' * 32)
+    marker = tmp_path / 'release-overflow-child'
+    code = ('import sys,time,pathlib;'
+            '\nfor elapsed in range(700): print(' + repr(LINE)
+            + '.replace("elapsedSeconds=2",f"elapsedSeconds={elapsed}"),file=sys.stderr,flush=True)'
+            '\np=pathlib.Path(sys.argv[1])'
+            '\nwhile not p.exists(): time.sleep(.01)\n')
+    wrapper = ansible_transport.DRAIN_PROGRESS_WRAPPER.replace("pathlib.Path('/run')", 'pathlib.Path(' + repr(str(tmp_path)) + ')')
+    with (tmp_path / 'private-overflow-stderr').open('w+') as private:
+        process = subprocess.Popen([sys.executable, '-I', '-c', wrapper, str(directory), DRAIN_PROGRESS_PATTERN],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=private, text=True)
+        try:
+            process.stdin.write(json.dumps({'argv': [sys.executable, '-c', code, str(marker)], 'input': ''}))
+            process.stdin.close()
+            deadline = time.monotonic() + 5
+            expected = LINE.replace('elapsedSeconds=2', 'elapsedSeconds=699')
+            raw = ''
+            while time.monotonic() < deadline:
+                if (directory / 'progress').exists():
+                    raw = (directory / 'progress').read_text()
+                    if raw.endswith(expected + '\n'): break
+                time.sleep(.01)
+            assert process.poll() is None and raw.endswith(expected + '\n')
+            assert raw.startswith('ANSIBLE_PROGRESS_CHANNEL_TRUNCATED\n')
+            assert len(raw.encode()) <= 65536
+            assert LINE.replace('elapsedSeconds=2', 'elapsedSeconds=0') + '\n' not in raw
+        finally:
+            marker.touch()
+            process.wait(timeout=5)
+        private.seek(0)
+        assert private.read().count('ANSIBLE_PROGRESS_CHANNEL_TRUNCATED') == 1
+    assert not directory.exists()
+
+
+
+def test_final_receipt_does_not_replay_old_activity_after_dedup_eviction(tmp_path, capsys):
+    import json
+    process = ansible_transport.TargetProcess(None, None, [])
+    process.remote_progress = '/run/relay-ansible-progress-' + 'a' * 32
+    observations = [LINE.replace('elapsedSeconds=2', f'elapsedSeconds={elapsed}') for elapsed in range(2100)]
+    for line in observations: process.forward_progress(line)
+    capsys.readouterr()
+    terminal = ('ADMISSION_DRAIN_PROGRESS phase=drain active=0 unknown=0 elapsedSeconds=2100'
+                ' pending=none reason=drained')
+    process.result_path = tmp_path / 'receipt.json'
+    process.result_path.write_text(json.dumps({'rc': 0, 'stdout': '{}',
+        'stderr': '\n'.join(observations + [terminal]) + '\n'}))
+    process.process = SimpleNamespace(poll=lambda: 0, returncode=0)
+    process.temporary = SimpleNamespace(cleanup=lambda: None)
+    process.communicate()
+    assert capsys.readouterr().out == terminal + '\n'

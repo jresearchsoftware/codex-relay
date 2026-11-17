@@ -7,7 +7,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "462bba2a95d498b67784deb9b8a7f03fa831e2c426276b4f789224b5b211fb78"
+sha256 = "a4f7eb5547fd6fae447df2d820f3999258a623ae3318388dd9562f6353111b8c"
 
 [[file]]
 path = "SKILL.md"

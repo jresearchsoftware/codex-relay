@@ -1,7 +1,7 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "c8e990bef9aabefe9ec0bd74141afdba7d2dfde1",
+  "contract_revision": "7f95a60c485ccf40025dae78f652adc8df3b19ea",
   "contract_revision_role": "accepted-baseline",
   "contract_source": "source-tree",
   "delivery_form": "vpm",
@@ -22,7 +22,7 @@
   "generator": "scripts/build-relay-guidance.py",
   "name": "codex-relay",
   "protocol_source": "consumer-vibe-lock",
-  "publication": "MAJOR 8.0.0 candidate from accepted 7.0.0; trusted Task requirement drift permits safe automatic source publication, separate execution control, same-head changed-authority CR continuation; no installation or publication claim",
+  "publication": "MAJOR 9.0.0 candidate from independently accepted 8.0.0; Task 244 protected causal evidence, live lifecycle progress and failed Actions status for terminal BLOCKED results; no installation or publication claim",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -37,7 +37,7 @@
     "contracts/src/github-authority-v4.json": "e0fee822dc38e42dcc352c8bb511ea2b1af31bf9e97f558017f1b224b200fafd",
     "deploy/workflows/contract.json": "a70eaee4d2e1174a51f27438e5dcbd99ec2501578940ab98c32e5eaa0769633c",
     "guidance/project.py": "7dbfe6e0de6fb45ca8b8aaf1a1039d6bf6779ee69818852ca3e9228115605d8b",
-    "guidance/source.json": "79209539c40cb157013ad3ad7bdd10dd15d77560ee003c88ddac8548bbf19707",
+    "guidance/source.json": "b5d8c72b3b76ec7ea803ce462050beaf8f64f7f7a6998051e21e84f0249c6dac",
     "packages/codex-relay/skill/LICENSE": "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2",
     "packages/codex-relay/skill/SKILL.md": "62517a2f2d30ba1e2e49ace151cfe07adcce891abe795152a45c30eb0d2c2c1a",
     "packages/codex-relay/skill/references/compatibility.md": "c18d895213814e96e43c7081766ea3f0aec7b257efeb0f8bde890d15d0990970",
@@ -49,6 +49,6 @@
     "scripts/build-relay-guidance.py": "4fd9b1f1dfd45881d0a0e453044b69a4786c1573b89af780fcd39140d519bde7",
     "toolchain/vibevm.json": "234120b2b2529620b1800dd34eb84545db11ab74f2d54fb69285f00e03186d82"
   },
-  "version": "8.0.0",
+  "version": "9.0.0",
   "workflow_contract": "relay-workflows-v4"
 }

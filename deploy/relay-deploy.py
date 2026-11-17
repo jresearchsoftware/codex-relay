@@ -168,7 +168,8 @@ def apply_guard(target, key, namespace):
     # The same reviewed stdlib-only lock implementation runs on the target for
     # an owner apply and locally for the installed helper. No credential or
     # user-selected command is passed to the holder.
-    source = (ROOT / 'deploy/deployment_lock.py').read_text()
+    from lifecycle import failure_reporting_source
+    source = failure_reporting_source() + (ROOT / 'deploy/deployment_lock.py').read_text()
     remote = ['/usr/bin/python3', '-I', '-c', source,
               '/var/lib/' + namespace + '-deployment.lock']
     return hold_target(target, key, remote, 'DEPLOYMENT_LOCK_READY')
@@ -180,7 +181,8 @@ def remote_admission(target, key, namespace, *arguments):
                         **({'progress': True} if arguments[0] == 'drain' else {}))
     if result.returncode:
         codes = re.findall(r'(?m)^ADMISSION_[A-Z_]{1,100}$', result.stderr)
-        raise ValueError((codes[-1] if codes else 'trusted-admission-operation-failed') + ';inspect-before-recovery')
+        raise ValueError((codes[-1] if codes else 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
+            result.returncode, 'fixed-admission-operation', output=result.stdout, stderr=result.stderr)
     return json.loads(result.stdout)
 
 

@@ -280,3 +280,33 @@ test('a worker capability blocker reaches the Outcome as a bounded redacted clai
   assert.match(f.comments[0].body, /Worker blocker \(claim\): Capability unavailable/);
   assert.doesNotMatch(f.comments[0].body, /synthetic-private-value/);
 });
+
+for (const clean of [false, null]) {
+  test(`original execution failure survives ${clean === null ? 'incomplete observation' : 'dirty checkout'} and retains warning on replay`, async t => {
+    const f = await fixture(t); let executions = 0;
+    const warning = clean === null ? 'WORKTREE_OBSERVATION_INCOMPLETE' : 'UNCOMMITTED_WORK_REMAINS';
+    const args = { ...f, journal: f.journal,
+      execute: async () => {
+        executions++; await f.commit();
+        throw failure('CODEX_RUNTIME_TIMEOUT', { childState: 'started', containment: 'reaped',
+          causal: { primaryCause: 'EXECUTION_CANCELLED', observed: { child: 'started', signal: 'SIGTERM' } } });
+      },
+      collect: async e => ({ ...await f.collect(e), clean,
+        ...(clean === null ? { worktreeObservation: { status: 'unknown', code: warning } } : {}) }) };
+    assert.equal(await report(() => runAttempt(args)), 1);
+    const saved = await f.journal.get(99);
+    assert.equal(saved.diagnostic.classification.code, 'CODEX_RUNTIME_TIMEOUT');
+    assert.equal(saved.diagnostic.classification.stage, 'execution');
+    assert.equal(saved.diagnostic.primaryCause, 'EXECUTION_CANCELLED');
+    assert.equal(saved.diagnostic.observed.child, 'started');
+    assert.equal(saved.diagnostic.observed.signal, 'SIGTERM');
+    assert.equal(saved.diagnostic.orchestration, 'FAILED');
+    assert.deepEqual(saved.executionWarnings, [warning]);
+    assert.match(f.comments[0].body, /Terminal code: CODEX_RUNTIME_TIMEOUT/);
+    assert.match(f.comments[0].body, new RegExp('Warning summary:.*' + warning));
+    assert.match(f.comments[0].body, new RegExp('Attempt run-99: ' + warning));
+    assert.equal(await report(() => runAttempt({ ...args,
+      collect: () => assert.fail('recollect'), execute: () => assert.fail('reexecute') })), 1);
+    assert.equal(executions, 1); assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
+  });
+}

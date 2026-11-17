@@ -409,7 +409,8 @@ def phase_arguments(args, phase, receipt, consumer, expected, guard, pool_guard,
 def hold_install_guard(target, key, namespace, root):
     """Use the same existing kernel mutex as the expert apply primitive."""
     from ansible_transport import hold_target
-    source = (Path(root) / 'deploy/deployment_lock.py').read_text()
+    from lifecycle import failure_reporting_source
+    source = failure_reporting_source() + (Path(root) / 'deploy/deployment_lock.py').read_text()
     return hold_target(target, key, ['/usr/bin/python3', '-I', '-c', source,
                                    '/var/lib/' + namespace + '-deployment.lock'], 'DEPLOYMENT_LOCK_READY')
 

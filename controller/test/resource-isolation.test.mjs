@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
+import { recordHostFailure } from '../src/host-failure-diagnostic.mjs';
+import { writeDiagnosticBundle } from '../src/diagnostic-store.mjs';
 import { REPOSITORY, VERSION } from '../src/execution-contract.mjs';
 
 const operationId = '12345678-1234-1234-1234-123456789abc';
@@ -13,10 +15,10 @@ const head = 'a'.repeat(40);
 const attempt = (runId, executionSlot = 'primary') => ({ envelope: { version: VERSION,
   repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, runId, attemptId: `run-${runId}`,
   route: 'auto', issueNumber: 85, executionSlot }, controllerLifecycle: { version: 1, status: 'active' } });
-async function fixture(t) {
+async function fixture(t, storeOptions) {
   const root = await mkdtemp(join(tmpdir(), 'relay-resource-isolation-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const store = createAttemptStore(join(root, 'records')); const journal = createAttemptStore(join(root, 'journal'));
+  const store = createAttemptStore(join(root, 'records'), storeOptions); const journal = createAttemptStore(join(root, 'journal'));
   const gate = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal, protectedRoot: false });
   await gate.initialize(); return { root, store, journal, gate };
 }
@@ -73,10 +75,26 @@ test('manual handoff does not reserve a physical slot and trusted legacy complet
 });
 
 test('scanning preserves corrupt identities and unidentifiable records cannot be assumed to use another slot', async t => {
-  const f = await fixture(t); await mkdir(join(f.root, 'records'), { recursive: true });
+  const diagnosticRoot = await mkdtemp(join(tmpdir(), 'relay-resource-diagnostics-'));
+  t.after(() => rm(diagnosticRoot, { recursive: true, force: true }));
+  const f = await fixture(t, { recordFailure: (error, operation) => recordHostFailure({ error, operation,
+    readConfig: async () => ({ mode: 'normal' }),
+    diagnosticStore: diagnostic => writeDiagnosticBundle(diagnostic, { root: diagnosticRoot }) }) });
+  await mkdir(join(f.root, 'records'), { recursive: true });
   await writeFile(join(f.root, 'records/99.json'), '{ broken');
   const rows = await f.store.scan();
-  assert.deepEqual(rows, [{ runId: 99, repository: REPOSITORY, record: null, error: 'ATTEMPT_RECORD_UNREADABLE' }]);
+  assert.equal(rows.length, 1);
+  const { diagnosticStore, ...identity } = rows[0];
+  assert.deepEqual(identity, { runId: 99, repository: REPOSITORY, record: null, error: 'ATTEMPT_RECORD_UNREADABLE' });
+  assert.equal(diagnosticStore.status, 'stored');
+  assert.equal(diagnosticStore.mode, 'normal');
+  const saved = JSON.parse(await readFile(join(diagnosticRoot, `${diagnosticStore.executionId}.json`), 'utf8'));
+  assert.equal(saved.executionId, diagnosticStore.executionId);
+  assert.equal(saved.classification, 'ATTEMPT_RECORD_UNREADABLE');
+  assert.equal(saved.input.operation, 'attempt-store-scan');
+  assert.match(saved.causalEvidence.exception.text, /SyntaxError|JSON/);
+  assert.match(saved.causalEvidence.exception.text, /99\.json/);
+  assert.doesNotMatch(JSON.stringify(diagnosticStore), /99\.json|SyntaxError/);
   await assert.rejects(f.store.all(), { code: 'ATTEMPT_RECORD_UNREADABLE' });
   await assert.rejects(f.gate.assertSlotComplete('pool-2'), error => {
     assert.equal(error.code, 'ADMISSION_ATTEMPT_INVALID'); assert.equal(error.details.conflictingRunId, 99); return true;

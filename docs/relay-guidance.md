@@ -10,7 +10,25 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **8.0.0** is a **MAJOR** candidate from independently accepted **7.0.0**
+Guidance **9.0.0** is a **MAJOR** candidate from independently accepted **8.0.0**
+at `7f95a60c485ccf40025dae78f652adc8df3b19ea`. Task #244 adds protected causal
+evidence, live owner lifecycle progress and failed Actions status for terminal
+`BLOCKED` results. That exit-status change is a supported operator contract
+change authorized by Task #244, so it requires MAJOR under PV-002. The accepted
+8.0.0 source already froze its package bytes; publication availability does not
+permit reuse. Frozen 8.0.0 and all earlier registry payloads remain unchanged.
+
+The current candidate retains the `>=10.0.0` native Shared floor, exact standalone
+snapshot and included publisher closure evidence. Source generation does not
+activate an installation or reconcile live ChatGPT settings or private workflow
+projections.
+
+### Earlier version-scoped classification
+
+The following paragraphs retain historical release rationale; their then-current
+floors, snapshots and adoption facts do not replace the current 9.0.0 selection.
+
+Guidance **8.0.0** was a **MAJOR** change from independently accepted **7.0.0**
 at `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Task #266 changes supported
 automatic execution behavior: trusted boundary prose or acceptance/validation requirements
 no longer terminate admitted automatic source progress, contained collection or
@@ -32,18 +50,6 @@ Shared 10.0.0 baseline below. Its accepted registry bytes and all earlier frozen
 versions remain unchanged; the former parallel 7.0.0 proposals are reconciled
 sequentially under PV-009. The current candidate retains the `>=10.0.0` native
 floor, exact standalone snapshot and included publisher closure evidence.
-
-Task #244 adds protected causal evidence, live owner lifecycle progress and
-explicit failed Actions status for terminal `BLOCKED` results to this same
-unpublished 8.0.0 candidate. The exit-status change is a supported operator
-contract change, authorized by Task #244; the existing MAJOR classification
-covers it. Source generation does not activate an installation or reconcile live
-ChatGPT settings or private workflow projections.
-
-### Earlier version-scoped classification
-
-The following paragraphs retain historical release rationale; their then-current
-floors, snapshots and adoption facts do not replace the current 8.0.0 selection.
 
 Guidance **7.0.0** was a **MAJOR** change from independently accepted **6.1.0**
 at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It changes closure timing and
@@ -165,8 +171,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 8.0.0 uses `contract_source: source-tree` and records the accepted
-Task 266 baseline `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 9.0.0 uses `contract_source: source-tree` and records the accepted
+Task 244 baseline `7f95a60c485ccf40025dae78f652adc8df3b19ea` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -178,7 +184,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 This delivery change does not change deployed runtime semantics.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 8.0.0 is a candidate. Native source
+release. Before independent acceptance, 9.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

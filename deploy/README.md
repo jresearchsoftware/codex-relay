@@ -1422,8 +1422,11 @@ intervals with elapsed wait time. Remaining work comes from protected admission
 inventory; elapsed time never means the drain succeeded. Unknown inventory still
 refuses Apply. The SSH/Ansible adapter reports the same observations while its
 original no-log helper is still running. It polls a bounded, operation-local
-private progress channel through the existing target transport; original stdout,
-stderr and the final receipt remain private. The channel is removed on normal
+private progress channel through the existing target transport. A bounded batch
+preserves separately observed pending-set changes between polls; duplicate
+observations are suppressed and a truncated batch reports a warning. Unavailable
+counts stay explicitly `UNAVAILABLE`. Original stdout, stderr and the final
+receipt remain private. The channel is removed on normal
 completion, creates no lifecycle authority and never launches the helper again.
 A progress-channel or cleanup failure reports a visible warning while retaining
 the original operation result and private evidence.
@@ -1441,7 +1444,10 @@ original failure and requires inspection before recovery.
 
 Failed Python deployment, owner lifecycle, host preflight and source/package
 qualification operations retain bounded original messages, stacks, OS causes and
-child stdout/stderr with credential redaction. Once a protected backend log exists,
+child stdout/stderr with credential redaction, including partial output from
+timeouts, original captured byte counts and capture/truncation availability.
+Private transport wrappers retain the child cause when projecting a safe code;
+failed deployment-lock holders use the same recorder before their bounded refusal. Once a protected backend log exists,
 the existing log receives the causal record. Earlier target failures use the
 existing host journal under `codex-relay-deployment` when available; successful
 submission does not claim a journal readback. The public failure points to that

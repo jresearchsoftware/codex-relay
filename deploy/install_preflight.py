@@ -606,11 +606,14 @@ class PreparedInstall:
                 error = RuntimeError(report['error_code'])
                 error.resource = report['resource']
                 error.next_action = report['next_action'] + '; resource=' + report['resource'] + '; keep the prior installation unchanged.'
-            raise error
+            raise error from subprocess.CalledProcessError(
+                result.returncode, 'fixed-install-prerequisite', output=result.stdout, stderr=result.stderr)
         try:
             return json.loads(result.stdout)
-        except (ValueError, TypeError):
-            require(False, 'RESULT_UNPROVEN')
+        except (ValueError, TypeError) as error:
+            error = RuntimeError('INSTALL_PREFLIGHT_RESULT_UNPROVEN')
+            raise error from subprocess.CalledProcessError(
+                result.returncode, 'fixed-install-prerequisite-result', output=result.stdout, stderr=result.stderr)
 
     def action(self, action, **extra):
         from lifecycle import failure_reporting_source

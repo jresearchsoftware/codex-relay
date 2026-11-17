@@ -1481,3 +1481,13 @@ the configured actor's existing repository permission rather than blindly
 repeating a mutation. A missing body remains explicitly unavailable. See the
 [Task 244 boundary matrix](../docs/qualification/task-244-step-1.md) for source
 coverage, representative tests and installed-runtime limits.
+
+
+A later dirty-checkout or incomplete-observation result does not replace an
+already observed execution failure. Terminal Outcomes retain the original
+execution code, child state and causal pointer, while reporting
+`UNCOMMITTED_WORK_REMAINS` or `WORKTREE_OBSERVATION_INCOMPLETE` separately in the
+readable warning summary and canonical warning fields. Incomplete observation
+is unknown residue, not proof of uncommitted files. These cases remain failed
+handoffs pending reconciliation; replay publishes no second Outcome and never
+restarts execution.

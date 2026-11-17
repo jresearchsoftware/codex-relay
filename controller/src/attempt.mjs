@@ -103,6 +103,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (typeof progress.clean !== 'boolean' && !(progress.clean === null && progress.worktreeObservation?.status === 'unknown')) fail('WORKTREE_STATE_UNKNOWN');
     const executionWarnings = [...(record.execution.executionWarnings ?? []),
       ...(progress.clean === null ? ['WORKTREE_OBSERVATION_INCOMPLETE'] : progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'])];
+    record.executionWarnings = executionWarnings;
     record.collection = { head: progress.head, clean: progress.clean, preserved: true, ...(progress.worktreeObservation ? { worktreeObservation: progress.worktreeObservation } : {}) };
     lastSuccessfulBoundary = 'collection';
     // Collection observes the complete retained checkout after containment.
@@ -118,7 +119,9 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     stage = 'readiness';
     // Dirtiness alone is not an automation failure after known successful
     // execution. An incomplete worker still needs its unsaved work reconciled.
-    if (!progress.clean && record.execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
+    if (!progress.clean && !record.execution.errorCode && record.execution.result?.status !== 'success') {
+      fail(progress.clean === null ? 'WORKTREE_OBSERVATION_INCOMPLETE' : 'UNCOMMITTED_WORK_REMAINS');
+    }
     if (record.execution.result?.status !== 'success') {
       if (record.execution.errorCode) stage = 'execution';
       const code = record.execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED';
@@ -171,7 +174,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (e.route === 'auto' && !record.outcome) {
       try {
         const outcome = await invoke('terminal-outcome', { status: 'blocked', terminalCode: error.code,
-          diagnostic: record.diagnostic, publishedHead: record.progress?.head ?? null,
+          diagnostic: record.diagnostic, executionWarnings: record.executionWarnings ?? record.execution?.executionWarnings ?? [], publishedHead: record.progress?.head ?? null,
           lastSuccessfulBoundary: record.diagnostic.lastSuccessfulBoundary,
           failureBoundary: record.diagnostic.failureBoundary });
         record.outcome = outcome;

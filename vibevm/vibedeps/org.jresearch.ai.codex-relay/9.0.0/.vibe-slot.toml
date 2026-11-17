@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:bb9113305af5b64b3e1ccce51f81c95270807f1bbf866c4b702b1ce30e0ec41f"
+source_hash = "sha256:f57055d31cfcddeff63a94ddce872eacf03528d163ebb251b6ca132128c3a095"
 spec_format = "mixed"
 
 [[file]]
@@ -12,7 +12,7 @@ sha256 = "02236e1a4d052338e1bd9139ff8abbe5b697ec4128583a4fb4b32a396855e422"
 
 [[file]]
 path = "README.md"
-sha256 = "bb5e622fd681f9bde3f78a146333e186734d177a41f0c8a5a4a6886c614f1c8e"
+sha256 = "b8a6eb86f11e77f199669055b502640ca88ffe6948ae890c17aa9dc16f2fc777"
 
 [[file]]
 path = "skill/LICENSE"
@@ -20,7 +20,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "462bba2a95d498b67784deb9b8a7f03fa831e2c426276b4f789224b5b211fb78"
+sha256 = "a4f7eb5547fd6fae447df2d820f3999258a623ae3318388dd9562f6353111b8c"
 
 [[file]]
 path = "skill/SKILL.md"
@@ -72,7 +72,7 @@ sha256 = "1ce74a215e7cf809dabf99e45fcdad2b89c64454698ecae04a930d1672cec020"
 
 [[file]]
 path = "vibe.toml"
-sha256 = "a683ddd36e93e517b33dd139ae9f4907a4dfcdb64e59d2f289fb8ecb62f67329"
+sha256 = "ac8355a3199824a8951d7653906d771325c944b8f1363c76846bab352cafcd6a"
 
 [[file]]
 path = "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/.vibe-slot.toml"
