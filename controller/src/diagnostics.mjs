@@ -139,7 +139,15 @@ export function captureCausalDiagnostic({ error, executionId, phase, operation, 
   let source = error; const seen = new Set();
   while (source && typeof source === 'object' && !seen.has(source) && seen.size < 16) {
     seen.add(source);
-    stdout ??= source.stdout; stderr ??= source.stderr;
+    const stream = field => {
+      const value = source[field];
+      if (typeof value !== 'string') return value;
+      const bytes = source[`${field}Bytes`];
+      const knownBytes = Number.isSafeInteger(bytes) && bytes >= 0;
+      return { text: value, ...(knownBytes ? { bytes } : {}),
+        truncated: source[`${field}Truncated`] === true || (knownBytes ? bytes > Buffer.byteLength(value) : source.truncated === true) };
+    };
+    stdout ??= stream('stdout'); stderr ??= stream('stderr');
     exitCode ??= source.exitCode ?? (Number.isInteger(source.code) ? source.code : undefined);
     signal ??= source.signal;
     source = source.runtimeCause !== source ? source.runtimeCause ?? source.cause : source.cause;

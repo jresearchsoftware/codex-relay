@@ -217,8 +217,10 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         }
         if (pendingError) {
           const original = pendingError.details ?? {};
+          const finalArchive = lifecycle?.diagnosticStore?.status === 'stored'
+            && lifecycle.diagnosticStore.executionId === `${envelope.attemptId}-finalization`;
           pendingError.details = { ...original, ...lifecycle, executionId: envelope.attemptId, containment,
-            ...(original.diagnosticStore?.status === 'stored' ? { diagnosticStore: original.diagnosticStore } : {}),
+            ...(!finalArchive && original.diagnosticStore?.status === 'stored' ? { diagnosticStore: original.diagnosticStore } : {}),
             codexUsage: normalizeCodexUsage(original.codexUsage ?? codexUsage),
             childState: original.childState ?? (child ? value?.child ?? 'unknown' : 'not_started'),
             primaryCause: original.primaryCause ?? lifecycle?.primaryCause,

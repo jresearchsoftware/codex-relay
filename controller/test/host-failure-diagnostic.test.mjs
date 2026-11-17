@@ -209,7 +209,10 @@ test('Writer timeout retains total observed stream bytes and clipping independen
   await assert.rejects(adapter.invoke({ operation: 'admit' }), error => {
     assert.equal(error.code, 'WRITER_HELPER_TIMEOUT');
     assert.equal(error.native.stdoutBytes, 1024 * 1024 + 20); assert.equal(error.native.truncated, true);
-    assert.match(captureCausalDiagnostic({ error }).stderr.text, /native quiet Writer cause/);
+    const cause = captureCausalDiagnostic({ error });
+    assert.match(cause.stderr.text, /native quiet Writer cause/);
+    assert.equal(cause.stdout.bytes, 1024 * 1024 + 20); assert.equal(cause.stdout.truncated, true);
+    assert.equal(cause.stderr.truncated, false);
     return true;
   });
 });
