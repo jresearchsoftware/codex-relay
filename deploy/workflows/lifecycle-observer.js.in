@@ -10,6 +10,13 @@ const report = {
     const code = /^[A-Z][A-Z0-9_]{0,39}$/.test(error?.code ?? '') ? error.code : 'UNAVAILABLE';
     console.error(`RELAY_LIFECYCLE_WARNING=${phase}-failed;code=${code};installed-result-unknown`);
   },
+  stopHelper(child, error, phase) {
+    this.transportFailed(error, phase); process.exitCode = 1;
+    // Stop this transport and still await its real close event. This signal
+    // supplies no proof that privileged or remote effects have stopped.
+    try { child.kill('SIGTERM'); }
+    catch (failure) { this.transportFailed(failure, 'helper-stop'); }
+  },
   observe(chunk) {
     this.pending += chunk.toString('utf8');
     while (this.pending.includes('\n')) {

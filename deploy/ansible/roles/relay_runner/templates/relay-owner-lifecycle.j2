@@ -26,7 +26,8 @@ for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'conf
         path = checked_root / 'deploy' / name
         # Retained source can predate the child observer. A present observer
         # always receives the same protection checks before Python imports it.
-        if name == 'lifecycle_process.py' and not path.exists() and not path.is_symlink():
+        if (name == 'lifecycle_process.py' and not path.exists() and not path.is_symlink()
+                and b'lifecycle_process' not in (checked_root / 'deploy/owner_lifecycle.py').read_bytes()):
             continue
         for entry in [path, *path.parents]:
             info = entry.lstat()

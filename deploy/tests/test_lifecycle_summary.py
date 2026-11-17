@@ -47,12 +47,16 @@ def workflow_fixture(request, tmp_path):
     summary = tmp_path / 'summary'
     code = javascript(step).replace('/opt/codex-relay', str(install)).replace('/usr/bin/sudo', str(helper))
 
-    def run(lines, exit_code=0, sha=CONFIG):
+    def run(lines, exit_code=0, sha=CONFIG, output_error=False):
         helper.write_text('#!' + sys.executable + '\nimport sys\n'
                           + 'print(' + repr('\n'.join(lines)) + ')\nsys.exit(' + str(exit_code) + ')\n')
         helper.chmod(0o755)
         summary.write_text('')
-        result = subprocess.run([NODE, '--input-type=module', '-e', code], text=True, capture_output=True,
+        program = code
+        if output_error:
+            program = program.replace('await new Promise(resolve => {',
+                'setImmediate(() => child.stdout.emit("error",Object.assign(new Error("private-output-error"),{code:"EIO"})));\nawait new Promise(resolve => {')
+        result = subprocess.run([NODE, '--input-type=module', '-e', program], text=True, capture_output=True,
             env={**os.environ, 'GITHUB_SHA': sha, 'GITHUB_RUN_ID': '123',
                  'EXPECTED_WORKFLOW_CONTRACT': 'relay-workflows-v4', 'RELAY_LIFECYCLE_ACTION': 'apply',
                  'GITHUB_STEP_SUMMARY': str(summary)})
@@ -90,6 +94,19 @@ def test_failure_or_unknown_proof_never_reports_installed_success(workflow_fixtu
     assert '| Lifecycle outcome | OPEN |' not in summary
     assert 'private-config-value' not in summary
     assert result.returncode != 0 if failure in ['child-failed', 'invalid-dispatch'] else result.returncode == 0
+
+
+@pytest.mark.skipif(not NODE, reason='Node required for projected workflow fixtures')
+def test_generated_workflow_handles_output_error_and_awaits_failed_close(workflow_fixture):
+    run, _kind = workflow_fixture
+    receipt = (f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={REQUESTED};config={CONFIG};'
+               f'installed={INSTALLED};installed_config={RETAINED_CONFIG}')
+    result, summary = run([receipt], output_error=True)
+    assert result.returncode != 0
+    assert 'helper-output-failed;code=EIO' in result.stderr
+    assert 'private-output-error' not in result.stderr
+    assert '| Verified installed product | unknown |' in summary
+    assert '| Lifecycle outcome | OPEN |' not in summary
 
 
 @pytest.mark.parametrize('git_mode', [False, True])
