@@ -135,6 +135,21 @@ pub(crate) fn capture() -> (
             Ok(())
         }
     }
+    // Keep a disabled registrar alive before enabling the first capture. With
+    // only one Dispatch, tracing-core's callsite registration consults the
+    // emitting thread's default. An unscoped test can then cache `never` before
+    // the captured future is first polled. Two live registrars force interest
+    // calculation across subscribers instead, without a global default or
+    // serializing tests. The anchor alone keeps the global max level OFF.
+    static ANCHOR: std::sync::OnceLock<tracing::Dispatch> = std::sync::OnceLock::new();
+    ANCHOR.get_or_init(|| {
+        tracing::Dispatch::new(
+            tracing_subscriber::fmt()
+                .with_max_level(tracing::level_filters::LevelFilter::OFF)
+                .with_writer(io::sink)
+                .finish(),
+        )
+    });
     let bytes = Arc::new(Mutex::new(Vec::new()));
     let writer = bytes.clone();
     (
@@ -150,6 +165,93 @@ pub(crate) fn capture() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_survives_first_unscoped_observation() {
+        // A fresh process is essential: another capture in the test suite can
+        // keep the callsite enabled and hide the first-subscriber interleaving.
+        const CHILD: &str = "RELAY_DIAGNOSTIC_CAPTURE_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "diagnostics::tests::capture_survives_first_unscoped_observation",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "isolated capture failed: {}{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&result.stdout).contains("1 passed; 0 failed"),
+                "isolated regression did not execute: {}",
+                String::from_utf8_lossy(&result.stdout)
+            );
+            return;
+        }
+
+        let (subscriber, journal) = capture();
+        let dispatch = tracing::Dispatch::new(subscriber);
+        // A parallel test without a subscriber can be the first caller after
+        // WithSubscriber creates its Dispatch but before its future is polled.
+        record("UNSCOPED", "fixture", "outside capture");
+        tracing::dispatcher::with_default(&dispatch, || {
+            record("CAPTURED", "fixture", "native E422; secret=private-value");
+        });
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(
+            journal.contains("native E422"),
+            "missing original cause: {journal}"
+        );
+        assert!(journal.contains("CAPTURED"), "{journal}");
+        assert!(!journal.contains("UNSCOPED"), "{journal}");
+        assert!(!journal.contains("private-value"), "{journal}");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_captures_keep_their_own_causes_across_polls() {
+        use tracing::instrument::WithSubscriber;
+        let barrier = std::sync::Arc::new(tokio::sync::Barrier::new(8));
+        let mut tasks = Vec::new();
+        for index in 0..8 {
+            let (subscriber, journal) = capture();
+            let barrier = barrier.clone();
+            let task = tokio::spawn(
+                async move {
+                    barrier.wait().await;
+                    for _ in 0..32 {
+                        tokio::task::yield_now().await;
+                        record(
+                            "CAPTURED",
+                            "fixture",
+                            &format!("request-{index}; token=private-value"),
+                        );
+                    }
+                }
+                .with_subscriber(subscriber),
+            );
+            tasks.push((index, task, journal));
+        }
+        for (index, task, journal) in tasks {
+            task.await.unwrap();
+            let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+            assert_eq!(
+                journal.matches(&format!("request-{index}")).count(),
+                32,
+                "{journal}"
+            );
+            for other in (0..8).filter(|other| *other != index) {
+                assert!(!journal.contains(&format!("request-{other}")), "{journal}");
+            }
+            assert!(!journal.contains("private-value"), "{journal}");
+        }
+    }
+
     #[test]
     fn preserves_native_cause_and_redacts_credentials_with_bounded_unicode() {
         let (cause, truncated) = bounded("EACCES (os error 13): rejected; Authorization: Bearer plain-secret; token=private-value github_pat_private sk-private eyJ.private.signature");

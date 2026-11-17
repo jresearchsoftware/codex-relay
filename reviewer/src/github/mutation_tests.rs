@@ -326,21 +326,25 @@ async fn definite_rejection_classification_does_not_wait_for_diagnostic_body() {
     use tracing::instrument::WithSubscriber;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
+    let (release_body, body_released) = tokio::sync::oneshot::channel();
     let server = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let mut request = [0; 4096];
         stream.read(&mut request).await.unwrap();
+        let body = "native delayed E422; fixture-token; secret=private-value";
         stream
-            .write_all(b"HTTP/1.1 422 Unprocessable Entity\r\nContent-Length: 500\r\n\r\n")
+            .write_all(format!("HTTP/1.1 422 Unprocessable Entity\r\nContent-Length: {}\r\nx-github-request-id: DELAYED:422\r\n\r\n", body.len()).as_bytes())
             .await
             .unwrap();
-        std::future::pending::<()>().await;
+        body_released.await.unwrap();
+        stream.write_all(body.as_bytes()).await.unwrap();
     });
     let github = Github::new();
     let prepared = PreparedMutation {
         request: github
             .client
             .post(format!("http://{address}"))
+            .bearer_auth("fixture-token")
             .build()
             .unwrap(),
         failure_code: "DEFINITE_REJECTION",
@@ -356,10 +360,45 @@ async fn definite_rejection_classification_does_not_wait_for_diagnostic_body() {
     .unwrap();
     assert!(failure.safe_to_retry);
     assert_eq!(failure.http_status, Some(422));
+    assert_eq!(failure.phase, "http-response");
+    assert_eq!(failure.request_id.as_deref(), Some("DELAYED:422"));
+    let pending = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+    assert!(
+        pending.contains("native_response_capture=pending"),
+        "{pending}"
+    );
+    assert!(pending.contains("body unavailable unless"), "{pending}");
+    assert!(!pending.contains("native delayed E422"), "{pending}");
+    // The caller's subscriber scope has ended. The detached reader must retain
+    // it, and retain/redact the original body when the fixture finally sends it.
+    release_body.send(()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if String::from_utf8_lossy(&journal.lock().unwrap()).contains("native delayed E422") {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("detached native response was not journalled");
     let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
-    assert!(journal.contains("native_response_capture=pending"));
-    assert!(journal.contains("body unavailable unless"));
-    server.abort();
+    assert!(
+        journal.contains("native_response_truncated=false"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains("native_response_read_error=None"),
+        "{journal}"
+    );
+    for secret in ["fixture-token", "private-value"] {
+        assert!(!journal.contains(secret), "{journal}");
+    }
+    assert!(!failure
+        .diagnostics()
+        .to_string()
+        .contains("native delayed E422"));
+    server.await.unwrap();
 }
 
 #[tokio::test]
