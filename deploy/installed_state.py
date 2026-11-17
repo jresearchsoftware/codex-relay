@@ -42,8 +42,10 @@ def recipe_digest(source_root):
 
 # Frozen against the reviewed recipe surface, not an observed installation.
 # Task 244 retains the owned task/module/path/mode/identity catalogue while
-# preserving bounded diagnostic causes and protected manual helper stderr.
-RECIPE_SHA256 = '9adb19e7a795d19e4bd04dbc8a044df55952c4a3af34838c8c643e2e4b2bd64c'
+# preserving bounded diagnostic causes, instance preflight evidence and the
+# enriched consumer-transition diagnostic wire. Every Ansible script is part of
+# this fingerprint, including read-only helpers used before installation.
+RECIPE_SHA256 = '76702a3ee9167d6a957e366aa9d4b58125e2fae40e88c4c89d8df687f3af775e'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",

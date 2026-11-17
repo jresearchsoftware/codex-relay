@@ -120,7 +120,12 @@ passed at the final functional source digest. The distinct-UID sandbox cleanup
 proof passed. Guidance generation, registry integrity, frozen-version tampering
 regressions, native VibeVM 1.0.11 materialization and the accepted publisher's
 candidate-readiness check passed. The final handoff records full suite results
-and any remaining qualification limits.
+and any remaining qualification limits. Changes to both diagnostic scripts also
+required refreshing the exact owned-recipe fingerprint. All 228 affected
+catalogue, source-upgrade and package cases passed after that correction,
+including actual Ansible rendering of all 32 routes and negative drift checks.
+The single exact fingerprint gate remains in place; older differing recipes
+retain their existing full-path/frozen-runtime behavior.
 
 The routine upstream check on 2026-11-17 still identifies official stable
 `rust-v0.169.0`, matching the unchanged qualified CLI pin. No model call was added
@@ -141,3 +146,17 @@ publication, full effective ChatGPT Instructions reconciliation/readback and
 separately authorized private workflow projection publication are distinct from
 this source execution. #248 and #256 retain their pending source/client/projection
 obligations. No source commit or test activates those settings or workflows.
+
+
+## Separately actionable follow-up
+
+The exact-head candidate CI subset passed at `c78b66e` while the required full
+root deployment suite detected a stale recipe fingerprint in
+`deploy/installed_state.py`. The affected Ansible scripts had changed while its
+pin had not. This Task corrects the pin and adds drift regressions in its owning
+test suite. As an optional later improvement, the owner could select an early
+native-CI invocation of the existing fingerprint-coherence assertion to expose
+this specific mismatch sooner. The impact is delayed diagnosis and wasted full
+suite time, not a remaining recipe-integrity bypass. No new mandatory check,
+workflow or additional Issue is introduced here; the owner can decide whether
+to track this CI feedback improvement separately.

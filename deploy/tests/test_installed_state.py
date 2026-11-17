@@ -107,6 +107,18 @@ def test_changed_launcher_bytes_refuse_an_unqualified_recipe(tmp_path):
         state.build_catalogue(root, {})
 
 
+
+@pytest.mark.parametrize('script', ['verify_instance_identity.py', 'publish_git_consumer.py'])
+def test_diagnostic_script_change_still_requires_an_exact_qualified_recipe(tmp_path, script):
+    root = tmp_path / 'source'
+    shutil.copytree(SOURCE / 'deploy/ansible', root / 'deploy/ansible',
+                    ignore=shutil.ignore_patterns('tests', '__pycache__'))
+    helper = root / 'deploy/ansible/scripts' / script
+    helper.write_bytes(helper.read_bytes() + b'\n# Unqualified diagnostic helper change\n')
+    with pytest.raises(state.NotEligible, match='INSTALLED_RECIPE_NOT_SUPPORTED'):
+        state.build_catalogue(root, {})
+
+
 def test_new_mutating_owner_in_existing_task_file_cannot_escape_coverage(tmp_path):
     root = tmp_path / 'source'
     shutil.copytree(SOURCE / 'deploy/ansible', root / 'deploy/ansible',
