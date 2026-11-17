@@ -67,7 +67,25 @@ No additional model calls or recurring service was introduced.
 
 ## Qualification and remaining boundaries
 
-Final standard-check results are recorded below after the combined candidate run.
+The first complete deployment run found 60 failures, 2,419 passes, 1,010 skips
+and 487 passing subtests. Its 25 candidate regressions were inspected and corrected:
+23 CLI checks had lost their safe `INVALID_DEPLOYMENT_CONFIG:<check>` projection,
+a generated-function fixture omitted a newly referenced helper already present
+in the complete generated program, and one stderr fixture incorrectly required
+that no diagnostic reference accompany a refusal. The corrected CLI projection
+keeps the check and supported inspection action while host paths/values remain
+protected. The final combined run below supersedes this exploratory result.
+
+The first combined Node run also caught a new timeout-fixture scheduling race:
+`setImmediate` could emit the fixture's cause after its short timeout under load.
+The correction emits when the helper receives input, after production listeners
+attach, and separately asserts both native output and kill failure. It does not
+lengthen a wait or change production timing. Peer fault injection also found and
+corrected partial-secret redaction at a bounded omission seam. A semantic Git
+tree reader retains its complete original validation input rather than applying
+a diagnostic transcript cap to supported source trees.
+
+Final combined results are recorded below.
 Unprivileged fixture tests exercise real Linux children, actual local/synthetic
 SSH Ansible, private durable file readback, native failure injection and valid
 receipts. This is isolated fixture qualification, with no shared TEST contour,
@@ -81,8 +99,20 @@ Validation uses a disposable ordinary-mode Git checkout and `TMPDIR=/tmp`,
 modes reject protected-config preflight, and its setgid/long temporary hierarchy
 breaks native socket/progress fixture assumptions. Original source modes were
 preserved. Python dependencies are confined to the ignored execution sandbox.
-Root ownership/GID and filesystem ACL assumptions remain genuine worker limits;
-no security check was relaxed to make them green.
+The 35 remaining environment failures were individually classified:
+
+| Existing fixture group | Count | Observed boundary |
+| --- | ---: | --- |
+| Consumer drift | 6 | Protected tool expects UID 0; copied fixture tool has UID 65534. |
+| Install recovery | 12 | Private evidence expects owner GID 990, actual GID is 986. |
+| Managed pool eligibility | 4 | Unmocked protected parent proof rejects root-path fixture UID 990 where UID 0 is required, before the fake API. |
+| Native default ACL | 1 | `system.posix_acl_default` creation returns `EINVAL` on this filesystem. |
+| General component proof | 12 | Eleven synthetic protected roots/files expect UID 0 or 65534, actual UID 990; one actual kernel-map file is UID 65534 outside that fixture's permitted UID set. |
+
+No socket failures occurred in this complete deployment run. These are genuine
+worker/fixture limits; no security check or original source permission was
+relaxed to make them green. Root-capable native qualification must reconcile
+them before claiming the corresponding installed proof.
 
 The routine upstream check on 2026-11-17 identified official stable
 [rust-v0.169.0](https://github.com/openai/codex/releases/tag/rust-v0.169.0), matching
@@ -95,7 +125,22 @@ native acceptance. Actual model/effort telemetry is unavailable.
 Task #244 remains open pending accepted integration, applicable native proof and
 completion reconciliation. #248/#256 retain their distinct client live-text and
 private projection obligations; this source does not activate either. Writer
-publication and independent exact-head review are still required. Primary
-native warning/annotation surfaces for this new result do not exist before
-publication and were not accessible for final-head inspection here; no warning
-absence is claimed. Prior immutable Outcomes and material evidence gaps remain.
+publication and independent exact-head review are still required. Final-head CI and the Writer Outcome remain pending publication. Current-run
+job/controller annotations were not read by this credential-free worker; any
+already-emitted native warnings remain an acquisition gap for Writer/Reviewer.
+No warning absence is claimed. Prior immutable Outcomes and material evidence gaps remain.
+
+
+## Final validation
+
+| Check | Observed result |
+| --- | --- |
+| Node full suite | 1,343 passed, seven skipped, zero failed on the final functional source. |
+| Reviewer | Locked Cargo suite: 190 passed; formatting passed. |
+| Deployment pytest | **2,449 passed, 1,010 skipped, 35 failed**, with 487 passing subtests. All 25 candidate regressions from the first run are resolved; the 35 remaining failures match the individually classified ownership/GID/ACL groups above. The full suite is **not** claimed green. Native capable-host proof remains pending. |
+| Three consumers | `THREE_CONSUMER_PASS`; handler-source digest `8aa8d30c273f453ff1185753e90c76466598c2e359b6c8835a47e8dc73a19753`. This qualifier covers handlers/modules and loopback GitHub, not the whole deployment or installed host. |
+| Candidate and whitespace | Candidate scan and `git diff --check` passed. |
+
+Validation used Node 22.23.3, Cargo 1.90.0, Python 3.11.2, pytest 9.2.0,
+Ansible Core 2.17.14 and Jinja2 3.1.6. These are worker versions, distinct from
+pinned native CI and installed-host evidence.
