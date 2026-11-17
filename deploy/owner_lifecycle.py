@@ -591,6 +591,11 @@ def run(request):
             if action == 'apply':
                 pool_preflight(source, config)
 
+            required_proofs = frozenset([
+                f'RELAY_LIFECYCLE_VERIFIED={target}',
+                f'installed_revision={target}',
+                f'RELAY_WORKFLOW_PROJECTION=PASS;revision={target};consumer={consumer_head}'])
+
             def apply():
                 nonlocal operation
                 current = gate('status')
@@ -603,15 +608,16 @@ def run(request):
                 if phase == 'upgrade':
                     argv.append('--authorize-upgrade')
                 try:
-                    return public_primitive(argv, env=clean_environment(), pass_fds=(lock_fd,)).stdout
+                    return public_primitive(argv, env=clean_environment(), pass_fds=(lock_fd,),
+                                            stdout_proofs=required_proofs)
                 except subprocess.CalledProcessError as error:
                     raise ValueError('lifecycle-public-primitive-failed') from error
 
             def verify_result(evidence, revision):
-                require(f'RELAY_LIFECYCLE_VERIFIED={revision}' in evidence
-                        and f'installed_revision={revision}' in evidence
-                        and f'RELAY_WORKFLOW_PROJECTION=PASS;revision={revision};consumer={consumer_head}' in evidence,
-                        'lifecycle-same-operation-proof-missing')
+                if evidence.stdout_proofs != required_proofs:
+                    error = retain_failure(ValueError('lifecycle-same-operation-proof-missing'), evidence)
+                    error.observation['missingStdoutProofs'] = sorted(required_proofs - evidence.stdout_proofs)
+                    raise error
                 return installed_proof(config, revision)
 
             execute(gate, target, apply, verify_result, operation=operation,

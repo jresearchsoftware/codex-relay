@@ -1448,6 +1448,15 @@ The owner coordinator also observes quiet source Git, preflight, admission and
 public deployment children. Its bounded causal capture preserves the beginning
 and end of each stream plus the original byte counts. Cancellation cleans its
 own process group; unresolved channels or cleanup remain explicit uncertainty.
+For non-Git Apply and resume, exact workflow-projection, installed-revision and
+lifecycle-verification lines are recognized across the complete stdout stream,
+independently of the diagnostic capture limit. A proof line in an omitted middle
+section still counts; stderr, partial-line lookalikes and wrong revision or
+consumer bindings do not. A successful child must supply all three proofs and
+pass the existing protected installed-state check before admission reopens.
+A missing proof retains the bounded original streams and identifies missing
+expected lines in protected causal evidence; inspect that evidence and the
+retained operation before recovery.
 
 Failed Python deployment, owner lifecycle, host preflight and source/package
 qualification operations retain bounded original messages, stacks, OS causes and

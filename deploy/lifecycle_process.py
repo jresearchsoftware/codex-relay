@@ -24,15 +24,21 @@ def retain_failure(error, result):
 
 
 def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
-        input=None, **options):
+        input=None, stdout_proofs=(), **options):
     """Keep private bounded child evidence and report elapsed waits while quiet.
 
     Only an explicit caller validator forwards child lines. Capture keeps the
-    first and last bytes and original sizes; callers retain their own proof rules.
+    first and last bytes and original sizes. Requested exact stdout proof lines
+    are recognized over the full stream, independently of diagnostic clipping;
+    only matches to caller-supplied lines are retained, never arbitrary output.
     Cleanup never replaces the primary exception, including cancellation.
     """
     if not all(re.fullmatch(r'[a-z][a-z0-9-]{0,79}', value) for value in [phase, dependency]):
         raise ValueError('lifecycle-child-progress-identity-invalid')
+    expected = {line.encode('utf-8'): line for line in stdout_proofs}
+    if any(not line or len(line) > 8192 or b'\n' in line or b'\r' in line for line in expected):
+        raise ValueError('lifecycle-child-proof-line-invalid')
+    matched = set()
     started = time.monotonic()
     captures = {channel: [bytearray(), bytearray()] for channel in ['stdout', 'stderr']}
     sizes = {'stdout': 0, 'stderr': 0}
@@ -53,6 +59,14 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
     def observe(stream, channel):
         pending = bytearray()
         oversized = False
+        def observe_line(line):
+            if channel == 'stdout' and line in expected:
+                matched.add(expected[line])
+            if forward is not None and forwarding.is_set():
+                try:
+                    forward(line.decode('utf-8', errors='replace'))
+                except Exception as error:
+                    secondary(error)
         try:
             try:
                 descriptor = stream.fileno()
@@ -70,20 +84,21 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
                 first.extend(chunk[:room])
                 last.extend(chunk[room:])
                 del last[:-CAPTURE_LIMIT // 2]
-                if forward is None or not forwarding.is_set():
+                if (forward is None or not forwarding.is_set()) and (channel != 'stdout' or not expected):
                     continue
                 pending.extend(chunk)
                 while b'\n' in pending:
                     end = pending.index(b'\n')
                     line = bytes(pending[:end]); del pending[:end + 1]
                     if not oversized and len(line) <= 8192:
-                        try:
-                            forward(line.decode('utf-8', errors='replace'))
-                        except Exception as error:
-                            secondary(error)
+                        observe_line(line)
                     oversized = False
                 if len(pending) > 8192:
                     pending.clear(); oversized = True
+            # An EOF-terminated stdout line is still a complete proof line.
+            # Preserve the existing newline-only public forwarding behavior.
+            if channel == 'stdout' and not oversized and bytes(pending) in expected:
+                matched.add(expected[bytes(pending)])
         except Exception as error:
             secondary(error)
 
@@ -140,6 +155,7 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
         result = subprocess.CompletedProcess(argv, process.returncode,
             captured('stdout'), captured('stderr'))
         result.capture_bytes = dict(sizes)
+        result.stdout_proofs = frozenset(matched)
         print(f'RELAY_DEPLOYMENT_PROGRESS={phase};dependency={dependency};state=child-completed', flush=True)
         return result
     except BaseException as error:

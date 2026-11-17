@@ -83,6 +83,35 @@ def test_nonzero_keeps_bounded_original_channels_and_exit(capsys):
     assert 'private-cause' not in public and 'state=child-completed' not in public
 
 
+@pytest.mark.parametrize('stdout,stderr,matched', [
+    ([b'RELAY_', b'PROOF=PASS\n'], [], True),
+    ([b'RELAY_PROOF=PASS'], [], True),
+    ([b'prefix-RELAY_PROOF=PASS\n'], [], False),
+    ([b'RELAY_PROOF=PASS-suffix\n'], [], False),
+    ([b'RELAY_PROOF=PASS\r\n'], [], False),
+    ([], [b'RELAY_PROOF=PASS\n'], False),
+    ([b'x' * 9000, b'RELAY_PROOF=PASS\n'], [], False),
+    ([b'x' * 9000, b'\nRELAY_PROOF=PASS\n'], [], True),
+    ([b'RELAY_PROOF=FAIL\n'], [], False),
+])
+def test_exact_stdout_proof_recognition_is_independent_of_read_chunks_and_public_forwarding(
+        monkeypatch, capsys, stdout, stderr, matched):
+    class Stream(io.BytesIO):
+        def __init__(self, chunks):
+            super().__init__()
+            self.chunks = iter(chunks)
+        def read(self, _size):
+            return next(self.chunks, b'')
+    process = SimpleNamespace(returncode=0, poll=lambda: 0,
+                              stdout=Stream(stdout), stderr=Stream(stderr))
+    monkeypatch.setattr(children.subprocess, 'Popen', lambda *args, **kwargs: process)
+    result = children.run(['fixed-child'], phase='owner-apply', dependency='public-deployment-primitive',
+                          stdout_proofs=['RELAY_PROOF=PASS'])
+    assert result.stdout_proofs == (frozenset(['RELAY_PROOF=PASS']) if matched else frozenset())
+    assert result.capture_bytes == {'stdout': sum(map(len, stdout)), 'stderr': sum(map(len, stderr))}
+    assert 'RELAY_PROOF=' not in capsys.readouterr().out
+
+
 def test_timeout_retains_partial_channels_and_reaps_child(tmp_path):
     pid = tmp_path / 'child-pid'
     program = ('import os,sys,pathlib,time;pathlib.Path(sys.argv[1]).write_text(str(os.getpid()));'
