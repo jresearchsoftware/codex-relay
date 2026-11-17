@@ -101,6 +101,12 @@ class GitOwnerLifecycleTests(unittest.TestCase):
                        patch.object(owner.tempfile, 'TemporaryDirectory',
                                     side_effect=lambda **kwargs: REAL_TEMPORARY(prefix='inner-', dir=self.root))]:
             mocked.start(); self.addCleanup(mocked.stop)
+        def child(argv, **options):
+            for key in ['phase', 'dependency', 'forward', 'interval']:
+                options.pop(key, None)
+            return owner.subprocess.run(argv, **options)
+        mocked = patch.object(owner, 'run_child', side_effect=child)
+        mocked.start(); self.addCleanup(mocked.stop)
 
     def invoke(self, action='apply'):
         self.receipt['action'] = action
@@ -355,11 +361,11 @@ class SelectedTargetConfigTests(unittest.TestCase):
 
     def test_git_failure_retains_actionable_transport_stderr(self):
         error = owner.subprocess.CalledProcessError(7, ['fixed-git-fetch'], stderr='TLS peer verification failed')
-        with patch.object(owner.subprocess, 'check_output', side_effect=error) as invoke:
+        with patch.object(owner, 'run_child', side_effect=error) as invoke:
             with self.assertRaises(owner.subprocess.CalledProcessError) as caught:
                 owner.git('/fixture', 'fetch', 'https://github.com/example/product.git', HEAD)
         self.assertEqual(caught.exception.stderr, 'TLS peer verification failed')
-        self.assertIs(invoke.call_args.kwargs['stderr'], owner.subprocess.PIPE)
+        self.assertEqual(invoke.call_args.kwargs['timeout'], 120)
 
     def test_parser_executes_target_schema_in_isolated_process(self):
         with REAL_TEMPORARY(prefix='relay-selected-parser-') as directory:

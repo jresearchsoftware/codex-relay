@@ -107,3 +107,22 @@ def test_runner_guard_refusal_still_leaves_an_explicit_unknown_summary(tmp_path,
     assert result.returncode != 0
     assert 'RELAY_RUNNER_SLOT_IDENTITY_MISMATCH' in result.stderr
     assert 'installed revisions unknown' in summary.read_text()
+
+
+@pytest.mark.skipif(not NODE, reason='Node required for projected workflow fixtures')
+def test_input_transport_failure_cannot_be_replaced_by_successful_close(tmp_path):
+    """Replay the event ordering that previously replaced EPIPE with exit zero."""
+    observer = (ROOT / 'deploy/workflows/lifecycle-observer.js.in').read_text()
+    receipt = (f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={REQUESTED};config={CONFIG};'
+               f'installed={INSTALLED};installed_config={RETAINED_CONFIG}')
+    summary = tmp_path / 'summary'
+    code = ('import {appendFile} from "node:fs/promises";\n' + observer
+        + '\nreport.observe(Buffer.from(' + json.dumps(receipt + '\n') + '));'
+        + '\nreport.transportFailed({code:"EPIPE",message:"private-token"},"helper-input");'
+        + '\nreport.finish(0);await report.write();')
+    result = subprocess.run([NODE, '--input-type=module', '-e', code], capture_output=True, text=True,
+        env={**os.environ, 'GITHUB_SHA': CONFIG, 'GITHUB_STEP_SUMMARY': str(summary)})
+    assert result.returncode == 0, result.stderr
+    assert 'helper-input-failed;code=EPIPE' in result.stderr and 'private-token' not in result.stderr
+    assert '| Verified installed product | unknown |' in summary.read_text()
+    assert '| Lifecycle outcome | OPEN |' not in summary.read_text()

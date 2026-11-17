@@ -69,7 +69,7 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(
     template.write_bytes(subprocess.check_output(['git', '-C', str(REPO), 'show',
         '5cac0e4973eaa945b90813ae831724456292a2e0:' + bootstrap.TEMPLATE]))
     original_template = template.read_bytes()
-    names = ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py',
+    names = ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py',
              'deployment_lock.py', 'git_intent.py', 'repository_source.py']
     for name in names:
         shutil.copyfile(REPO / 'deploy' / name, installed_source / 'deploy' / name)
@@ -98,7 +98,7 @@ def test_bootstrap_only_refreshes_transport_and_rejects_drift(
     def fetch(directory, repository, revision):
         fetches.append((repository, revision))
         (directory / 'deploy').mkdir(parents=True)
-        for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py',
+        for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py',
                      'deployment_lock.py', 'git_intent.py', 'repository_source.py', 'installation-contract.json']:
             shutil.copyfile(REPO / 'deploy' / name, directory / 'deploy' / name)
         (directory / 'deploy/owner_lifecycle.py').write_text(

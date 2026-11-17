@@ -61,12 +61,12 @@ jobs:
             `git:${action}:${installed}:${sha}:${run}`],
             { env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' }, stdio: ['pipe', 'pipe', 'inherit'] });
           child.stdout.on('data', chunk => { process.stdout.write(chunk); report.observe(chunk); });
-          child.stdin.on('error', () => { process.exitCode = 1; });
+          child.stdin.on('error', error => { report.transportFailed(error, 'helper-input'); process.exitCode = 1; });
           child.stdin.end(process.env.RELAY_GIT_TOKEN ?? '');
           delete process.env.RELAY_GIT_TOKEN;
           await new Promise(resolve => {
-            child.on('error', () => { process.exitCode = 1; report.finish(1); resolve(); });
-            child.on('close', code => { process.exitCode = code ?? 1; report.finish(process.exitCode); resolve(); });
+            child.on('error', error => { report.transportFailed(error, 'helper-spawn'); process.exitCode = 1; report.finish(1); resolve(); });
+            child.on('close', code => { process.exitCode = report.transportFailure ? 1 : code ?? 1; report.finish(process.exitCode); resolve(); });
           });
           } catch (error) { report.finish(1); throw error; }
           finally { await report.write(); }

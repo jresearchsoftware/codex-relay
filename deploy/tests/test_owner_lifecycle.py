@@ -147,6 +147,18 @@ class OwnerLifecycleTests(unittest.TestCase):
         patched = patch.object(owner.subprocess, 'Popen', side_effect=spawn)
         patched.start()
         self.addCleanup(patched.stop)
+        def child(argv, **options):
+            for key in ['phase', 'dependency', 'forward', 'interval']:
+                options.pop(key, None)
+            options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            result = owner.subprocess.run(argv, **options)
+            if result.returncode:
+                raise subprocess.CalledProcessError(result.returncode, argv,
+                    output=result.stdout, stderr=getattr(result, 'stderr', ''))
+            return result
+        patched = patch.object(owner, 'run_child', side_effect=child)
+        patched.start()
+        self.addCleanup(patched.stop)
 
     def run_owner(self, action='apply', installed=OLD, consumer=HEAD):
         with redirect_stdout(io.StringIO()):

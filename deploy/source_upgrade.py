@@ -287,13 +287,21 @@ def guarded_promote(preparation, config, holders):
                 process.returncode, 'fixed-source-promotion', output=output, stderr=errors)
         return json.loads(output)
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        primary = sys.exc_info()[0] is not None
+        try:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=10)
+        except BaseException as cleanup:
+            from lifecycle import report_failure
+            report_failure(cleanup, 'source-promotion-cleanup')
+            print('RELAY_LIFECYCLE_WARNING=source-promotion-cleanup-unproven;inspect-before-retry', file=sys.stderr, flush=True)
+            if not primary:
+                raise
 
 
 def read_journal(data, helper):
@@ -476,7 +484,10 @@ def root_verify(journal, helper, *, final=False, full=False):
 
 def admission(prefix, *arguments, payload=None):
     result = subprocess.run([*prefix, *arguments], input=None if payload is None else canonical(payload),
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60, check=False)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=False)
+    if result.returncode:
+        raise RuntimeError('SOURCE_UPGRADE_ADMISSION_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, 'fixed-source-upgrade-admission', output=result.stdout, stderr=result.stderr)
     require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'SOURCE_UPGRADE_ADMISSION_UNPROVEN')
     return json.loads(result.stdout)
 

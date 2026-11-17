@@ -4,7 +4,12 @@ const exactRevision = value => /^[0-9a-f]{40}$/.test(value ?? '') ? value : 'unk
 const report = {
   requested: 'unknown', config: exactRevision(process.env.GITHUB_SHA),
   installed: 'unknown', installedConfig: 'unknown', outcome: 'unknown', terminal: null,
-  pending: '', oversized: false,
+  pending: '', oversized: false, transportFailure: false,
+  transportFailed(error, phase) {
+    this.transportFailure = true;
+    const code = /^[A-Z][A-Z0-9_]{0,39}$/.test(error?.code ?? '') ? error.code : 'UNAVAILABLE';
+    console.error(`RELAY_LIFECYCLE_WARNING=${phase}-failed;code=${code};installed-result-unknown`);
+  },
   observe(chunk) {
     this.pending += chunk.toString('utf8');
     while (this.pending.includes('\n')) {
@@ -27,6 +32,7 @@ const report = {
     if (this.pending.length > 8192) { this.pending = ''; this.oversized = true; }
   },
   finish(code) {
+    if (this.transportFailure) code = 1;
     this.outcome = code === 0 ? 'unknown (helper verification receipt unavailable)' : 'failed; installed result unknown';
     if (code === 0 && this.terminal) {
       this.outcome = this.terminal[1]; this.requested = this.terminal[2];

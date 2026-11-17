@@ -1444,6 +1444,10 @@ under the existing configured deployment log root. The log retains the complete
 backend failure evidence. A failed
 guard release or recovery-state write remains a visible warning alongside the
 original failure and requires inspection before recovery.
+The owner coordinator also observes quiet source Git, preflight, admission and
+public deployment children. Its bounded causal capture preserves the beginning
+and end of each stream plus the original byte counts. Cancellation cleans its
+own process group; unresolved channels or cleanup remain explicit uncertainty.
 
 Failed Python deployment, owner lifecycle, host preflight and source/package
 qualification operations retain bounded original messages, stacks, OS causes and
@@ -1485,7 +1489,8 @@ publication. That consumer transition is authority, not a low-level deployment
 command the owner must reproduce for each compatible update.
 
 Source installation and retained-release reconciliation normalize the fixed
-owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`, `config.py`,
+owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`,
+`lifecycle_process.py`, `config.py`,
 `installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
 parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
 and its release parents, retaining their assigned groups and modes. The complete

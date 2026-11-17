@@ -21,9 +21,13 @@ roots = [root]
 recovery_root = '{{ relay_owner_lifecycle_recovery_root | default("") }}'
 if recovery_root and sys.argv[2].startswith('git:recover:'):
     roots.append(Path(recovery_root))
-for name in ['owner_lifecycle.py', 'lifecycle.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
+for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
     for checked_root in roots:
         path = checked_root / 'deploy' / name
+        # Retained source can predate the child observer. A present observer
+        # always receives the same protection checks before Python imports it.
+        if name == 'lifecycle_process.py' and not path.exists() and not path.is_symlink():
+            continue
         for entry in [path, *path.parents]:
             info = entry.lstat()
             assert info.st_uid == 0 and not info.st_mode & 0o022
