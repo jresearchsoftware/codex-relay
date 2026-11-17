@@ -1329,8 +1329,19 @@ def recovery_admission_program(config, *, source_base=None):
                                ('./execution-effects.mjs', base + 'controller/src/execution-effects.mjs')]:
         require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
         source = source.replace("'" + relative + "'", json.dumps(absolute))
-    require(source.count('import { CONSUMER } from ') == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
-    source = source.replace('import { CONSUMER } from ', 'import { CONSUMER, CONSUMER_DIGEST } from ')
+    # This branch is strictly singleton recovery. The retained CONSUMER is its
+    # complete original installation view; do not require newer metadata/helper
+    # exports from an older accepted release or substitute candidate config.
+    consumer_import = 'import { CONSUMER, INSTALLATION_CONSUMER } from '
+    require(source.count(consumer_import) == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
+    source = source.replace(consumer_import,
+        'import { CONSUMER, CONSUMER_DIGEST, CONSUMER as INSTALLATION_CONSUMER } from ')
+    config_import = 'import { parseConsumerJson, configuredRepositories } from '
+    require(source.count(config_import) == 1
+            and source.count('configuredRepositories(installation)') == 1,
+            'RECOVERY_ADMISSION_SOURCE_INVALID')
+    source = source.replace(config_import, 'import { parseConsumerJson } from ')
+    source = source.replace('configuredRepositories(installation)', '[installation.repository]')
     source += 'import { assertRootConsumer } from ' + json.dumps(base + 'consumer/consumer-config.mjs') + ';\n'
     source += 'import { createAttemptStore } from ' + json.dumps(base + 'controller/src/attempt-store.mjs') + ';\n'
     source += "assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n"

@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:f57055d31cfcddeff63a94ddce872eacf03528d163ebb251b6ca132128c3a095"
+source_hash = "sha256:5fdf664ae919fa60f0861ba531cd41e56def80af36977724e692118884515531"
 spec_format = "mixed"
 
 [[file]]
@@ -8,7 +8,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "LICENSES.json"
-sha256 = "02236e1a4d052338e1bd9139ff8abbe5b697ec4128583a4fb4b32a396855e422"
+sha256 = "7696c9218af34330dcbd8cccf994721216cca13d17e37bb0af30310175239fe2"
 
 [[file]]
 path = "README.md"
@@ -20,7 +20,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "a4f7eb5547fd6fae447df2d820f3999258a623ae3318388dd9562f6353111b8c"
+sha256 = "2c3c1defc6cb550d9a340256933cad6d4fa0b5115a8ecd2ab8da5aad829b4f16"
 
 [[file]]
 path = "skill/SKILL.md"

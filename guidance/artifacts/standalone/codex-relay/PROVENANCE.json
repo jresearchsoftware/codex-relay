@@ -70,7 +70,7 @@
     "packages/codex-relay/skill/references/installation.md": "a0f9360c4df572cfd40b6b21185389eb6f7ff8ef926dda9c76b25d82a2e23768",
     "packages/codex-relay/skill/references/shared-protocols.md": "998b49ea6d287f10769cce76ff2bf42c7d2837e8c37879f8b2cba0c239690ea8",
     "packages/codex-relay/skill/references/workflow.md": "88d436a630aa9184412d566a4d8640f0830c653001b344e147a357290620e33c",
-    "scripts/build-relay-guidance.py": "4fd9b1f1dfd45881d0a0e453044b69a4786c1573b89af780fcd39140d519bde7",
+    "scripts/build-relay-guidance.py": "0bb3a1f584eb328a3914d40b576a2dacaa66debd8947d318d53eca53eb4568b5",
     "toolchain/vibevm.json": "234120b2b2529620b1800dd34eb84545db11ab74f2d54fb69285f00e03186d82"
   },
   "version": "9.0.0",

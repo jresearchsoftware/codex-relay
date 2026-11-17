@@ -73,6 +73,12 @@ identity text is capped at 20 entries and 3,500 bytes. Configured repository and
 explicit slot identities are included only when verified; absent historical
 slots and foreign locations are omitted. Disappearance never claims success.
 
+The publisher and DRAIN readers preserve the final safe native stop code when
+independent recorder fallback lines or typed diagnostic references accompany it.
+The singleton recovery generator closes the new admission-import dependencies
+against its retained consumer exports, preserving the original configuration and
+per-attempt slot reader rather than requiring a newer retained installation.
+
 Stale native/fixture assertions now verify the enriched safe failure envelopes
 and protected causal evidence, rather than rejecting intended diagnostics.
 Installed rejection qualification reads the actual root-owned private archive
@@ -81,8 +87,9 @@ and original exception chain, in addition to checking its public receipt.
 Frozen guidance 8.0.0 already existed in accepted source. Its registry bytes are
 restored exactly, and the combined change is prepared as **9.0.0 MAJOR** because
 the owner-authorized failed Actions status for terminal BLOCKED changes the
-operator contract. Native materialization, exports, locks and boot projections
-are regenerated; publication and installed adoption remain separate.
+operator contract. Native materialization, exports, license metadata, locks and boot projections
+are regenerated; builder regressions reject inconsistent license attribution
+before generation; publication and installed adoption remain separate.
 
 ## Validation context and limits
 
@@ -106,7 +113,8 @@ with synthetic consumer state and transport. They do not establish live GitHub
 permissions, real model execution, PROD deployment or shared TEST installation.
 No shared TEST contour was claimed or reused.
 
-The final functional Node suite passed 1,327 tests with five skips. Rust
+The complete local Node suite passed 1,327 tests with five skips; the later
+drain-envelope regression also passed its focused admission suite. Rust
 formatting and all 184 Reviewer tests passed. The three-consumer qualifier
 passed at the final functional source digest. The distinct-UID sandbox cleanup
 proof passed. Guidance generation, registry integrity, frozen-version tampering
