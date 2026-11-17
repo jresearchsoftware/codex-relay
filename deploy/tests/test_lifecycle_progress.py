@@ -370,3 +370,21 @@ def test_final_receipt_does_not_replay_old_activity_after_dedup_eviction(tmp_pat
     process.temporary = SimpleNamespace(cleanup=lambda: None)
     process.communicate()
     assert capsys.readouterr().out == terminal + '\n'
+
+
+
+@pytest.mark.parametrize('suffix', ['[repository=example-org/sample-project;slot=primary]',
+    '[repository=example-org/peer-project;slot=slot-2]', '[repository=example-org/sample-project]'])
+def test_drain_forwards_bounded_native_repository_and_slot_locations(suffix, capsys):
+    line = LINE.replace('/run-123', '/run-123' + suffix)
+    assert drain_progress(line)
+    assert capsys.readouterr().out == line + '\n'
+
+
+@pytest.mark.parametrize('suffix', ['[repository=../../private;slot=primary]',
+    '[repository=owner/repo;slot=private slot]', '[repository=owner/repo;slot=../private]',
+    '[repository=owner/repo;slot=primary;private=value]', '[slot=primary]',
+    '[repository=owner/repo]private-value'])
+def test_drain_location_grammar_rejects_unbounded_or_arbitrary_fields(suffix, capsys):
+    assert not drain_progress(LINE.replace('/run-123', '/run-123' + suffix))
+    assert capsys.readouterr().out == ''

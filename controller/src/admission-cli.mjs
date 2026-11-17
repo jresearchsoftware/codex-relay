@@ -1,4 +1,4 @@
-import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
+import { CONSUMER, CONSUMER_DIGEST, INSTALLATION_CONSUMER } from '../../consumer/consumer.mjs';
 import { assertRootConsumer, parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { realpathSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
@@ -9,7 +9,7 @@ import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
-import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, verifiedPendingLocation, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 import { fail } from './execution-contract.mjs';
@@ -144,14 +144,27 @@ export async function readAdmissionSnapshot(input = process.stdin) {
   catch { fail('ADMISSION_SNAPSHOT_INVALID'); }
 }
 export async function drainAdmission({ operationId, timeout }, { snapshot, wait = setTimeout,
-  now = () => performance.now(), reportProgress = () => {} } = {}) {
+  now = () => performance.now(), reportProgress = () => {}, installation = INSTALLATION_CONSUMER } = {}) {
   const started = now(); const deadline = started + timeout * 1000;
   let nextProgress = started; let previous;
   const report = (value, reason) => {
     const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
-    const pending = Array.isArray(value.pending) ? value.pending.filter(item =>
+    const identities = Array.isArray(value.pending) ? value.pending.filter(item =>
       [item?.task, item?.step, item?.runId].every(value => Number.isSafeInteger(value) && value > 0))
-      .slice(0, 20).map(item => `Task-${item.task}/Step-${item.step}/run-${item.runId}`).join(',') : '';
+      .slice(0, 20).map(item => {
+        const location = verifiedPendingLocation(item, installation);
+        const suffix = location.repository ? `[repository=${location.repository}${location.executionSlot ? `;slot=${location.executionSlot}` : ''}]` : '';
+        return `Task-${item.task}/Step-${item.step}/run-${item.runId}${suffix}`;
+      }) : [];
+    // Configured long repository names must not overflow the transport's line
+    // bound. Counts still report the whole inventory when identities are capped.
+    const bounded = []; let bytes = 0;
+    for (const identity of identities) {
+      bytes += Buffer.byteLength(identity) + 1;
+      if (bytes > 3500) break;
+      bounded.push(identity);
+    }
+    const pending = bounded.join(',');
     reportProgress({ phase: 'drain', active: count(value.active), unknown: count(value.unknown), pending: pending || 'none', reason,
       elapsedSeconds: Math.min(timeout, Math.max(0, Math.floor((now() - started) / 1000))) });
   };

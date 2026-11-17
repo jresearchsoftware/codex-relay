@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -558,12 +559,40 @@ def test_actual_owning_pool_installation_plan_blocks_unowned_registration_and_bi
     assert snapshot(f['root']) == before
 
 
-def test_cli_failure_is_one_bounded_json_without_raw_input_or_traceback():
-    for raw in [b'{"values":{"private":"synthetic-private-canary"},"sourceRoot":"/private/candidate"}',
-                b'{' + b'x' * (host.MAX_INPUT + 1)]:
+def test_cli_failure_keeps_one_bounded_json_and_safe_diagnostic_receipt_without_raw_input_or_traceback():
+    for raw, code in [(b'{"values":{"private":"synthetic-private-canary"},"sourceRoot":"/private/candidate"}',
+                       'HOST_PREFLIGHT_UNAVAILABLE'),
+                      (b'{' + b'x' * (host.MAX_INPUT + 1), 'HOST_INPUT_TOO_LARGE')]:
         result = subprocess.run(['/usr/bin/python3', '-I', str(DEPLOY / 'host_preflight.py'), '--input'],
             input=raw, capture_output=True, check=False, timeout=30)
         assert result.returncode == 1
-        assert result.stderr == b'' and len(result.stdout.splitlines()) == 1 and len(result.stdout) < 1024
-        assert json.loads(result.stdout)['status'] == 'FAIL'
-        assert b'synthetic-private-canary' not in result.stdout and b'/private/candidate' not in result.stdout
+        assert len(result.stdout.splitlines()) == 1 and len(result.stdout) < 1024
+        public = json.loads(result.stdout)
+        assert set(public) == {'version', 'status', 'error_code', 'resource', 'next_action'}
+        assert public['version'] == 1 and public['status'] == 'FAIL' and public['error_code'] == code
+        assert public['resource'] == ('input' if code == 'HOST_INPUT_TOO_LARGE' else 'host-prerequisites')
+        assert isinstance(public['next_action'], str) and 0 < len(public['next_action']) < 512
+        assert len(result.stderr.splitlines()) == 1 and len(result.stderr) < 1024
+        prefix = b'RELAY_DEPLOYMENT_FAILURE_EVIDENCE='
+        assert result.stderr.startswith(prefix)
+        evidence = json.loads(result.stderr[len(prefix):])
+        assert evidence['phase'] == 'host-preflight'
+        if evidence['status'] == 'submitted':
+            assert evidence == {'phase': 'host-preflight', 'status': 'submitted',
+                'destination': 'existing-host-journal', 'identifier': 'codex-relay-deployment',
+                'readback': 'not-performed'}
+        else:
+            assert set(evidence) == {'phase', 'status', 'reason', 'recorderFailure'}
+            assert evidence['status'] == 'unavailable' and evidence['reason'] == 'HOST_JOURNAL_UNAVAILABLE'
+            recorder = evidence['recorderFailure']
+            assert set(recorder) <= {'type', 'errno', 'exit', 'messageAvailability'}
+            assert re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{0,79}', recorder['type'])
+            if 'errno' in recorder:
+                assert re.fullmatch(r'E[A-Z0-9_]{1,39}', recorder['errno'])
+            if 'exit' in recorder:
+                assert isinstance(recorder['exit'], int) and -64 <= recorder['exit'] <= 255
+            if 'messageAvailability' in recorder:
+                assert recorder['messageAvailability'] == 'redacted'
+        output = result.stdout + result.stderr
+        assert b'synthetic-private-canary' not in output and b'/private/candidate' not in output
+        assert b'Traceback' not in output

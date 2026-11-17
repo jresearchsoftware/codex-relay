@@ -232,7 +232,36 @@ def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
         result = subprocess.run(['/usr/sbin/runuser', '-u', values['relay_runner_user'], '--',
             'sudo', '-n', str(wrapper)], input='{', env=clean_env, text=True, capture_output=True, timeout=15)
         assert result.returncode == 1 and result.stdout == '', result
-        assert result.stderr == json.dumps({'code': expected}, separators=(',', ':')) + '\n', result.stderr
+        rejected = json.loads(result.stderr)
+        assert rejected['code'] == expected, rejected
+        assert rejected.keys() == {'code', 'diagnosticStore'}, rejected
+        receipt = rejected['diagnosticStore']
+        assert receipt['status'] == 'stored' and receipt['mode'] == 'normal', receipt
+        identity = receipt['executionId']
+        assert re.fullmatch(r'host-unknown-[a-f0-9-]{36}', identity), receipt
+        # Read the actual protected archive in this disposable host namespace.
+        # A public receipt alone is not durability/readability evidence.
+        root = Path(json.loads(consumer.read_text())['paths']['diagnosticsRoot'])
+        stored = root / (identity + '.json')
+        metadata = stored.lstat()
+        assert stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, metadata
+        assert (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) == (0, 0, 0o600), metadata
+        raw = stored.read_text()
+        assert len(raw.encode()) <= 1024 * 1024 and 'fixture-only-credential' not in raw
+        diagnostic = json.loads(raw)
+        assert diagnostic['executionId'] == identity and diagnostic['mode'] == receipt['mode'], diagnostic
+        assert diagnostic['classification'] == expected and diagnostic['phase'] == 'authority', diagnostic
+        assert diagnostic['lifecycle']['operation'] == 'writer-bootstrap', diagnostic
+        causal = diagnostic['causalEvidence']
+        assert causal['phase'] == 'authority' and causal['operation'] == 'writer-bootstrap', causal
+        assert causal['exception']['available'] and not causal['exception']['truncated'], causal
+        chain = json.loads(causal['exception']['text'])['chain']
+        # The original JSON parser/ownership error and its safe wrapper both
+        # survive. Do not assert a Node-version-specific exception message.
+        assert len(chain) >= 2 and chain[0]['message']['text'], chain
+        assert chain[-1]['code']['text'] == expected, chain
+        if expected == 'REQUEST_INVALID':
+            assert chain[0]['name']['text'] == 'SyntaxError', chain
 
     def ordinary_load():
         run(['/usr/sbin/runuser', '-u', 'relay-general-runner', '--', '/usr/bin/node',

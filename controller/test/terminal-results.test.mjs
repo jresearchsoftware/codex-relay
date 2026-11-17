@@ -286,6 +286,10 @@ for (const clean of [false, null]) {
     const f = await fixture(t); let executions = 0;
     const warning = clean === null ? 'WORKTREE_OBSERVATION_INCOMPLETE' : 'UNCOMMITTED_WORK_REMAINS';
     const args = { ...f, journal: f.journal,
+      // Model the original finalization capsule's missing child observation;
+      // it must not erase the dispatcher's already durable started/SIGTERM.
+      persistFailure: async () => ({ childState: 'unknown',
+        failureDiagnostic: { childState: 'unknown', cleanup: 'complete', persistence: 'stored' } }),
       execute: async () => {
         executions++; await f.commit();
         throw failure('CODEX_RUNTIME_TIMEOUT', { childState: 'started', containment: 'reaped',
@@ -297,7 +301,7 @@ for (const clean of [false, null]) {
     const saved = await f.journal.get(99);
     assert.equal(saved.diagnostic.classification.code, 'CODEX_RUNTIME_TIMEOUT');
     assert.equal(saved.diagnostic.classification.stage, 'execution');
-    assert.equal(saved.diagnostic.primaryCause, 'EXECUTION_CANCELLED');
+    assert.equal(saved.diagnostic.primaryCause, 'CODEX_RUNTIME_TIMEOUT');
     assert.equal(saved.diagnostic.observed.child, 'started');
     assert.equal(saved.diagnostic.observed.signal, 'SIGTERM');
     assert.equal(saved.diagnostic.orchestration, 'FAILED');

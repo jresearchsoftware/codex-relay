@@ -572,9 +572,13 @@ the protected retained-history inventory the remaining overall drain
 deadline rather than a separate five-second subprocess limit. The one-second
 lock acquisition wait remains unchanged; contention permits another observation
 while the deadline remains. A slow inventory does not bypass any history checks.
-Drain emits only bounded active/unknown
-counts and elapsed time on stderr every thirty seconds; stdout remains one JSON
-receipt. Timeout, unreadable state or an unknown attempt preserves quiesce for
+Drain emits bounded active/unknown counts, elapsed time and up to 20 verified
+pending Task/Step/run identities on stderr when inventory changes and every
+thirty seconds while unchanged; stdout remains one JSON receipt. Pending
+identities include the configured repository and an explicitly recorded,
+configured execution slot when known, including peers in a multi-repository
+installation. Historical absent locations stay absent. These fields are
+projections of the protected inventory, never caller-selected metadata. Timeout, unreadable state or an unknown attempt preserves quiesce for
 owner inspection. Drain neither relaunches Codex nor discards retained work or
 diagnostics. Registered runners remain online; graceful stop disables new
 automatic admission without stopping those runners.

@@ -1418,7 +1418,10 @@ The Actions log reports the actual preflight, source staging, lock acquisition,
 drain, Apply, activation/verification, recovery and terminal transitions. Native
 local drain reports trustworthy active/unknown counts and up to 20 verified
 pending Task/Step/run identities when the inventory changes, then at bounded
-intervals with elapsed wait time. Remaining work comes from protected admission
+intervals with elapsed wait time. Each identity includes its verified configured
+repository and explicit configured execution slot when known. Missing historical
+location data is omitted; peer repositories are shown only from the protected
+installation allowlist. Remaining work comes from protected admission
 inventory; elapsed time never means the drain succeeded. Unknown inventory still
 refuses Apply. The SSH/Ansible adapter reports the same observations while its
 original no-log helper is still running. It polls a bounded, operation-local

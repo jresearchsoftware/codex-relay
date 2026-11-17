@@ -151,11 +151,14 @@ def progress(phase, target):
     print(f'RELAY_LIFECYCLE_PROGRESS={phase};target={target}', flush=True)
 
 
+_DRAIN_PENDING_IDENTITY = (
+    r'Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}'
+    r'(?:\[repository=[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}'
+    r'(?:;slot=[a-z][a-z0-9-]{0,31})?\])?')
 DRAIN_PROGRESS_PATTERN = (
     r'ADMISSION_DRAIN_PROGRESS phase=drain active=(?:[0-9]{1,10}|UNAVAILABLE) unknown=(?:[0-9]{1,10}|UNAVAILABLE)'
     r' elapsedSeconds=[0-9]{1,10}'
-    r'(?: pending=(?:Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}'
-    r'(?:,Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}){0,19}|none))?'
+    r'(?: pending=(?:' + _DRAIN_PENDING_IDENTITY + r'(?:,' + _DRAIN_PENDING_IDENTITY + r'){0,19}|none))?'
     r' reason=(?:waiting-for-controllers|drained|inventory-unknown|lock-or-inventory-unavailable)')
 
 

@@ -8,7 +8,7 @@ import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
-import { createAdmissionControl } from '../src/admission-control.mjs';
+import { createAdmissionControl, verifiedPendingLocation } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { parseAdmissionArguments, drainAdmission, readDrainSnapshot, readAdmissionSnapshot } from '../src/admission-cli.mjs';
 import { runAttempt } from '../src/attempt.mjs';
@@ -485,7 +485,7 @@ test('real shared flock serializes quiesce against automatic reservation before 
   const module = new URL('../src/admission-control.mjs', import.meta.url).href;
   const attemptStore = new URL('../src/attempt-store.mjs', import.meta.url).href;
   const script = join(root, 'race.mjs'); const lock = join(root, 'publication-v2.lock');
-  await writeFile(script, `import { createAdmissionControl } from ${JSON.stringify(module)};
+  await writeFile(script, `import { createAdmissionControl, verifiedPendingLocation } from ${JSON.stringify(module)};
 import { createAttemptStore } from ${JSON.stringify(attemptStore)};
 import { writeFile, access } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
@@ -525,4 +525,74 @@ if (process.argv[2] === 'reserve') {
   assert.deepEqual((await gate.status()).active, [99]);
   await exec('/usr/bin/flock', [lock, process.execPath, script, 'denied'], { env: childEnv });
   assert.equal((await createAttemptStore(join(root, 'publication-v2')).all()).length, 1);
+});
+
+
+test('lifecycle pending identities include configured peer repositories and explicit slots only', async t => {
+  const installation = { repositories: ['example-org/sample-project', 'example-org/peer-project'],
+    executionSlots: [{ id: 'primary' }, { id: 'slot-2' }] };
+  const store = memoryStore(), journal = memoryStore();
+  const root = await mkdtemp(join(tmpdir(), 'relay-drain-location-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal,
+    protectedRoot: false, installation, supplementalInventory: async () => ({ active: [99], unknown: [100] }) });
+  await gate.initialize();
+  const add = async (runId, repository, executionSlot) => store.put(runId, {
+    envelope: { version: VERSION, route: 'auto', consumerDigest: CONSUMER_DIGEST, runId,
+      attemptId: `run-${runId}`, issueNumber: 244, step: 2, repository,
+      ...(executionSlot === undefined ? {} : { executionSlot }) },
+    controllerLifecycle: { version: 1, status: 'active' }
+  });
+  await add(11, installation.repositories[0], 'primary');
+  await add(12, installation.repositories[1], 'slot-2');
+  await add(13, installation.repositories[0]);
+  await add(14, installation.repositories[0], 'unconfigured-slot');
+  await add(15, 'foreign-org/private-repository', 'slot-2');
+  const state = await gate.status();
+  assert.deepEqual(state.active, [11, 12, 13, 14, 15, 99]);
+  assert.deepEqual(state.unknown, [100]);
+  assert.deepEqual(state.pending, [
+    { task: 244, step: 2, runId: 11, repository: installation.repositories[0], executionSlot: 'primary' },
+    { task: 244, step: 2, runId: 12, repository: installation.repositories[1], executionSlot: 'slot-2' },
+    { task: 244, step: 2, runId: 13, repository: installation.repositories[0] },
+    { task: 244, step: 2, runId: 14, repository: installation.repositories[0] }
+  ]);
+});
+
+test('drain output preserves verified repository and slot without projecting arbitrary location text', async () => {
+  const installation = { repositories: ['example-org/sample-project', 'example-org/peer-project'],
+    executionSlots: [{ id: 'primary' }, { id: 'slot-2' }] };
+  const pending = [
+    { task: 244, step: 2, runId: 11, repository: installation.repositories[0], executionSlot: 'primary' },
+    { task: 244, step: 3, runId: 12, repository: installation.repositories[1], executionSlot: 'slot-2' },
+    { task: 244, step: 4, runId: 13, repository: installation.repositories[0], executionSlot: 'private-slot-value' },
+    { task: 244, step: 5, runId: 14, repository: 'foreign/private-repository', executionSlot: 'primary' },
+    { task: 244, step: 6, runId: 15 }
+  ];
+  const progress = [];
+  await drainAdmission({ operationId, timeout: 5 }, { installation,
+    snapshot: async () => ({ active: [], unknown: [], pending, drained: true }),
+    reportProgress: value => progress.push(value) });
+  assert.equal(progress[0].pending,
+    'Task-244/Step-2/run-11[repository=example-org/sample-project;slot=primary],'
+    + 'Task-244/Step-3/run-12[repository=example-org/peer-project;slot=slot-2],'
+    + 'Task-244/Step-4/run-13[repository=example-org/sample-project],'
+    + 'Task-244/Step-5/run-14,Task-244/Step-6/run-15');
+  assert.doesNotMatch(JSON.stringify(progress), /private-slot-value|foreign|private-repository/);
+  for (const value of ['../../private', 'owner/private] injected=value', 'owner/peer\nprivate'])
+    assert.deepEqual(verifiedPendingLocation({ repository: value, executionSlot: 'primary' }, installation), {});
+});
+
+test('configured long drain identities respect the live transport byte limit', async () => {
+  const repository = 'o'.repeat(100) + '/' + 'r'.repeat(100);
+  const installation = { repository, executionSlots: [{ id: 's'.repeat(32) }] };
+  const pending = Array.from({ length: 20 }, (_, n) => ({ task: n + 1, step: n + 1, runId: n + 1,
+    repository, executionSlot: installation.executionSlots[0].id }));
+  const progress = [];
+  await drainAdmission({ operationId, timeout: 5 }, { installation,
+    snapshot: async () => ({ active: pending, unknown: [], pending, drained: true }),
+    reportProgress: value => progress.push(value) });
+  assert.equal(progress[0].active, 20);
+  assert.ok(progress[0].pending.length < 3500);
+  assert.ok(progress[0].pending.split(',').length < 20);
 });

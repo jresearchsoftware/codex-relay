@@ -168,7 +168,10 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
   const parserFailure = ['CODEX_JSON_INVALID', 'CODEX_RESULT_INVALID', 'CODEX_RESULT_MISSING'].includes(code);
   const cause = safeDiagnostic.primaryCause ?? inherited.primaryCause;
-  const primary = parserFailure ? code : /^[A-Z][A-Z0-9_]{0,79}$/.test(cause ?? '') ? cause : null;
+  // The runtime's timeout closes launcher stdin and requests SIGTERM. Its
+  // cancellation receipt describes that termination, not what triggered it.
+  const timeoutTermination = code === 'CODEX_RUNTIME_TIMEOUT' && cause === 'EXECUTION_CANCELLED';
+  const primary = parserFailure || timeoutTermination ? code : /^[A-Z][A-Z0-9_]{0,79}$/.test(cause ?? '') ? cause : null;
   const boundary = value => /^[a-z][a-z-]{0,39}$/.test(value ?? '') ? value : null;
   const executionId = detail.executionId ?? safeDiagnostic.executionId ?? inherited.executionId;
   const exitCode = safeDiagnostic.childExitCode ?? inherited.observed?.exitCode;

@@ -150,6 +150,30 @@ test('later unknown recorder state preserves definite child observations without
   }
 });
 
+test('runtime timeout remains the cause when its termination produces a cancellation receipt', () => {
+  for (const example of [
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EXECUTION_CANCELLED', expected: 'CODEX_RUNTIME_TIMEOUT' },
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EXECUTION_CANCELLED', inherited: true, expected: 'CODEX_RUNTIME_TIMEOUT' },
+    { code: 'EXECUTION_CANCELLED', cause: 'EXECUTION_CANCELLED', expected: 'EXECUTION_CANCELLED' },
+    { code: 'CODEX_NONZERO_EXIT', cause: 'EXECUTION_CANCELLED', expected: 'EXECUTION_CANCELLED' },
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EIO', expected: 'EIO' }
+  ]) {
+    const diagnostic = causalEvidence({ code: example.code, details: {
+      ...(example.inherited ? { causal: { primaryCause: example.cause } } : {}),
+      failureDiagnostic: { ...(example.inherited ? {} : { primaryCause: example.cause }),
+        diagnosticCode: 'EXECUTION_CANCELLED', childState: 'started', signal: 'SIGTERM' }
+    } });
+    assert.equal(diagnostic.primaryCause, example.expected);
+    assert.equal(diagnostic.classification.code, example.code);
+    assert.equal(diagnostic.launcher.diagnosticCode, 'EXECUTION_CANCELLED');
+    assert.equal(diagnostic.observed.child, 'started');
+    assert.equal(diagnostic.observed.signal, 'SIGTERM');
+    const body = terminalOutcomeBody({}, { terminalCode: example.code, diagnostic });
+    assert.match(body, new RegExp(`Cause summary: ${example.expected}`));
+    assert.match(body, /Launcher diagnostic: EXECUTION_CANCELLED/);
+  }
+});
+
 test('normal and debug truncation retain total observed bytes without raising capture limits', () => {
   for (const debug of [false, true]) {
     const value = buildChildDiagnostic({ code: 'CHILD_STDERR', stderr: privateText, stderrBytes: observedBytes, debug });
