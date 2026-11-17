@@ -113,6 +113,51 @@ test('specific safe worker failure and known cause survive the dispatcher', asyn
   });
 });
 
+test('independent recorder notices do not obscure the final worker cause or containment envelope', async () => {
+  const dispatcher = fixture({ spawnImpl: launch(`process.stdin.resume(); process.stdin.on('end',()=>{
+    writeSync(2,'RELAY_DIAGNOSTIC_UNAVAILABLE {"originalEvidence":"observed_not_retained"}\\n');
+    writeSync(2, JSON.stringify({version:2,status:'blocked',code:'CODEX_RESULT_MISSING',diagnostic:{containment:'reaped',observed:{child:'started'},primaryCause:'CODEX_RESULT_MISSING'}})+'\\n');process.exitCode=1;
+  });`) });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'CODEX_RESULT_MISSING'); assert.equal(error.details.primaryCause, 'CODEX_RESULT_MISSING');
+    assert.equal(error.details.childState, 'started'); assert.equal(error.details.containment, 'reaped');
+    return true;
+  });
+});
+
+test('dispatcher keeps a durable primary reference when fallback updates fail', async () => {
+  let state;
+  const dispatcher = fixture({ reserveDiagnostic: async () => ({
+    read: async () => state,
+    write: async value => { if (state) throw Object.assign(new Error('fallback update unavailable'), { code: 'EROFS' }); state = value; }
+  }),
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(1,"native invalid dispatcher response");process.exitCode=2;'),
+    finalizeArtifacts: async () => ({ cleanup: 'retained', persistence: 'failed', diagnosticStore: { status: 'unavailable', executionId: 'run-9', code: 'DIAGNOSTICS_STORE_FAILED' } })
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.details.diagnosticStore.status, 'stored');
+    assert.equal(error.details.diagnosticStore.executionId, 'run-9-dispatch');
+    assert.doesNotMatch(JSON.stringify(error.details), /native invalid dispatcher response|fallback update unavailable/);
+    return true;
+  });
+});
+
+test('dispatcher reports both unavailable recorders independently without replacing the execution failure', async () => {
+  let state; const lines = [];
+  const dispatcher = fixture({ reserveDiagnostic: async () => ({
+    read: async () => state,
+    write: async value => { if (state) throw Object.assign(new Error('private fallback'), { code: 'EROFS' }); state = value; }
+  }),
+    diagnosticStore: async () => { throw Object.assign(new Error('private primary'), { code: 'ENOSPC' }); },
+    writeDiagnosticFallback: text => lines.push(text),
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(1,"private invalid response");process.exitCode=2;')
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), { code: 'CONTAINMENT_NOT_PROVEN' });
+  assert.equal(lines.length, 1); assert.match(lines[0], /observed_not_retained|CONTAINMENT_NOT_PROVEN/);
+  assert.match(lines[0], /ENOSPC/); assert.match(lines[0], /EROFS/);
+  assert.doesNotMatch(lines[0], /private/);
+});
+
 test('fallback admission fails closed before a dispatcher can start', async () => {
   const dispatcher = fixture({
     reserveDiagnostic: async () => { throw Object.assign(new Error('full'), { code: 'DIAGNOSTIC_RETENTION_LIMIT' }); },

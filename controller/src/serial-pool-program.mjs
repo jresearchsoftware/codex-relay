@@ -68,7 +68,9 @@ export async function originalProgram(context, kind, input, { env = process.env,
       try { value = parseConsumerJson(output.finish().value); } catch (error) { parseFailure = error; }
       if (code === 0 && value && typeof value === 'object' && !Array.isArray(value)) return resolve(value);
       let error;
-      try { error = JSON.parse(errors.finish().value); } catch (cause) { parseFailure ??= cause; }
+      try { const observed = errors.finish();
+        if (!observed.truncated) error = JSON.parse(observed.value.trim().split('\n').at(-1));
+      } catch (cause) { parseFailure ??= cause; }
       const failure = error?.code ?? value?.error_code;
       const publicCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(failure ?? '') ? failure : 'SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE';
       reject(programFailure(publicCode, parseFailure, native(code, signal)));

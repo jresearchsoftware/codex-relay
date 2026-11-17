@@ -20,6 +20,21 @@ function unavailablePrimary(f) {
   };
 }
 
+test('unavailable runner recorders explicitly report the evidence gap without disclosing the original cause', async () => {
+  const lines = [];
+  const result = await persistAttemptFailureDiagnostic({ executionId: 'run-244', stage: 'preflight',
+    error: Object.assign(new Error('private original checkout cause'), { code: 'EACCES' }),
+    fallbackOpen: async () => { throw Object.assign(new Error('private fallback cause'), { code: 'EROFS' }); },
+    readConfig: async () => ({ mode: 'normal' }),
+    diagnosticStore: async () => { throw Object.assign(new Error('private primary cause'), { code: 'ENOSPC' }); },
+    writeFallback: line => lines.push(line) });
+  assert.equal(result.diagnosticStore.storeCode, 'ENOSPC'); assert.equal(result.fallbackReference.code, 'EROFS');
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /observed_not_retained/); assert.match(lines[0], /EACCES/);
+  assert.match(lines[0], /diagnostic-persistence/);
+  assert.doesNotMatch(lines[0], /private|checkout cause|primary cause|fallback cause/);
+});
+
 test('checkout failure and unavailable primary diagnostics retain a private capsule and sanitized Outcome reference', async t => {
   const f = await fixture(t);
   const journal = f.journal;

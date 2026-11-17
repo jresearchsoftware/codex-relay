@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { captureCausalDiagnostic, createExecutionDiagnostic, persistExecutionDiagnostic, safeFailureDiagnosticReference } from '../src/diagnostics.mjs';
+import { captureCausalDiagnostic, createExecutionDiagnostic, persistExecutionDiagnostic, persistControllerFailureDiagnostic, safeFailureDiagnosticReference } from '../src/diagnostics.mjs';
 import { normalizeRuntimeCapsule, reserveRuntimeDiagnostic, RUNTIME_FALLBACK_BYTES } from '../src/diagnostic-fallback.mjs';
 
 test('protected causal evidence preserves original exception, HTTP fields and native observation while public references exclude them', () => {
@@ -58,7 +58,10 @@ test('diagnostic helper failure retains its own original stderr, signal and stor
     const cause = captureCausalDiagnostic({ error, executionId: 'run-244', phase: 'diagnostic-persistence', operation: 'persist-primary' });
     assert.match(cause.exception.text, /native store policy denied|EACCES/);
     assert.equal(cause.process.exitCode, 9); assert.equal(cause.process.signal, 'SIGTERM');
+    assert.equal(cause.stdout.available, true); assert.equal(cause.stderr.available, true);
+    assert.match(cause.stderr.text, /native store policy denied/);
     assert.doesNotMatch(JSON.stringify(cause), /store-private/);
+    assert.doesNotMatch(JSON.stringify(error), /native store policy denied|store-private/);
     return true;
   });
 });
@@ -70,4 +73,49 @@ test('clipped captures redact a known partial credential and JSON secret values 
     secrets: { knownSecrets: ['exact-credential-prefix-and-rest'] } });
   assert.doesNotMatch(JSON.stringify(value), /exact-credential-pre|json-credential|header-credential/);
   assert.equal(value.stdout.truncated, true);
+});
+
+function storeProcess(run) {
+  const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
+  child.stdin.resume(); child.kill = () => true;
+  setImmediate(() => run(child)); return child;
+}
+
+test('a clipped diagnostic receipt cannot be accepted as a complete successful response', async () => {
+  const receipt = { status: 'stored', executionId: 'run-244', mode: 'normal' };
+  await assert.rejects(persistExecutionDiagnostic(receipt, { spawnImpl: () => storeProcess(child => {
+    child.stdout.end(JSON.stringify(receipt) + ' '.repeat(8192)); child.emit('close', 0, null);
+  }) }), error => {
+    assert.equal(error.storeDiagnosticCode, 'DIAGNOSTICS_STORE_OUTPUT_TOO_LARGE');
+    assert.equal(error.native.stdout.truncated, true);
+    assert.equal(error.native.stdout.total, Buffer.byteLength(JSON.stringify(receipt)) + 8192);
+    return true;
+  });
+});
+
+test('a quiet diagnostic helper returns to independent fallback with its observed output and kill failure', async () => {
+  let killed = false;
+  await assert.rejects(persistExecutionDiagnostic({ executionId: 'run-244', mode: 'normal' }, { timeoutMs: 10,
+    spawnImpl: () => storeProcess(child => {
+      child.stderr.write('native recorder blocked token=hidden-fixture');
+      child.kill = () => { killed = true; throw Object.assign(new Error('native signal denied'), { code: 'EPERM' }); };
+    }) }), error => {
+    assert.equal(error.storeDiagnosticCode, 'DIAGNOSTICS_STORE_TIMEOUT');
+    const evidence = captureCausalDiagnostic({ error });
+    assert.match(evidence.exception.text, /native recorder blocked|native signal denied|EPERM/);
+    assert.doesNotMatch(JSON.stringify(evidence), /hidden-fixture/);
+    return true;
+  });
+  assert.equal(killed, true);
+});
+
+test('controller failure diagnostics retain the original structured cause and require an exact store receipt', async () => {
+  const error = Object.assign(new Error('outer failure', { cause: Object.assign(new Error('native socket refused'), { code: 'ECONNREFUSED' }) }), { code: 'CONTROLLER_FAILED' });
+  for (const receipt of [undefined, { status: 'stored' }, { status: 'stored', executionId: 'foreign', mode: 'normal' }]) {
+    let bundle;
+    const result = await persistControllerFailureDiagnostic({ error, executionId: 'run-244',
+      diagnosticStore: async value => { bundle = value; return receipt; } });
+    assert.equal(result.status, 'unavailable'); assert.equal(result.storeCode, 'DIAGNOSTICS_STORE_RECEIPT_INVALID');
+    assert.match(bundle.causalEvidence.exception.text, /native socket refused|ECONNREFUSED/);
+  }
 });

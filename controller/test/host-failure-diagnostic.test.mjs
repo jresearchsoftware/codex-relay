@@ -16,6 +16,8 @@ import { captureCausalDiagnostic } from '../src/diagnostics.mjs';
 import { recordEntrypointFailure } from '../src/repository-entrypoint.mjs';
 import { http as writerHttp, parseEnv } from '../src/writer-auth.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 
 const fail = (code, message = code) => Object.assign(new Error(message), { code });
 async function stores(t) {
@@ -151,7 +153,7 @@ test('real helper stderr, invalid receipt and exit/signal survive behind the saf
     await assert.rejects(adapter.invoke({ operation: 'admit' }), error => {
       const evidence = captureCausalDiagnostic({ error, operation: 'admit' });
       assert.match(JSON.stringify(evidence), /native/);
-      assert.equal(error.native.exitCode ?? error.cause.exitCode ?? null, code === 0 ? null : code);
+      assert.equal(error.native.exitCode ?? error.cause.exitCode ?? null, code);
       if (signal) assert.equal(error.native.signal, signal);
       assert.doesNotMatch(JSON.stringify(error), /socket refused|invalid native receipt|native stop observed/);
       return true;
@@ -180,6 +182,35 @@ test('independent recorder fallback output cannot obscure the final helper class
     assert.equal(error.code, 'OWNER_RUN_NOT_ADMITTED'); assert.equal(error.details.reason, 'status');
     assert.equal(error.details.diagnosticStore.storeCode, 'ENOSPC');
     assert.equal(error.details.fallbackReference.code, 'EROFS'); return true;
+  });
+});
+
+test('misbound Writer receipt retains native response and successful process observation privately', async () => {
+  const adapter = createLocalWriterAdapter({ spawnImpl: (_cmd, _args, options) => spawn(process.execPath,
+    ['-e', `process.stdin.resume();process.stdin.on('end',()=>{process.stdout.write('{"repository":"foreign/repository","detail":"native receipt cause token=private-fixture"}');process.stderr.write('native helper warning')})`], options) });
+  await assert.rejects(adapter.invoke({ operation: 'admit' }), error => {
+    assert.equal(error.code, 'WRITER_RECEIPT_INVALID');
+    assert.equal(error.native.exitCode, 0); assert.equal(error.native.signal, null);
+    const evidence = captureCausalDiagnostic({ error });
+    assert.match(JSON.stringify(evidence), /native receipt cause|native helper warning/);
+    assert.doesNotMatch(JSON.stringify(evidence), /private-fixture/);
+    assert.doesNotMatch(JSON.stringify(error), /foreign\/repository|native receipt cause|native helper warning/);
+    return true;
+  });
+});
+
+test('Writer timeout retains total observed stream bytes and clipping independently of capture length', async () => {
+  const adapter = createLocalWriterAdapter({ timeoutMs: 10, spawnImpl() {
+    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.stdin = new PassThrough();
+    child.stdin.resume(); child.kill = () => true;
+    child.stdout.write('x'.repeat(1024 * 1024 + 20)); child.stderr.write('native quiet Writer cause');
+    return child;
+  } });
+  await assert.rejects(adapter.invoke({ operation: 'admit' }), error => {
+    assert.equal(error.code, 'WRITER_HELPER_TIMEOUT');
+    assert.equal(error.native.stdoutBytes, 1024 * 1024 + 20); assert.equal(error.native.truncated, true);
+    assert.match(captureCausalDiagnostic({ error }).stderr.text, /native quiet Writer cause/);
+    return true;
   });
 });
 

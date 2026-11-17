@@ -59,6 +59,22 @@ test('compatibility process spawn and stream exceptions preserve their original 
   });
 });
 
+test('compatibility and bootstrap wrappers preserve a final native code after diagnostic or progress notices', async () => {
+  const prefix = 'RELAY_DIAGNOSTIC_UNAVAILABLE {"originalEvidence":"observed_not_retained"}\n';
+  const execute = () => processFixture(child => {
+    child.stderr.end(prefix + '{"code":"CONSUMER_PREFLIGHT_WRITER_BUSY","native":{"message":"original wait cause"}}\n');
+    child.stdout.end(); child.emit('close', 40, null);
+  });
+  for (const operation of [() => originalProgram(context, 'writer', {}, { execute }),
+    () => runConsumerPreflightProgram('/fixture/python', [], { spawnImpl: execute })]) {
+    await assert.rejects(operation(), error => {
+      assert.equal(error.code, 'CONSUMER_PREFLIGHT_WRITER_BUSY');
+      assert.match(captureCausalDiagnostic({ error }).exception.text, /original wait cause/);
+      return true;
+    });
+  }
+});
+
 test('predispatch target wrapper preserves the protected filesystem failure without exposing it as public code', async t => {
   const root = await mkdtemp(join(tmpdir(), 'relay-wrapper-target-')); t.after(() => rm(root, { recursive: true, force: true }));
   await assert.rejects(assertPredispatchTargetCompatible({ records: [{ predispatchPending: {} }],

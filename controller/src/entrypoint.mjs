@@ -13,6 +13,7 @@ import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 import { randomUUID } from 'node:crypto';
+import { traceRuntimeOperation } from './transition-timing.mjs';
 
 export async function main(options = {}) {
   const cancellation = new AbortController();
@@ -66,7 +67,8 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   // a consumed owner command without a controller or journal.
   const dispatcher = createDispatcher({ signal });
   const journal = createJournal();
-  const broker = { invoke: request => local.invoke({ ...request, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: env.GITHUB_TOKEN }) };
+  const broker = { invoke: request => traceRuntimeOperation(request.operation,
+    () => local.invoke({ ...request, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: env.GITHUB_TOKEN })) };
   let admitted;
   progress.lastSuccessfulBoundary = 'adapters-ready';
   try {
@@ -98,7 +100,9 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     result = await runAttempt({ envelope: admitted.envelope, admissionResumed: admitted.resumed === true,
       admissionUnstarted: admitted.admissionUnstarted === true, broker,
       journal, persistFailure,
-      prepare, execute: e => dispatcher.dispatch(e), collect: collect ?? (e => broker.invoke({
+      prepare: e => traceRuntimeOperation('checkout-prepare', () => prepare(e)),
+      execute: e => traceRuntimeOperation('governed-runtime', () => dispatcher.dispatch(e)),
+      collect: collect ? e => traceRuntimeOperation('collect-progress', () => collect(e)) : (e => broker.invoke({
         operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId })) });
   } catch (error) {
     failure = error;

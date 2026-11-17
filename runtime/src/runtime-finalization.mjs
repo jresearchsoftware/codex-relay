@@ -77,7 +77,7 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
           startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), phase: 'finalization',
           phases: ['contained-terminal', 'diagnostic-retirement'],
           lifecycle: normalizeRuntimeCapsule(state, executionId), classification: state.primaryCause,
-          error: cleanupError, causalEvidence: cleanupError?.causalEvidence ?? state.causalEvidence,
+          error: cleanupError, causalEvidence: state.causalEvidence ?? cleanupError?.causalEvidence,
           runtimeFailure: cleanupError ? { code: safeCode(cleanupError, 'SANDBOX_CLEANUP_FAILED'),
             operation: 'sandbox-cleanup', syscall: cleanupError.syscall, path: cleanupError.path } : undefined,
           exitCode: state.childExitCode, signal: state.signal });

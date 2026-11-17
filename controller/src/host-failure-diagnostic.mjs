@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { createExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference, captureCausalDiagnostic, redactDiagnosticText } from './diagnostics.mjs';
+import { createExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference, captureCausalDiagnostic, redactDiagnosticText, emitDiagnosticUnavailable } from './diagnostics.mjs';
 import { writeDiagnosticBundle } from './diagnostic-store.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 
@@ -44,10 +44,9 @@ export async function recordHostFailure({ error, operation = 'unknown', phase = 
   } catch (failure) {
     // Service journal/Actions stderr is independent of both filesystem recorders.
     // Fixed fields only: raw exception, event, paths and request bodies stay private.
-    const result = { status: 'unavailable', executionId, code: 'DIAGNOSTICS_STORE_FAILED',
-      storeCode: codeOf(primaryFailure), fallbackCode: codeOf(failure), originalCode: code, originalEvidence: 'observed_not_retained',
+    const result = { ...emitDiagnosticUnavailable({ executionId, originalCode: code,
+      storeCode: codeOf(primaryFailure), fallbackCode: codeOf(failure), operation }, writeFallback),
       fallbackReference: { status: 'unavailable', executionId, code: codeOf(failure) } };
-    try { writeFallback(`RELAY_DIAGNOSTIC_UNAVAILABLE ${JSON.stringify(result)}\n`); } catch { /* host/output unavailable */ }
     return result;
   }
 }

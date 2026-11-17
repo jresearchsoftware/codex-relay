@@ -31,8 +31,9 @@ function requestError(error, operation) {
   return result;
 }
 
-export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "/usr/bin/sudo", spawnImpl = nodeSpawn } = {}) {
+export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "/usr/bin/sudo", spawnImpl = nodeSpawn, timeoutMs = INVOCATION_TIMEOUT_MS } = {}) {
   if (helperPath !== DEFAULT_HELPER) throw new WriterBlockedError("WRITER_HELPER_PATH_INVALID", "Only the fixed relay Writer helper path is allowed");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > INVOCATION_TIMEOUT_MS) throw new Error('Invalid Writer helper timeout');
   async function invoke(request) {
     if (request.repository !== undefined && request.repository !== CONSUMER.repository) throw new WriterBlockedError('WRITER_REPOSITORY_INVALID', 'The Writer target must match the selected configured repository');
     request = { ...request, repository: CONSUMER.repository };
@@ -45,7 +46,7 @@ export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "
     const stderrCapture = createBoundedUtf8Capture(1024 * 1024);
     let stdout = "";
     let stderr = "";
-    let settled = false; let inputError;
+    let settled = false; let inputError; let observation;
     const result = await new Promise((resolve, reject) => {
       const rejectCaptured = error => {
         if (settled) return;
@@ -61,10 +62,12 @@ export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "
         settled = true;
         let killFailure;
         try { child.kill?.("SIGTERM"); } catch (error) { killFailure = error; }
+        const out = stdoutCapture.finish(); const err = stderrCapture.finish();
         const timeout = Object.assign(new Error("The privileged Writer helper exceeded its bounded invocation timeout", { cause: killFailure }), {
-          stdout: stdoutCapture.finish().value, stderr: stderrCapture.finish().value });
+          stdout: out.value, stderr: err.value, stdoutBytes: out.total, stderrBytes: err.total,
+          truncated: out.truncated || err.truncated });
         const wrapped = requestError(timeout, request.operation); wrapped.code = "WRITER_HELPER_TIMEOUT"; reject(wrapped);
-      }, INVOCATION_TIMEOUT_MS);
+      }, timeoutMs);
       child.stdout?.on("data", chunk => stdoutCapture.push(chunk));
       child.stderr?.on("data", chunk => stderrCapture.push(chunk));
       child.once("error", rejectCaptured);
@@ -78,18 +81,23 @@ export function createLocalWriterAdapter({ helperPath = DEFAULT_HELPER, sudo = "
         const stderrResult = stderrCapture.finish();
         stdout = stdoutResult.value;
         stderr = stderrResult.value;
+        observation = { stdout, stderr, stdoutBytes: stdoutResult.total, stderrBytes: stderrResult.total,
+          exitCode: code, signal, truncated: stdoutResult.truncated || stderrResult.truncated };
         if (stdoutResult.truncated || stderrResult.truncated) { const error = Object.assign(new Error("The privileged Writer helper output exceeded the bounded byte limit"), {
           code: "WRITER_OUTPUT_TOO_LARGE", stdout, stderr, truncated: true, stdoutBytes: stdoutResult.total, stderrBytes: stderrResult.total });
           const wrapped = requestError(error, request.operation); wrapped.code = "WRITER_OUTPUT_TOO_LARGE"; reject(wrapped); return; }
         if (code !== 0) { const error = new Error(stderr, { cause: inputError }); error.stderr = stderr; error.stdout = stdout; error.stderrBytes = stderrResult.total; error.stdoutBytes = stdoutResult.total; error.exitCode = code; error.signal = signal; error.code = code ?? signal ?? "WRITER_HELPER_FAILED"; reject(requestError(error, request.operation)); return; }
         if (inputError) { settled = false; rejectCaptured(inputError); return; }
-        try { resolve(JSON.parse(stdout)); } catch (cause) { const error = new Error("The privileged Writer helper did not return JSON", { cause });
-          error.stdout = stdout; error.stderr = stderr; const wrapped = requestError(error, request.operation); wrapped.code = "WRITER_RECEIPT_INVALID"; reject(wrapped); }
+        try { resolve(JSON.parse(stdout)); } catch (cause) { const error = Object.assign(new Error("The privileged Writer helper did not return JSON", { cause }), observation);
+          const wrapped = requestError(error, request.operation); wrapped.code = "WRITER_RECEIPT_INVALID"; reject(wrapped); }
       });
       child.stdin?.once?.("error", error => { inputError = error; });
       child.stdin?.end(JSON.stringify(request) + "\n");
     });
-    if (!result || result.repository !== CONSUMER.repository) throw new WriterBlockedError("WRITER_RECEIPT_INVALID", "The privileged Writer receipt is not repository-bound");
+    if (!result || result.repository !== CONSUMER.repository) {
+      const error = Object.assign(new Error("The privileged Writer receipt is not repository-bound"), observation);
+      const wrapped = requestError(error, request.operation); wrapped.code = "WRITER_RECEIPT_INVALID"; throw wrapped;
+    }
     return result;
   }
   return { invoke };

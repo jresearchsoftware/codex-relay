@@ -10,6 +10,9 @@ export const DIAGNOSTICS_CONFIG_PATH = CONSUMER.paths.diagnosticsConfig;
 export const DIAGNOSTICS_STORE_PATH = CONSUMER.paths.diagnosticsStore;
 export const MAX_NORMAL_DIAGNOSTIC_BYTES = 1024 * 1024;
 export const MAX_DEBUG_DIAGNOSTIC_BYTES = 4 * 1024 * 1024;
+// Covers the store's existing 30-second retention-lock wait and bounded write.
+// A recorder must return control to the independent fallback on a quiet hang.
+export const DIAGNOSTIC_STORE_TIMEOUT_MS = 60 * 1000;
 
 const SAFE_DIAGNOSTIC_CODE = /^[A-Z0-9_]{1,80}$/;
 const SAFE_DIAGNOSTIC_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -35,6 +38,21 @@ export const FAILURE_DIAGNOSTIC_STAGES = Object.freeze([
   "writer-publication"
 ]);
 export const FAILURE_DIAGNOSTIC_BOUNDARIES = FAILURE_DIAGNOSTIC_STAGES;
+
+// An independent output surface is the final evidence-gap notice when neither
+// filesystem recorder can prove retention. Only fixed fields leave this path.
+export function emitDiagnosticUnavailable({ executionId, originalCode, storeCode, fallbackCode,
+  operation, boundary = 'diagnostic-persistence' } = {}, write = text => process.stderr.write(text)) {
+  const safeCode = value => typeof value === 'string' && SAFE_DIAGNOSTIC_CODE.test(value) ? value : 'UNCLASSIFIED_FAILURE';
+  const result = { status: 'unavailable', code: 'DIAGNOSTICS_STORE_FAILED',
+    ...(typeof executionId === 'string' && SAFE_DIAGNOSTIC_ID.test(executionId) ? { executionId } : {}),
+    originalCode: safeCode(originalCode), storeCode: safeCode(storeCode), fallbackCode: safeCode(fallbackCode),
+    recorderBoundary: FAILURE_DIAGNOSTIC_BOUNDARIES.includes(boundary) ? boundary : 'diagnostic-persistence',
+    ...(typeof operation === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(operation) ? { operation } : {}),
+    originalEvidence: 'observed_not_retained' };
+  try { write(`RELAY_DIAGNOSTIC_UNAVAILABLE ${JSON.stringify(result)}\n`); } catch { /* output unavailable */ }
+  return result;
+}
 
 const SAFE_ENV_VALUES = new Set(["PATH", "LANG", "LC_ALL", "TZ", "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMP", "TEMP", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_TERMINAL_PROMPT", "GCM_INTERACTIVE", "GIT_OPTIONAL_LOCKS", "GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "CODEX_TASK_ROOT", "CODEX_SANDBOX_ROOT", "CODEX_ALLOWED_INPUT_ROOT"]);
 
@@ -436,6 +454,7 @@ export async function persistControllerFailureDiagnostic({ error, failureCode, i
     stderr: privateText,
     launcherDiagnostic: { code },
     classification: code,
+    error,
     secrets: secrets ?? {
       codexAccessToken: typeof env?.CODEX_ACCESS_TOKEN === "string" ? env.CODEX_ACCESS_TOKEN : "",
       githubToken: typeof env?.GITHUB_TOKEN === "string" ? env.GITHUB_TOKEN : ""
@@ -446,9 +465,12 @@ export async function persistControllerFailureDiagnostic({ error, failureCode, i
     : async () => { throw Object.assign(new Error("No bounded private diagnostic store is available"), { code: "DIAGNOSTICS_STORE_UNAVAILABLE" }); };
   try {
     const result = await store(diagnostic);
-    const reference = safeDiagnosticStoreReference(result);
+    const reference = safeDiagnosticStoreReference(typeof result?.stdout === 'string' ? JSON.parse(result.stdout) : result);
     if (reference?.status === "unavailable") {
       return { status: "unavailable", code: "DIAGNOSTICS_STORE_FAILED", ...(reference.storeCode ? { storeCode: reference.storeCode } : reference.code ? { storeCode: reference.code } : {}), executionId, mode: effectiveMode };
+    }
+    if (reference?.status !== 'stored' || reference.executionId !== executionId || reference.mode !== effectiveMode) {
+      throw Object.assign(new Error('Controller diagnostic storage is not proven'), { code: 'DIAGNOSTICS_STORE_RECEIPT_INVALID' });
     }
     return { status: "stored", code, executionId, mode: effectiveMode };
   } catch (storeError) {
@@ -469,7 +491,8 @@ function diagnosticStoreFailureCode(value) {
   return match?.[1];
 }
 
-export async function persistExecutionDiagnostic(diagnostic, { spawnImpl = spawn, storePath = DIAGNOSTICS_STORE_PATH } = {}) {
+export async function persistExecutionDiagnostic(diagnostic, { spawnImpl = spawn, storePath = DIAGNOSTICS_STORE_PATH, timeoutMs = DIAGNOSTIC_STORE_TIMEOUT_MS } = {}) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > DIAGNOSTIC_STORE_TIMEOUT_MS) throw new Error('Invalid diagnostic store timeout');
   let child;
   try { child = spawnImpl("/usr/bin/sudo", ["-n", storePath], { env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"] }); }
   catch (error) { throw Object.assign(new Error('Diagnostic store could not be started', { cause: error }), { code: 'DIAGNOSTICS_STORE_FAILED', storeDiagnosticCode: safeFailureCode(error?.code, 'DIAGNOSTICS_STORE_FAILED') }); }
@@ -479,23 +502,39 @@ export async function persistExecutionDiagnostic(diagnostic, { spawnImpl = spawn
   child.stdout?.on("data", chunk => { stdoutCapture.push(chunk); });
   child.stderr?.on("data", chunk => { stderrCapture.push(chunk); });
   const result = await new Promise((resolve, reject) => {
+    let settled = false;
     const fail = (message, error, code, signal) => {
+      if (settled) return;
+      settled = true; clearTimeout(timer);
       const out = stdoutCapture.finish(); const err = stderrCapture.finish();
-      reject(Object.assign(new Error(message, error ? { cause: error } : undefined), {
+      const failure = Object.assign(new Error(message, error ? { cause: error } : undefined), {
         code: 'DIAGNOSTICS_STORE_FAILED', exitCode: code, signal,
-        storeDiagnosticCode: safeFailureCode(error?.code, diagnosticStoreFailureCode(err.value) ?? diagnosticStoreFailureCode(out.value)),
-        native: { stdout: out, stderr: err, operation: 'diagnostic-store' }
-      }));
+        storeDiagnosticCode: safeFailureCode(error?.code, diagnosticStoreFailureCode(err.value) ?? diagnosticStoreFailureCode(out.value))
+      });
+      Object.defineProperties(failure, {
+        stdout: { value: out, writable: true, configurable: true }, stderr: { value: err, writable: true, configurable: true },
+        native: { value: { stdout: out, stderr: err, operation: 'diagnostic-store' }, writable: true, configurable: true }
+      });
+      reject(failure);
     };
+    const timer = setTimeout(() => {
+      let killError;
+      try { child.kill?.('SIGTERM'); } catch (error) { killError = error; }
+      fail('Diagnostic store exceeded its bounded invocation timeout', Object.assign(new Error('DIAGNOSTICS_STORE_TIMEOUT', { cause: killError }), { code: 'DIAGNOSTICS_STORE_TIMEOUT' }));
+      child.stdin?.destroy?.(); child.stdout?.destroy?.(); child.stderr?.destroy?.(); child.unref?.();
+    }, timeoutMs);
     child.once("error", error => fail('Diagnostic store could not be started', error));
     for (const stream of [child.stdin, child.stdout, child.stderr]) stream?.once('error', error => fail('Diagnostic store stream failed', error));
     child.once("close", (code, signal) => {
-      stdout = stdoutCapture.finish().value;
-      stderr = stderrCapture.finish().value;
-      if (code === 0 && !signal) resolve({ stdout, stderr });
+      if (settled) return;
+      const out = stdoutCapture.finish(); const err = stderrCapture.finish();
+      stdout = out.value; stderr = err.value;
+      if (out.truncated || err.truncated) return fail('Diagnostic store output exceeded its bounded byte limit', Object.assign(new Error('DIAGNOSTICS_STORE_OUTPUT_TOO_LARGE'), { code: 'DIAGNOSTICS_STORE_OUTPUT_TOO_LARGE' }), code, signal);
+      if (code === 0 && !signal) { settled = true; clearTimeout(timer); resolve({ stdout, stderr }); }
       else fail('Diagnostic store rejected the bounded bundle', undefined, code, signal);
     });
-    child.stdin?.end(JSON.stringify({ ...diagnostic, repository: CONSUMER.repository }) + "\n");
+    try { child.stdin?.end(JSON.stringify({ ...diagnostic, repository: CONSUMER.repository }) + "\n"); }
+    catch (error) { fail('Diagnostic store input could not be serialized or sent', error); }
   });
   return result;
 }

@@ -1462,6 +1462,18 @@ both stores, or the process output surface are unavailable, the independent
 explicitly marks original evidence as observed but not retained. It does not
 claim durable bytes after host/power loss.
 
+Routing emits fixed `RELAY_RUNTIME_PROGRESS` records on stderr when admission,
+checkout preparation, governed runtime, collection and Writer operations start,
+complete or fail, and every 30 seconds while the current operation remains
+pending. Records contain only the operation, state and elapsed milliseconds;
+they carry no model narration, task claims, native output or credentials. A
+completed operation is a transport/orchestration observation, not Task acceptance.
+The semantic result remains the final JSON/Outcome. The diagnostic-store helper
+has a 60-second invocation bound, including its existing 30-second retention-lock
+wait, so a quiet recorder cannot indefinitely prevent the independent fallback
+from retaining the original failure. Clipped helper output is an incomplete
+receipt and never proves durable storage.
+
 An authorized host operator uses the existing approved shell/SSH/admin route:
 read the selected consumer's `paths.diagnosticsRoot`, then inspect the exact
 `<executionId>.json` identified by the run/Outcome reference. For a fallback

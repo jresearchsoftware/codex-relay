@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { reserveRuntimeDiagnostic, openRuntimeDiagnostic, normalizeRuntimeCapsule } from './diagnostic-fallback.mjs';
 import { createExecutionDiagnostic, persistExecutionDiagnostic, readDiagnosticsConfig,
-  safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, captureCausalDiagnostic } from './diagnostics.mjs';
+  safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, captureCausalDiagnostic, emitDiagnosticUnavailable } from './diagnostics.mjs';
 
 const safeCode = (value, fallback) => typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(value) ? value : fallback;
 const operations = { preflight: 'checkout-prepare', progress: 'collect-progress', readiness: 'attempt-finalization',
@@ -13,7 +13,8 @@ const operations = { preflight: 'checkout-prepare', progress: 'collect-progress'
 export async function persistAttemptFailureDiagnostic({ executionId, error, stage = 'finalization', lastSuccessfulBoundary,
   root, diagnosticStore = persistExecutionDiagnostic, fallbackStore = reserveRuntimeDiagnostic,
   fallbackOpen = openRuntimeDiagnostic, readConfig = readDiagnosticsConfig,
-  now = () => new Date().toISOString(), secrets = { githubToken: process.env.GITHUB_TOKEN ?? '', codexAccessToken: process.env.CODEX_ACCESS_TOKEN ?? '' } } = {}) {
+  now = () => new Date().toISOString(), writeFallback,
+  secrets = { githubToken: process.env.GITHUB_TOKEN ?? '', codexAccessToken: process.env.CODEX_ACCESS_TOKEN ?? '' } } = {}) {
   const identity = typeof executionId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(executionId) ? executionId : undefined;
   const inherited = error?.details?.causal ?? error?.details?.diagnostic ?? {};
   const supplied = safeFailureDiagnosticReference(error?.details?.failureDiagnostic ?? error?.details) ?? {};
@@ -145,6 +146,11 @@ export async function persistAttemptFailureDiagnostic({ executionId, error, stag
   }
   const observed = capsule ? { childState: capsule.childState, containment: capsule.containment,
     ...(capsule.cleanupContainment ? { cleanupContainment: capsule.cleanupContainment } : {}) } : {};
+  if (fallbackReference?.status === 'unavailable' && diagnosticStoreReference?.status !== 'stored') {
+    emitDiagnosticUnavailable({ executionId: identity, originalCode: code,
+      storeCode: diagnosticStoreReference?.storeCode, fallbackCode: fallbackReference.code,
+      operation: summary.operation }, writeFallback);
+  }
   return { ...summary, ...observed, cleanup, retention, persistence, diagnosticStore: diagnosticStoreReference,
     fallbackReference, failureDiagnostic: { ...summary, ...observed, cleanup, retention, persistence,
       diagnosticStore: diagnosticStoreReference, fallbackReference } };
