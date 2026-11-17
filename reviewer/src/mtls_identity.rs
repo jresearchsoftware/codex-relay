@@ -40,23 +40,33 @@ fn percent_decode(value: &str) -> Result<Vec<u8>, ()> {
 
 pub fn verify_headers(headers: &HeaderMap) -> Result<(), ()> {
     let verified: Vec<_> = headers.get_all(VERIFIED_HEADER).iter().collect();
-    if verified.len() != 1 || verified[0].to_str().map_err(|_| ())? != "1" {
+    if verified.len() != 1
+        || verified[0].to_str().map_err(|error| {
+            crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+        })? != "1"
+    {
         return Err(());
     }
     let values: Vec<_> = headers.get_all(CERT_HEADER).iter().collect();
     if values.len() != 1 {
         return Err(());
     }
-    let value = values[0].to_str().map_err(|_| ())?;
+    let value = values[0].to_str().map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     if value.is_empty() || value.len() > MAX_ESCAPED_CERT_BYTES {
         return Err(());
     }
     let decoded = percent_decode(value)?;
-    let (pem_rest, pem) = parse_x509_pem(&decoded).map_err(|_| ())?;
+    let (pem_rest, pem) = parse_x509_pem(&decoded).map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     if !pem_rest.is_empty() {
         return Err(());
     }
-    let (rest, certificate) = parse_x509_certificate(&pem.contents).map_err(|_| ())?;
+    let (rest, certificate) = parse_x509_certificate(&pem.contents).map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     if !rest.is_empty() {
         return Err(());
     }
@@ -69,7 +79,9 @@ pub fn verify_headers(headers: &HeaderMap) -> Result<(), ()> {
     }
     let san = certificate
         .subject_alternative_name()
-        .map_err(|_| ())?
+        .map_err(|error| {
+            crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+        })?
         .ok_or(())?;
     if !san
         .value
@@ -81,7 +93,9 @@ pub fn verify_headers(headers: &HeaderMap) -> Result<(), ()> {
     }
     let eku = certificate
         .extended_key_usage()
-        .map_err(|_| ())?
+        .map_err(|error| {
+            crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+        })?
         .ok_or(())?;
     if !eku.value.client_auth {
         return Err(());
@@ -97,36 +111,51 @@ pub fn verify_headers_with_trust(headers: &HeaderMap, trusted_client_ca: &[u8]) 
     if values.len() != 1 {
         return Err(());
     }
-    let value = values[0].to_str().map_err(|_| ())?;
+    let value = values[0].to_str().map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     let decoded = percent_decode(value)?;
-    let (pem_rest, pem) = parse_x509_pem(&decoded).map_err(|_| ())?;
+    let (pem_rest, pem) = parse_x509_pem(&decoded).map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     if !pem_rest.is_empty() || pem.label != "CERTIFICATE" {
         return Err(());
     }
-    let (rest, leaf) = parse_x509_certificate(&pem.contents).map_err(|_| ())?;
+    let (rest, leaf) = parse_x509_certificate(&pem.contents).map_err(|error| {
+        crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+    })?;
     if !rest.is_empty() {
         return Err(());
     }
     let mut bundle = trusted_client_ca;
     let mut cryptographically_trusted = false;
     while !bundle.is_empty() {
-        let (remaining, ca_pem) = parse_x509_pem(bundle).map_err(|_| ())?;
+        let (remaining, ca_pem) = parse_x509_pem(bundle).map_err(|error| {
+            crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+        })?;
         bundle = remaining;
         if ca_pem.label != "CERTIFICATE" {
             continue;
         }
-        let (ca_rest, ca) = parse_x509_certificate(&ca_pem.contents).map_err(|_| ())?;
+        let (ca_rest, ca) = parse_x509_certificate(&ca_pem.contents).map_err(|error| {
+            crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+        })?;
         if !ca_rest.is_empty() {
             return Err(());
         }
         let is_ca = ca
             .basic_constraints()
-            .map_err(|_| ())?
+            .map_err(|error| {
+                crate::diagnostics::failure("MTLS_IDENTITY_INVALID", error);
+            })?
             .is_some_and(|value| value.value.ca);
         if is_ca
             && ca.subject() == leaf.issuer()
             && leaf
                 .verify_signature(Some(&ca.tbs_certificate.subject_pki))
+                .inspect_err(|error| {
+                    crate::diagnostics::failure("MTLS_SIGNATURE_INVALID", error);
+                })
                 .is_ok()
         {
             cryptographically_trusted = true;
@@ -154,6 +183,11 @@ pub async fn require_identity_with_trust(
         }
     });
     if valid.is_err() {
+        crate::diagnostics::record(
+            "MTLS_CLIENT_IDENTITY_INVALID",
+            "ingress-identity",
+            "Client certificate/header identity validation rejected the request",
+        );
         return (StatusCode::FORBIDDEN, "MTLS_CLIENT_IDENTITY_INVALID").into_response();
     }
     next.run(request).await

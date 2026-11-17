@@ -44,8 +44,8 @@ counters are session-total observations, not billing proof.
 
 Public Outcomes can expose bounded categorical causes, inner-start/exit/signal
 observations, stderr byte-count/truncation and diagnostic availability. Raw
-streams, protected paths, store references and diagnostic previews stay
-protected. Never widen access or copy protected data into a public comment to
+streams, protected paths and diagnostic previews stay protected. Safe reference
+identifiers may be shown so authorized operators can locate the protected record. Never widen access or copy protected data into a public comment to
 improve a report. Missing observation is not proof of successful containment.
 
 ## Stop, preserve and reconcile
@@ -99,3 +99,33 @@ link and exact published result SHA. Correct an unreserved submission in the
 same attempt. No PR-body admission digest is needed for an explicit v4 result.
 Preserve already reserved claims and inspect unknown publication before
 recovery; do not create another Step or PR solely to repair delivery.
+
+
+## Rejected events and original causes
+
+A terminal `BLOCKED` routing result emits a native Actions error and exits
+nonzero. The semantic result still distinguishes handled domain rejection from
+orchestration failure. Red does not authorize a rerun; green does not establish
+Task completion or independent acceptance. `worker: not_started` is reported
+only at a boundary that proves it. Before trusted target binding there is no
+Issue/PR Outcome or label consumption.
+
+Inspect the stable code, specific failed check/reason, operation/phase and
+run/attempt/reference first. Protected normal-mode diagnostics retain available
+original expected/observed values, exception/native response and emitted output
+with bounded/redacted availability and truncation metadata. An authorized host
+operator uses the existing approved shell/SSH route and selected consumer's
+`paths.diagnosticsRoot/<executionId>.json`; independent fallback identities live
+under the configured attempt or Writer claim root's `runtime-diagnostics`
+slot. The safe qualification snapshot omits private causal text. Keep full
+readback protected; an absent App does not prove that an authorized shell route
+is absent. No debug mode or fresh execution is needed to inspect retained proof.
+
+For a future owner-run `status` mismatch, inspect the recorded original run
+status versus `in_progress`, and the original owner command, before choosing a
+new launch. This is an example, not a claim about any historical incident.
+For publication uncertainty, reconcile the reserved native operation and exact
+readback before any permitted recovery. Primary capture/store failure retains
+its own reason through the independent capsule where possible; if both stores
+are unavailable, the bounded fallback summary explicitly identifies evidence
+that was observed but could not be retained. Missing output is never invented.

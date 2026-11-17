@@ -24,7 +24,8 @@ def test_generated_candidate_admission_has_one_consumer_binding_and_valid_module
     parsed = subprocess.run(['node', '--check', '--input-type=module'], input=source,
                             text=True, capture_output=True)
     assert parsed.returncode == 0, parsed.stderr
-    assert source.count('import { CONSUMER, CONSUMER_DIGEST }') == 1
+    assert source.count('import { CONSUMER, CONSUMER_DIGEST, CONSUMER as INSTALLATION_CONSUMER }') == 1
+    assert 'configuredRepositories' not in source
     assert '../../consumer/' not in source
 
 
@@ -62,3 +63,47 @@ def test_candidate_recovery_journal_reads_only_the_original_protected_configured
     else:
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout) == {'runId': '101', 'path': expected}
+
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+def test_generated_singleton_recovery_uses_retained_metadata_without_new_retained_exports(tmp_path):
+    # Older accepted singleton runtimes expose CONSUMER/digest and the parser,
+    # without the new installation-level/progress helper exports. Link the
+    # actual generated module against that historical dependency surface.
+    retained = tmp_path / 'retained'
+    consumer = inputs()['consumer']
+    modules = {
+        'consumer/consumer.mjs': 'export const CONSUMER=' + json.dumps(consumer) + ';export const CONSUMER_DIGEST="' + 'a' * 64 + '";',
+        'consumer/consumer-config.mjs': 'export const parseConsumerJson=JSON.parse;export const assertRootConsumer=()=>{};',
+        'controller/src/execution-contract.mjs': 'export const digest=()=>"";export const exactSha=()=>true;export const fail=code=>{throw Error(code)};export const positive=Number.isSafeInteger;export const VERSION=2;export const REPOSITORY=' + json.dumps(consumer['repository']) + ';',
+        'contracts/src/github-authority.mjs': 'export const admissionBinding=()=>{};export const canonicalAuthorityJson=JSON.stringify;export const validateAuthorityRecord=()=>{};',
+        'controller/src/predispatch-recovery.mjs': 'export const completedPredispatchRecovery=()=>false;export const pendingPredispatchRecord=()=>false;export const predispatchNoWorkerRecord=()=>false;export const consumedPredispatchMarker=()=>false;',
+        'controller/src/execution-effects.mjs': 'export const manualAttemptHasConflictingActivity=()=>false;export const attemptHasPendingPublicationEffects=()=>false;',
+        'controller/src/attempt-store.mjs': 'export const createAttemptStore=()=>{};',
+    }
+    for name, content in modules.items():
+        path = retained / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    source = clean_reinstall.recovery_admission_program(inputs(), source_base=retained.as_uri() + '/')
+    source = source.split('assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);', 1)[0]
+    slot = consumer['executionSlots'][-1]['id']
+    source += '\nconsole.log(JSON.stringify(verifiedPendingLocation({repository:CONSUMER.repository,executionSlot:' + json.dumps(slot) + '})));'
+    result = subprocess.run(['node', '--input-type=module'], input=source, cwd=tmp_path,
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {'repository': consumer['repository'], 'executionSlot': slot}
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Node required')
+def test_generated_singleton_recovery_does_not_invent_missing_or_foreign_location(tmp_path):
+    source = clean_reinstall.recovery_admission_program(inputs(), source_base=ROOT.as_uri() + '/')
+    source = source.split('assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);', 1)[0]
+    source += '\nconsole.log(JSON.stringify([verifiedPendingLocation({repository:CONSUMER.repository}),verifiedPendingLocation({repository:"foreign/private",executionSlot:"primary"})]));'
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('RELAY_')}
+    environment['RELAY_CONSUMER_CONFIG'] = str(ROOT / 'consumer/fixtures/example.json')
+    result = subprocess.run(['node', '--input-type=module'], input=source, cwd=tmp_path,
+                            env=environment, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == [{'repository': 'example-org/sample-project'}, {}]

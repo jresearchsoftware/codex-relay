@@ -8,6 +8,15 @@ implicit consumer fallback. [Example](fixtures/example.json) and
 [isolated canary](fixtures/canary.json) are non-secret qualification inputs;
 their paths and IDs do not authorize access to any deployed system.
 
+Configuration rejection keeps `CONSUMER_CONFIG_INVALID` and identifies the
+field, failed check, expected rule and safe observed type/count/number. Raw
+configuration values and duplicate-key names are omitted. Filesystem and parser
+errors remain on the non-enumerable `runtimeCause` followed by the existing
+protected diagnostic capture; uncaught module-import output retains only safe
+context. This adds no configuration fallback, bootstrap storage location or
+permission change. A failed configuration load cannot select its own diagnostic
+store; the calling installed entrypoint retains its existing host diagnostic path.
+
 Configure exactly one of the existing `repository` string or a nonempty unique
 `repositories` list. All owner, App/installation, controller, profile and managed
 pool settings remain shared. For example, replace the example's `repository`

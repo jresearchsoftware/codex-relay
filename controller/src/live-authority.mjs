@@ -23,9 +23,16 @@ export function linkedIssue(body) {
   return ids[0];
 }
 export function assertPr(pr, number) {
-  if (pr?.number !== number || pr.state !== 'open' || pr.merged || pr.base?.ref !== CONSUMER.baseBranch
-    || pr.base?.repo?.full_name !== REPOSITORY || pr.head?.repo?.full_name !== REPOSITORY
-    || !exactSha(pr.head?.sha) || !exactSha(pr.base?.sha)) fail('PR_NOT_ADMITTED');
+  for (const [check, expected, observed, valid] of [
+    ['pr.number', number, pr?.number, pr?.number === number],
+    ['pr.state', 'open', pr?.state, pr?.state === 'open'],
+    ['pr.merged', false, pr?.merged, !pr?.merged],
+    ['pr.base.ref', CONSUMER.baseBranch, pr?.base?.ref, pr?.base?.ref === CONSUMER.baseBranch],
+    ['pr.base.repository', REPOSITORY, pr?.base?.repo?.full_name, pr?.base?.repo?.full_name === REPOSITORY],
+    ['pr.head.repository', REPOSITORY, pr?.head?.repo?.full_name, pr?.head?.repo?.full_name === REPOSITORY],
+    ['pr.head.sha', 'exact 40-character commit SHA', pr?.head?.sha, exactSha(pr?.head?.sha)],
+    ['pr.base.sha', 'exact 40-character commit SHA', pr?.base?.sha, exactSha(pr?.base?.sha)]
+  ]) if (!valid) fail('PR_NOT_ADMITTED', { check, expected, observed: observed ?? null });
   branchName(pr.head.ref);
 }
 export async function readAuthority(api, target, number, { targetBase, step, route, runId, lineage, snapshot, previousRecord, resolution, publicationTarget } = {}) {
@@ -33,7 +40,11 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
   if (pr) assertPr(pr, number);
   const issueNumber = pr ? linkedIssue(pr.body) : number;
   const issue = await api.get(`/issues/${issueNumber}`);
-  if (issue.state !== 'open' || issue.user?.login !== OWNER || issue.pull_request) fail('ISSUE_NOT_ADMITTED');
+  for (const [check, expected, observed, valid] of [
+    ['issue.state', 'open', issue?.state, issue?.state === 'open'],
+    ['issue.owner', OWNER, issue?.user?.login, issue?.user?.login === OWNER],
+    ['issue.kind', 'issue', issue?.pull_request ? 'pull_request' : 'issue', !issue?.pull_request]
+  ]) if (!valid) fail('ISSUE_NOT_ADMITTED', { check, expected, observed: observed ?? null });
   if (authorityMode(issue.body) !== 'github-native-v1') requireCurrentProtocol();
   step = launchStep(step);
   const typed = await readTaskAuthority(api, issue, pr, {
@@ -70,7 +81,7 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
     if (exactSha(retainedHead) && retainedHead !== semantic.base_sha) {
       const refs = await api.get(`/git/matching-refs/heads/${semantic.branch}`);
       const matches = Array.isArray(refs) ? refs.filter(ref => ref.ref === `refs/heads/${semantic.branch}`) : [];
-      if (matches.length !== 1 || matches[0].object?.sha !== retainedHead) fail('STARTING_STATE_MISMATCH');
+      if (matches.length !== 1 || matches[0].object?.sha !== retainedHead) fail('STARTING_STATE_MISMATCH', { check: 'task-branch-head', expected: retainedHead, observed: matches.map(ref => ref.object?.sha ?? null) });
       const existing = await findCurrentIssuePullRequest(api, { issueNumber, branch: semantic.branch,
         continuation: { head: retainedHead } }, previousRecord.prNumber ?? null);
       if (existing && existing.head.sha !== retainedHead) fail('STARTING_STATE_MISMATCH');
@@ -82,7 +93,10 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
   let priorUnavailable = false;
   if (!snapshot && previousRecord && !priorOutcome) {
     try { priorOutcome = await readPriorOutcomeContext(api, previousRecord, lineage, issueNumber); }
-    catch { priorUnavailable = true; }
+    catch (error) {
+      priorUnavailable = true;
+      await api.recordFailure?.({ error, operation: 'prior-outcome-context', phase: 'authority', runId });
+    }
   }
   const priorContext = appendPriorOutcomeContext(typed.input, priorOutcome, { unavailable: priorUnavailable });
   const q = snapshot ? validateAdmissionSnapshot(snapshot, { step, route, attempt: `run-${runId}` })
@@ -116,7 +130,7 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
   }
   return execution;
 }
-export async function admitEnvelope(api, { runId, target, number, route, issueNumber, step, transport }, { nextStep, lineage, previousRecord } = {}) {
+export async function admitEnvelope(api, { runId, target, number, route, issueNumber, step, transport }, { nextStep, lineage, previousRecord, recordFailure = async () => undefined } = {}) {
   if (!positive(number) || !positive(runId) || !['issue', 'pull_request'].includes(target)
     || !['auto', 'manual'].includes(route)) fail('ROUTE_INVALID');
   if (transport !== undefined && transport !== 'label') fail('ROUTE_INVALID');
@@ -129,29 +143,29 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   }
   const run = await api.getRun(runId);
   const eventName = transport === 'label' ? target === 'issue' ? 'issues' : 'pull_request_target' : 'workflow_dispatch';
-  if (run.id !== runId) rejectOwnerRun('run_id');
-  if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository');
-  if (run.actor?.login !== OWNER) rejectOwnerRun('actor');
-  if (run.triggering_actor && run.triggering_actor.login !== OWNER) rejectOwnerRun('triggering_actor');
-  if (run.status !== 'in_progress') rejectOwnerRun('status');
-  if (run.path !== CONSUMER.routingWorkflow) rejectOwnerRun('workflow_path');
-  if (run.event !== eventName) rejectOwnerRun('event');
-  if (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) rejectOwnerRun('head_branch');
-  if (run.run_attempt !== 1) rejectOwnerRun('run_attempt');
-  if (transport !== 'label' && run.display_title !== dispatchRunName({ route, issueNumber, step, target, number })) rejectOwnerRun('run_title');
+  if (run?.id !== runId) rejectOwnerRun('run_id', runId, run?.id);
+  if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository', REPOSITORY, run.repository?.full_name);
+  if (run.actor?.login !== OWNER) rejectOwnerRun('actor', OWNER, run.actor?.login);
+  if (run.triggering_actor && run.triggering_actor.login !== OWNER) rejectOwnerRun('triggering_actor', OWNER, run.triggering_actor?.login);
+  if (run.status !== 'in_progress') rejectOwnerRun('status', 'in_progress', run.status);
+  if (run.path !== CONSUMER.routingWorkflow) rejectOwnerRun('workflow_path', CONSUMER.routingWorkflow, run.path);
+  if (run.event !== eventName) rejectOwnerRun('event', eventName, run.event);
+  if (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) rejectOwnerRun('head_branch', CONSUMER.baseBranch, run.head_branch);
+  if (run.run_attempt !== 1) rejectOwnerRun('run_attempt', 1, run.run_attempt);
+  if (transport !== 'label' && run.display_title !== dispatchRunName({ route, issueNumber, step, target, number })) rejectOwnerRun('run_title', transport === 'label' ? { route, target, number } : dispatchRunName({ route, issueNumber, step, target, number }), run.display_title);
   let subject, command;
   if (transport === 'label') {
     // Establish the native target before any domain-block Outcome may be
     // published. A caller cannot borrow another target's owner run and point
     // an admission error at an unrelated Issue/PR with invalid authority.
     subject = await api.get(target === 'issue' ? `/issues/${number}` : `/pulls/${number}`);
-    if (subject.number !== number) rejectOwnerRun('subject_number');
-    if (!labelRunCommandMatches(run.display_title, { route, target, number })) rejectOwnerRun('run_title');
-    if (target === 'issue' && subject.pull_request) rejectOwnerRun('issue_kind');
+    if (subject?.number !== number) rejectOwnerRun('subject_number', number, subject?.number);
+    if (!labelRunCommandMatches(run.display_title, { route, target, number })) rejectOwnerRun('run_title', transport === 'label' ? { route, target, number } : dispatchRunName({ route, issueNumber, step, target, number }), run.display_title);
+    if (target === 'issue' && subject.pull_request) rejectOwnerRun('issue_kind', 'issue', 'pull_request');
     if (target === 'pull_request') {
-      if (subject.base?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_base_repository');
-      if (subject.head?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_head_repository');
-      if (![CONSUMER.baseBranch, subject.head.ref].includes(run.head_branch)) rejectOwnerRun('pr_head_branch');
+      if (subject.base?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_base_repository', REPOSITORY, subject.base?.repo?.full_name);
+      if (subject.head?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_head_repository', REPOSITORY, subject.head?.repo?.full_name);
+      if (![CONSUMER.baseBranch, subject.head.ref].includes(run.head_branch)) rejectOwnerRun('pr_head_branch', [CONSUMER.baseBranch, subject.head.ref], run.head_branch);
     }
     // Unsafe/unbound/stale commands throw outside the domain-result boundary:
     // they authorize neither consumption nor an Outcome on this target.
@@ -177,14 +191,14 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       await verifyPublishedBase(api, a.historicalBase, targetBase);
       if (a.startHead !== a.historicalBase) await verifyPublishedBase(api, a.startHead, targetBase);
     }
-    if (a.pr && a.pr.head.sha !== a.startHead) fail('STARTING_STATE_MISMATCH');
+    if (a.pr && a.pr.head.sha !== a.startHead) fail('STARTING_STATE_MISMATCH', { check: 'pr.starting-head', expected: a.startHead, observed: a.pr.head.sha });
     if (target === 'issue' && !noSource) {
       const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
       if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
       const exact = refs.filter(r => r.ref === `refs/heads/${a.branch}`);
       if (a.continuation) {
         if (!exact.length) fail('TASK_BRANCH_MISSING');
-        if (exact.length !== 1 || exact[0].object?.sha !== a.startHead) fail('STARTING_STATE_MISMATCH');
+        if (exact.length !== 1 || exact[0].object?.sha !== a.startHead) fail('STARTING_STATE_MISMATCH', { check: 'task-branch-head', expected: a.startHead, observed: exact.map(ref => ref.object?.sha ?? null) });
         if (!a.continuation.pullRequest && await findCurrentIssuePullRequest(api, a)) fail('PR_AUTHORITY_CHANGED');
       } else if (exact.length) fail('TASK_BRANCH_ALREADY_EXISTS');
     }
@@ -200,12 +214,13 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       ...(a.continuation ? { continuation: a.continuation } : {}) };
   } catch (error) {
     if (!isAdmissionDomainBlock(error)) throw error;
+    const diagnosticStore = await recordFailure({ error, phase: 'authority', operation: 'admit-authority', runId, workerStarted: false });
     // The event identity is known, but executable authority is not. Preserve
     // only safe structured blocker data; never manufacture a branch,
     // profile, or reviewed/remediation head for the terminal Outcome.
     return { blocked: true, version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
       target, number, issueNumber, route, step: null, targetBase, ...command,
-      block: { code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code ?? '') ? error.code : 'ADMISSION_BLOCKED',
+      block: { diagnosticStore, code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code ?? '') ? error.code : 'ADMISSION_BLOCKED',
         ...(typeof error.details?.field === 'string' ? { field: error.details.field } : {}) } };
   }
 }
@@ -223,17 +238,32 @@ export async function readyTransitions(api, number) {
   return [...unique.values()].sort((a, b) => a.id - b.id);
 }
 
+function rejectReady(code, check, expected, observed) {
+  const error = Object.assign(new Error(code), { code,
+    observation: { check, expected, observed: observed ?? null, availability: observed === undefined ? 'unavailable' : 'available' } });
+  error.details = { failureDiagnostic: { code, stage: 'authority', boundary: 'authority', workerStarted: false,
+    childState: 'not_started', operation: 'ready-event-binding',
+    preview: `${code}: ${check} failed. No worker started. Inspect the original native ready event and owner command before any fresh launch.` } };
+  throw error;
+}
+
 async function readReadyEvent(api, { number, route, run, subject, rejectAmbiguous = false }) {
   const label = route === 'auto' ? READY_LABELS[0] : READY_LABELS[1];
   const ready = labelNames(subject.labels).filter(name => READY_LABELS.includes(name));
-  if (ready.length !== 1 || ready[0] !== label) fail('READY_LABEL_AMBIGUOUS');
+  if (ready.length !== 1 || ready[0] !== label) rejectReady('READY_LABEL_AMBIGUOUS', 'ready-label', [label], ready);
   const events = await readyTransitions(api, number);
   const event = events.at(-1);
   const age = Date.parse(run.created_at) - Date.parse(event?.created_at);
   // Bind the live native command to this first run, not a surviving old label.
-  if (!positive(event?.id) || event.event !== 'labeled' || event.label.name !== label
-    || event.actor?.login !== OWNER || event.actor?.type !== 'User'
-    || !Number.isFinite(age) || age < 0 || age > 120000) fail('READY_EVENT_STALE');
+  for (const [check, expected, observed, valid] of [
+    ['ready-event-id', 'positive native event ID', event?.id, positive(event?.id)],
+    ['ready-event-kind', 'labeled', event?.event, event?.event === 'labeled'],
+    ['ready-event-label', label, event?.label?.name, event?.label?.name === label],
+    ['ready-event-actor', OWNER, event?.actor?.login, event?.actor?.login === OWNER],
+    ['ready-event-actor-type', 'User', event?.actor?.type, event?.actor?.type === 'User'],
+    ['ready-event-age', '0..120000 milliseconds before run creation', Number.isFinite(age) ? age : null,
+      Number.isFinite(age) && age >= 0 && age <= 120000]
+  ]) if (!valid) rejectReady('READY_EVENT_STALE', check, expected, observed);
   // The run API timestamps have second precision and expose no triggering
   // timeline event ID. A same-second replacement cannot be attributed safely.
   if (rejectAmbiguous && events.some(other => other.id !== event.id && other.event === 'labeled'
@@ -250,10 +280,11 @@ export async function revalidateReadyEvent(api, e) {
   // Check immediately before reservation/consumption, including blocked
   // admission. Never remove a replacement command created during API reads.
   const subject = await api.get(`/issues/${e.number}`);
-  if (subject.number !== e.number) rejectOwnerRun('subject_number');
+  if (subject?.number !== e.number) rejectOwnerRun('subject_number', e.number, subject?.number);
   const event = await readReadyEvent(api, { number: e.number, route: e.route,
     run: await api.getRun(e.runId), subject, rejectAmbiguous: true });
-  if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) fail('READY_EVENT_STALE');
+  if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) rejectReady('READY_EVENT_STALE', 'ready-event-revalidation',
+    { id: e.readyEventId, created_at: e.readyEventAt }, { id: event.id, created_at: event.created_at });
 }
 export async function revalidateAuthority(api, e, { reporting = false, handoff = false, verifyStartingBase = false, publicationTarget } = {}) {
   validateEnvelope(e);
@@ -304,7 +335,7 @@ export async function verifyPublishedBase(api, base, current) {
   if (base === current) return;
   let comparison;
   try { comparison = await api.get(`/compare/${base}...${current}?per_page=1`); }
-  catch (error) { if (error.status === 404) fail('STARTING_STATE_MISMATCH'); throw error; }
+  catch (cause) { if (cause.status === 404) throw Object.assign(new Error('STARTING_STATE_MISMATCH', { cause }), { code: 'STARTING_STATE_MISMATCH', observation: { check: 'published-base-comparison', expected: { base, current }, observed: { status: 404 } } }); throw cause; }
   if (comparison.status !== 'ahead' || comparison.base_commit?.sha !== base
-    || comparison.merge_base_commit?.sha !== base) fail('STARTING_STATE_MISMATCH');
+    || comparison.merge_base_commit?.sha !== base) fail('STARTING_STATE_MISMATCH', { check: 'published-base-ancestry', expected: { status: 'ahead', base, mergeBase: base }, observed: { status: comparison.status, base: comparison.base_commit?.sha, mergeBase: comparison.merge_base_commit?.sha } });
 }

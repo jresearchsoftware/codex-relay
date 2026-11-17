@@ -1,5 +1,5 @@
 schema = 1
-source_hash = "sha256:639b1c9dfcb7f29f2855efcead2d981ea18d445a978a4ff0ac88b81c7ba83298"
+source_hash = "sha256:5fdf664ae919fa60f0861ba531cd41e56def80af36977724e692118884515531"
 spec_format = "mixed"
 
 [[file]]
@@ -8,11 +8,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "LICENSES.json"
-sha256 = "02236e1a4d052338e1bd9139ff8abbe5b697ec4128583a4fb4b32a396855e422"
+sha256 = "7696c9218af34330dcbd8cccf994721216cca13d17e37bb0af30310175239fe2"
 
 [[file]]
 path = "README.md"
-sha256 = "bb5e622fd681f9bde3f78a146333e186734d177a41f0c8a5a4a6886c614f1c8e"
+sha256 = "b8a6eb86f11e77f199669055b502640ca88ffe6948ae890c17aa9dc16f2fc777"
 
 [[file]]
 path = "skill/LICENSE"
@@ -20,7 +20,7 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "skill/PROVENANCE.json"
-sha256 = "39feb0876cebdb0dcf57841a953f1b478ea3dd7f2b3e349f545582393adcb546"
+sha256 = "2c3c1defc6cb550d9a340256933cad6d4fa0b5115a8ecd2ab8da5aad829b4f16"
 
 [[file]]
 path = "skill/SKILL.md"
@@ -32,7 +32,7 @@ sha256 = "c18d895213814e96e43c7081766ea3f0aec7b257efeb0f8bde890d15d0990970"
 
 [[file]]
 path = "skill/references/diagnostics.md"
-sha256 = "b55128c85bf6bdde534673f5e36a5b7a974c510901771acfd992778f58fda3c9"
+sha256 = "819ed8b8d6da8d63bf78143e780430d1eb1f7e335d1c93dc79041d845fa64c70"
 
 [[file]]
 path = "skill/references/examples.md"
@@ -64,7 +64,7 @@ sha256 = "998b49ea6d287f10769cce76ff2bf42c7d2837e8c37879f8b2cba0c239690ea8"
 
 [[file]]
 path = "skill/references/workflow.md"
-sha256 = "9504eedbd9c5efbd8c2d56122659e033449a39c817b4642d244fb8b3dd6dac13"
+sha256 = "88d436a630aa9184412d566a4d8640f0830c653001b344e147a357290620e33c"
 
 [[file]]
 path = "vibe.lock"
@@ -72,7 +72,7 @@ sha256 = "1ce74a215e7cf809dabf99e45fcdad2b89c64454698ecae04a930d1672cec020"
 
 [[file]]
 path = "vibe.toml"
-sha256 = "a683ddd36e93e517b33dd139ae9f4907a4dfcdb64e59d2f289fb8ecb62f67329"
+sha256 = "ac8355a3199824a8951d7653906d771325c944b8f1363c76846bab352cafcd6a"
 
 [[file]]
 path = "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/.vibe-slot.toml"

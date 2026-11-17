@@ -1414,6 +1414,62 @@ to that immutable target, and finish this sequence under the existing host mutex
 
 `OPEN -> QUIESCE -> DRAIN -> APPLY -> ACTIVATE/VERIFY -> RESUME -> OPEN`
 
+The Actions log reports the actual preflight, source staging, lock acquisition,
+drain, Apply, activation/verification, recovery and terminal transitions. Native
+local drain reports trustworthy active/unknown counts and up to 20 verified
+pending Task/Step/run identities when the inventory changes, then at bounded
+intervals with elapsed wait time. Each identity includes its verified configured
+repository and explicit configured execution slot when known. Missing historical
+location data is omitted; peer repositories are shown only from the protected
+installation allowlist. Remaining work comes from protected admission
+inventory; elapsed time never means the drain succeeded. Unknown inventory still
+refuses Apply. The SSH/Ansible adapter reports the same observations while its
+original no-log helper is still running. It polls a bounded, operation-local
+private progress channel through the existing target transport. A bounded batch
+preserves separately observed pending-set changes between polls; duplicate
+observations are suppressed and a truncated batch reports a warning. Unavailable
+counts stay explicitly `UNAVAILABLE`. Original stdout, stderr and the final
+receipt remain private. The channel is removed on normal
+completion, creates no lifecycle authority and never launches the helper again.
+A progress-channel or cleanup failure reports a visible warning while retaining
+the original operation result and private evidence.
+
+Backend progress names the observed package, artifact, activation or verification
+dependency without copying task output or configuration into Actions. Long waits
+report elapsed time for that child/dependency. `child-completed` or a zero backend
+exit alone is not installed verification. A logical protected-log reference is
+shown before execution; the exact host path stays in the existing protected log
+and causal evidence. The authorized host reader resolves the logical filename
+under the existing configured deployment log root. The log retains the complete
+backend failure evidence. A failed
+guard release or recovery-state write remains a visible warning alongside the
+original failure and requires inspection before recovery.
+
+Failed Python deployment, owner lifecycle, host preflight and source/package
+qualification operations retain bounded original messages, stacks, OS causes and
+child stdout/stderr with credential redaction, including partial output from
+timeouts, original captured byte counts and capture/truncation availability.
+Private transport wrappers retain the child cause when projecting a safe code;
+failed deployment-lock holders use the same recorder before their bounded refusal. Once a protected backend log exists,
+the existing log receives the causal record. Earlier target failures use the
+existing host journal under `codex-relay-deployment` when available; successful
+submission does not claim a journal readback. The public failure points to that
+channel and preserves its original high-level code. An absent journal, unavailable
+source recorder or failed write reports an independent recorder-failure reason;
+it does not invent another root directory or hide the operation failure. No host
+store is configured for an ordinary unprivileged standalone process. Inspect the
+existing protected record through the authorized host channel before claiming
+that a deployed failure was captured. Optional negative eligibility lookups retain
+their existing fallback/classification and add no qualification gate.
+
+Repeated lifecycle runs on the same configuration SHA have distinct run numbers
+and rerun attempts in the generated run name. The job summary separates the
+requested product/configuration pair from the verified installed product and
+configuration, including recovery that retains an older frozen pair. Only the
+protected helper's final verified receipt and successful completion supply an
+installed result; a missing receipt, failed helper or refused runner guard reports
+unknown. Summary generation grants no admission or deployment authority.
+
 For a managed pool, any registered General Runner member may transport
 `apply`, `stop` or `resume`; the projected guard verifies its configured runner
 name and Unix user together. The protected Production Runner stays separate.
@@ -1453,6 +1509,16 @@ child containment, publication and terminal evidence; queued/new Tasks and CRs
 cannot launch Codex. Drain releases that lock between observations, waits up to
 30 minutes for valid work and rejects unknown execution or publication evidence.
 No service or runner is stopped to drain. Registered runners remain online.
+
+Manual Outcome socket helpers keep stderr in the protected host journal while
+stdout remains the bounded socket response. This retains early failures before
+consumer configuration or the diagnostic recorder becomes usable. Diagnostics
+mode-control failures preserve the original OS/parser cause in-process and expose
+only bounded operation, syscall and errno evidence on stderr. Cleanup failures
+are secondary evidence; a busy update retains the competing temporary file.
+The qualification snapshot omits host causal, recorder-failure and secondary
+evidence as well as protected streams; inspect the configured host diagnostic
+record or journal through the authorized host channel for that detail.
 
 For a source-only upgrade with unchanged effective deployment inputs, ordinary
 `install` can select a bounded native promotion instead of the full Ansible

@@ -16,7 +16,7 @@ sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
-from lifecycle import execute, require
+from lifecycle import execute, require, progress, report_failure, failure_reporting_source
 import git_intent
 import repository_source
 
@@ -42,7 +42,7 @@ def target_source_arguments(install, source):
     return ('--target-source', str(source)) if PREDISPATCH_RETENTION_CAPABILITY in metadata.get('capabilities', []) else ()
 
 
-PROJECTION_PREFLIGHT_SCRIPT = '''import json, sys
+PROJECTION_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, sys
 from pathlib import Path
 sys.dont_write_bytecode = True
 source = Path(sys.argv[1])
@@ -58,7 +58,10 @@ try:
         config = loads(json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False), source)
     verify(config, sys.argv[2], source, Path(sys.argv[3]))
     print('WORKFLOW_PREFLIGHT=PASS')
-except Exception:
+except Exception as error:
+    import os
+    if os.geteuid() == 0 and os.getuid() == 0:
+        report_failure(error, 'workflow-preflight')
     print('WORKFLOW_REVIEW_REQUIRED', file=sys.stderr)
     sys.exit(1)
 '''
@@ -74,7 +77,7 @@ def projection_preflight(source, target, consumer, config):
             'WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target')
 
 
-POOL_PREFLIGHT_SCRIPT = '''import json, re, sys
+POOL_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, re, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
 try:
@@ -85,6 +88,9 @@ try:
     preflight_pool(None, None, json.loads(raw), local=True)
     print('MANAGED_POOL_PREFLIGHT=PASS')
 except Exception as error:
+    import os
+    if os.geteuid() == 0 and os.getuid() == 0:
+        report_failure(error, 'managed-pool-preflight')
     code = str(error)
     print(code if re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', code) else
           'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN', file=sys.stderr)
@@ -143,7 +149,7 @@ def git(root, *arguments, environment=None):
     return subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'core.attributesfile=/dev/null',
         '-C', str(root), *arguments], env=clean_environment() if environment is None else environment, text=True,
-        stderr=subprocess.DEVNULL, timeout=120).strip()
+        stderr=subprocess.PIPE, timeout=120).strip()
 
 
 def acquire_source(directory, repository, head, *, read_token=None):
@@ -255,7 +261,10 @@ console.log('GIT_CONSUMER_READBACK=PASS');'''
     proof = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program,
                             str(source / 'consumer/consumer-config.mjs')],
         input=json.dumps({'current': current, 'desired': desired['consumer']}), text=True,
-        env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=60)
+        env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=60)
+    if proof.returncode:
+        raise ValueError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
+            proof.returncode, 'fixed-consumer-readback', output=proof.stdout, stderr=getattr(proof, 'stderr', ''))
     require(proof.returncode == 0 and proof.stdout == 'GIT_CONSUMER_READBACK=PASS\n',
             'git-consumer-readback-mismatch')
 
@@ -275,8 +284,11 @@ if 'generalRunnerPool' in c['consumer']:
 print(json.dumps({'config': c, 'values': compile_inputs(c)}))
 '''
     result = subprocess.run(['/usr/bin/python3', '-I', '-c', program, str(source / 'deploy')],
-        input=raw, env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        input=raw, env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, timeout=180)
+    if result.returncode:
+        raise ValueError('git-selected-config-invalid') from subprocess.CalledProcessError(
+            result.returncode, 'fixed-selected-config-parser', output=result.stdout, stderr=getattr(result, 'stderr', ''))
     require(result.returncode == 0 and len(result.stdout) <= 524288, 'git-selected-config-invalid')
     parsed = json.loads(result.stdout)
     require(isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
@@ -347,6 +359,7 @@ def run_git(request, token, *, installed_source=None):
     match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
+    progress('PREFLIGHT', installed)
     require(installed_source is None or action == 'recover', 'recovery-bootstrap-route-only')
     install, binding, previous_manifest = (git_anchor(installed) if installed_source is None
                                           else git_anchor(installed, installed_source))
@@ -362,6 +375,7 @@ def run_git(request, token, *, installed_source=None):
     protected_parents(stage / 'entry')
     with tempfile.TemporaryDirectory(prefix='git-owner-lifecycle-', dir=stage) as temporary:
         work = Path(temporary)
+        progress('STAGING', target)
         source = acquire_source(work / 'product', binding['productRepository'], target)
         git_target_capability(source)
         # Parse literal Git data using the selected accepted product's schema.
@@ -397,9 +411,12 @@ def run_git(request, token, *, installed_source=None):
             return json.loads(result.stdout)
 
         if action == 'stop':
+            progress('LOCK', target)
             with acquire('/var/lib/' + install.name + '-deployment.lock'):
                 git_anchor(installed)
                 execute(gate, installed, None, None, stop=True)
+                git_anchor(installed)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=QUIESCED;requested={target};config={config_sha};installed={installed};installed_config=unknown', flush=True)
             return
         if action == 'resume':
             previous_pair = previous_manifest.get('gitConfigReceipt', {})
@@ -408,6 +425,7 @@ def run_git(request, token, *, installed_source=None):
                 'product_repository', 'product_repository_id'])
                 and previous_pair.get('product_sha') == installed, 'resume-git-apply-required')
             print('RELAY_GIT_RESUME_QUALIFIED_PAIR=' + json.dumps(previous_pair, sort_keys=True), flush=True)
+            progress('LOCK', target)
             with acquire('/var/lib/' + install.name + '-deployment.lock') as lock_fd:
                 git_anchor(installed)
                 state = gate('status')
@@ -425,6 +443,7 @@ def run_git(request, token, *, installed_source=None):
 
                 execute(gate, installed, verify_resume, lambda evidence, head: bool(evidence),
                         operation=state['operationId'], already_quiesced=True)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={target};config={config_sha};installed={installed};installed_config={previous_pair["config_sha"]}', flush=True)
             return
         # The ordinary installer owns the single host lock and lifecycle gate.
         argv = ['/usr/bin/python3', str(source / 'deploy/relay-deploy.py'),
@@ -447,11 +466,14 @@ def run_git(request, token, *, installed_source=None):
                 argv += ['--continue-install-recovery']
                 target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
         subprocess.run(argv, env=clean_environment(), check=True)
+        progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)
+        require(gate('status')['phase'] == 'open', 'git-apply-admission-not-open')
         if verified_receipt != receipt:
             print('RELAY_GIT_RECOVERY_CONTROLLER=' + receipt['product_sha']
                   + ';dispatch-config=' + config_sha, flush=True)
         print('RELAY_GIT_APPLY_VERIFIED=' + target + ';config=' + verified_receipt['config_sha'], flush=True)
+        print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={receipt["product_sha"]};config={config_sha};installed={target};installed_config={verified_receipt["config_sha"]}', flush=True)
 
 
 def run(request):
@@ -459,6 +481,7 @@ def run(request):
     match = re.fullmatch(r'(apply|stop|resume):([0-9a-f]{40}):([0-9a-f]{40})', request)
     require(match is not None, 'argument-contract')
     action, installed, consumer_head = match.groups()
+    progress('PREFLIGHT', installed)
     config, _, _ = installed_config(ROOT, installed)
     values = compile_inputs(config)
     repository = deployment_repository(config)
@@ -474,6 +497,7 @@ def run(request):
                                 text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
         return json.loads(result.stdout)
 
+    progress('LOCK', installed)
     with acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock') as lock_fd:
         # Revalidate the protected installation under the mutex before any state
         # change. Bind public main ONCE. Later movement cannot retarget this call.
@@ -487,6 +511,7 @@ def run(request):
         print(f'RELAY_LIFECYCLE_SELECTED={target};installed={installed};consumer={consumer_head}', flush=True)
         if action == 'stop':
             execute(gate, target, None, None, stop=True)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=QUIESCED;requested={target};config={consumer_head};installed={installed};installed_config=unknown', flush=True)
             return
         state = gate('status') if action == 'resume' else None
         if state:
@@ -496,6 +521,7 @@ def run(request):
         with tempfile.TemporaryDirectory(prefix='owner-lifecycle-',
                                          dir=values['relay_production_local_apply_stage_root']) as temporary:
             work = Path(temporary)
+            progress('STAGING', target)
             source = acquire_source(work / 'product', source_repository, target)
             consumer = source if repository == source_repository and target == consumer_head else acquire_source(
                 work / 'consumer', repository, consumer_head)
@@ -542,6 +568,7 @@ def run(request):
 
             execute(gate, target, apply, verify_result, operation=operation,
                     already_quiesced=state is not None)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={target};config={consumer_head};installed={target};installed_config=unknown', flush=True)
 
 
 def main(arguments=None, token_stream=None):
@@ -560,6 +587,7 @@ def main(arguments=None, token_stream=None):
         return 0
     except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError,
             http.client.HTTPException) as error:
+        report_failure(error, 'owner-lifecycle')
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
         from git_intent import GitIntentError

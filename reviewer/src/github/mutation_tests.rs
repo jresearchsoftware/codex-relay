@@ -35,6 +35,7 @@ struct Fixture {
     mutation_status: u16,
     malformed: bool,
     incomplete: bool,
+    rejection_body: Option<String>,
     checks: Vec<Value>,
     reviews: Vec<Value>,
 }
@@ -47,6 +48,7 @@ impl Default for Fixture {
             mutation_status: 201,
             malformed: false,
             incomplete: false,
+            rejection_body: None,
             checks: vec![],
             reviews: vec![],
         }
@@ -62,7 +64,7 @@ async fn handle(State(state): State<Fixture>, method: Method, uri: Uri, _body: B
     if uri.path().ends_with("/access_tokens") {
         return (
             StatusCode::from_u16(state.token_status).unwrap(),
-            Json(json!({"token":"fixture-token","expires_at":"2099-01-01T00:00:00Z"})),
+            Json(json!({"token":"fixture-token","expires_at":"2099-01-01T00:00:00Z","message":"fixture authentication denied"})),
         )
             .into_response();
     }
@@ -106,7 +108,9 @@ async fn handle(State(state): State<Fixture>, method: Method, uri: Uri, _body: B
         }
         return response;
     }
-    let mut response = if state.malformed {
+    let mut response = if let Some(body) = &state.rejection_body {
+        Response::new(Body::from(body.clone()))
+    } else if state.malformed {
         Response::new(Body::from("accepted but incomplete JSON"))
     } else {
         Json(json!({"id":1})).into_response()
@@ -160,18 +164,24 @@ async fn prepared_mutation_authenticates_without_sending_an_external_effect() {
 
 #[tokio::test]
 async fn token_and_request_build_failures_are_safe_before_send() {
+    use tracing::instrument::WithSubscriber;
     let state = Fixture {
         token_status: 403,
         ..Default::default()
     };
     let (github, server) = fixture(state.clone()).await;
+    let (subscriber, journal) = crate::diagnostics::capture();
     let failure = github
         .prepare_check("owner/repo", &json!({}))
+        .with_subscriber(subscriber)
         .await
         .err()
         .unwrap();
     assert!(failure.safe_to_retry);
     assert_eq!(failure.phase, "authorization");
+    let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+    assert!(journal.contains("fixture authentication denied"));
+    assert!(!journal.contains("fixture-token"));
     assert!(state
         .requests
         .lock()
@@ -227,6 +237,128 @@ async fn mutation_rejections_and_ambiguous_responses_preserve_bounded_diagnostic
     assert!(!failure.safe_to_retry);
     assert_eq!(failure.phase, "response-body");
     assert_eq!(failure.http_status, Some(201));
+    server.abort();
+}
+
+#[tokio::test]
+async fn rejected_native_cause_is_journalled_bounded_and_redacted_without_public_disclosure() {
+    use tracing::instrument::WithSubscriber;
+    let (github, server) = fixture(Fixture {
+        mutation_status: 422,
+        rejection_body: Some(format!(
+            "native invalid field E422; echoed fixture-token; secret=private-value; {}",
+            "x".repeat(5000)
+        )),
+        ..Default::default()
+    })
+    .await;
+    let (subscriber, journal) = crate::diagnostics::capture();
+    let failure = async {
+        let prepared = github
+            .prepare_review("owner/repo", 1, &json!({}))
+            .await
+            .unwrap();
+        github.send_mutation(prepared).await.err().unwrap()
+    }
+    .with_subscriber(subscriber)
+    .await;
+    assert!(failure.safe_to_retry);
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if String::from_utf8_lossy(&journal.lock().unwrap())
+                .contains("native invalid field E422")
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+    for evidence in [
+        "native invalid field E422",
+        "status=422",
+        "ABCD:1234:EF-56",
+        "native_response_truncated=true",
+        "source=src/github.rs",
+    ] {
+        assert!(journal.contains(evidence), "missing {evidence}: {journal}");
+    }
+    for secret in ["fixture-token", "private-value"] {
+        assert!(!journal.contains(secret));
+    }
+    let public = failure.diagnostics().to_string();
+    assert!(!public.contains("native invalid field"));
+    assert!(!public.contains("private-value"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn malformed_response_retains_parser_cause_without_releasing_uncertain_send() {
+    use tracing::instrument::WithSubscriber;
+    let (github, server) = fixture(Fixture {
+        malformed: true,
+        ..Default::default()
+    })
+    .await;
+    let (subscriber, journal) = crate::diagnostics::capture();
+    let failure = async {
+        let prepared = github
+            .prepare_review("owner/repo", 1, &json!({}))
+            .await
+            .unwrap();
+        github.send_mutation(prepared).await.err().unwrap()
+    }
+    .with_subscriber(subscriber)
+    .await;
+    assert!(!failure.safe_to_retry);
+    assert_eq!(failure.phase, "response-body");
+    let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+    assert!(journal.contains("expected value"), "{journal}");
+    assert!(journal.contains("line: 1"), "{journal}");
+    server.abort();
+}
+
+#[tokio::test]
+async fn definite_rejection_classification_does_not_wait_for_diagnostic_body() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tracing::instrument::WithSubscriber;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = [0; 4096];
+        stream.read(&mut request).await.unwrap();
+        stream
+            .write_all(b"HTTP/1.1 422 Unprocessable Entity\r\nContent-Length: 500\r\n\r\n")
+            .await
+            .unwrap();
+        std::future::pending::<()>().await;
+    });
+    let github = Github::new();
+    let prepared = PreparedMutation {
+        request: github
+            .client
+            .post(format!("http://{address}"))
+            .build()
+            .unwrap(),
+        failure_code: "DEFINITE_REJECTION",
+    };
+    let (subscriber, journal) = crate::diagnostics::capture();
+    let failure = tokio::time::timeout(
+        std::time::Duration::from_secs(1),
+        github.send_mutation(prepared).with_subscriber(subscriber),
+    )
+    .await
+    .unwrap()
+    .err()
+    .unwrap();
+    assert!(failure.safe_to_retry);
+    assert_eq!(failure.http_status, Some(422));
+    let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+    assert!(journal.contains("native_response_capture=pending"));
+    assert!(journal.contains("body unavailable unless"));
     server.abort();
 }
 

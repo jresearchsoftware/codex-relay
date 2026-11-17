@@ -40,6 +40,13 @@ def require(value, code='SOURCE_UPGRADE_UNPROVEN'):
         raise RuntimeError(code)
 
 
+def failure_code(error):
+    """Keep the failed prerequisite identity without copying private diagnostics."""
+    code = str(error)
+    return (code if re.fullmatch(r'(?:SOURCE_UPGRADE|INSTALL_PREFLIGHT|INTENT_STAGE|HOST|ADMISSION)_[A-Z_]{1,100}', code)
+            else 'SOURCE_UPGRADE_UNPROVEN')
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
 
@@ -261,15 +268,23 @@ def guarded_promote(preparation, config, holders):
                 'SOURCE_UPGRADE_OPERATION_GUARD_LOST')
     try:
         alive()
+        print('RELAY_DEPLOYMENT_PROGRESS=source-promotion;dependency=protected-source-cutover;state=started', flush=True)
         process.start(json.dumps(payload))
         deadline = time.monotonic() + 180
+        next_progress = time.monotonic() + 30
         while process.poll() is None:
             alive()
             require(time.monotonic() < deadline, 'SOURCE_UPGRADE_OPERATION_TIMEOUT')
+            if time.monotonic() >= next_progress:
+                print(f'RELAY_DEPLOYMENT_PROGRESS=source-promotion;dependency=protected-source-cutover;state=waiting;elapsed_seconds={int(180-(deadline-time.monotonic()))}', flush=True)
+                next_progress = time.monotonic() + 30
             time.sleep(0.05)
         alive()
-        output, _errors = process.communicate(timeout=10)
-        require(process.returncode == 0, 'SOURCE_UPGRADE_PROMOTION_UNPROVEN')
+        output, errors = process.communicate(timeout=10)
+        if process.returncode:
+            codes = re.findall(r'(?m)^(?:SOURCE_UPGRADE|INSTALL_PREFLIGHT|INTENT_STAGE|HOST|ADMISSION)_[A-Z_]{1,100}$', errors)
+            raise RuntimeError(codes[-1] if codes else 'SOURCE_UPGRADE_PROMOTION_UNPROVEN') from subprocess.CalledProcessError(
+                process.returncode, 'fixed-source-promotion', output=output, stderr=errors)
         return json.loads(output)
     finally:
         if process.poll() is None:
@@ -298,12 +313,18 @@ def candidate_checks(root, repository):
         'stage-import', *[str(source / 'controller/src' / name) for name in imports]]
     environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root),
                    'RELAY_CONSUMER_CONFIG': str(root / 'consumer.json'), 'RELAY_REPOSITORY': repository}
-    result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
+    result = subprocess.run(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    if result.returncode:
+        raise RuntimeError('SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, command, output=result.stdout, stderr=result.stderr)
     require(result.returncode == 0 and result.stdout.strip() == b'INTENT_STAGE_IMPORTS_READY',
             'SOURCE_UPGRADE_CANDIDATE_IMPORTS_UNPROVEN')
     result = subprocess.run([str(root / 'release/bin/reviewer-mcp-http'), '--help'],
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root)},
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30)
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+    if result.returncode:
+        raise RuntimeError('SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, result.args, output=result.stdout, stderr=result.stderr)
     require(result.returncode == 0 and b'Usage:' in result.stdout, 'SOURCE_UPGRADE_REVIEWER_LOADER_UNPROVEN')
 
 
@@ -691,14 +712,16 @@ def remote(action, data):
 
 
 if __name__ == '__main__':
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
     try:
         require(os.geteuid() == 0 and sys.argv[1:] in [['describe'], ['prepare'], ['verify'], ['promote']])
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
         raw = sys.stdin.buffer.read(MAX_INPUT + 1)
         require(len(raw) <= MAX_INPUT)
         print(json.dumps(remote(sys.argv[1], json.loads(raw))))
-    except Exception:
+    except Exception as error:
+        from lifecycle import report_failure
+        report_failure(error, 'source-upgrade')
         # The private journal contains proof, environment and paths. Never
         # include it, the request, or child diagnostics in the public failure.
-        print('SOURCE_UPGRADE_UNPROVEN', file=sys.stderr)
+        print(failure_code(error), file=sys.stderr)
         raise SystemExit(40)

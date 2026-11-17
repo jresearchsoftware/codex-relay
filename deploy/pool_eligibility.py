@@ -29,7 +29,10 @@ def _stamp(info):
 
 def _directory(info, owner_uid):
     require(stat.S_ISDIR(info.st_mode) and info.st_uid == owner_uid
-            and not info.st_mode & 0o022, 'ELIGIBILITY_PARENT_UNSAFE')
+            and not info.st_mode & 0o022, 'ELIGIBILITY_PARENT_UNSAFE',
+            observation={'check': 'pool-eligibility.directory-metadata',
+                         'expected': {'directory': True, 'uid': owner_uid, 'writeBits': 0},
+                         'observed': {'directory': stat.S_ISDIR(info.st_mode), 'uid': info.st_uid, 'writeBits': info.st_mode & 0o022}})
 
 
 def _open_directory(parent, name, owner_uid, stack, checks):
@@ -50,7 +53,12 @@ def _read(parent, name, modes, owner_uid, *, private=False):
         require(stat.S_ISREG(info.st_mode) and info.st_uid == owner_uid
                 and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) in modes
                 and (not private or owner_uid != 0 or info.st_gid == 0),
-                'ELIGIBILITY_FILE_UNSAFE')
+                'ELIGIBILITY_FILE_UNSAFE',
+                observation={'check': 'pool-eligibility.file-metadata',
+                             'expected': {'regular': True, 'uid': owner_uid, 'links': 1, 'modes': sorted(modes),
+                                          **({'gid': 0} if private and owner_uid == 0 else {})},
+                             'observed': {'regular': stat.S_ISREG(info.st_mode), 'uid': info.st_uid, 'gid': info.st_gid,
+                                          'links': info.st_nlink, 'mode': stat.S_IMODE(info.st_mode)}})
         require(0 < info.st_size <= MAX_SNAPSHOT, 'ELIGIBILITY_FILE_SIZE')
         raw = stream.read(MAX_SNAPSHOT + 1)
         require(0 < len(raw) <= MAX_SNAPSHOT

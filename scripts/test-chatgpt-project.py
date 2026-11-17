@@ -327,12 +327,31 @@ class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
                 self.assertIn("repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement", text)
                 self.assertIn("receiving Task authority precedes inclusion", text)
                 self.assertIn("no suitable candidate permits work", text)
+                self.assertIn("automatically assess/include eligible relevant candidates", text)
+                self.assertIn("authenticated receiving authority before execution", text)
         binding = (ROOT / "docs/relay-guidance-ownership.md").read_text()
         self.assertIn("/10.0.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
         for clause in ("following pagination", "receiving Task's trusted Decisions",
                        "Analysis-only Task | Skip the SI scan", "Keep source Issues open and labelled",
                        "Cancellation, partial delivery", "no cross-repository or periodic queue scan"):
             self.assertIn(clause, binding)
+
+    def test_capability_examples_share_existing_route_and_preserve_real_boundaries(self):
+        workflow = (ROOT / "packages/codex-relay/skill/references/workflow.md").read_text()
+        for clause in ("Assess ChatGPT's orchestration capabilities separately",
+                       "A missing connected App does not prove that an authorized",
+                       "shell or SSH execution path is unavailable",
+                       "CONTRIBUTING.md#execution-environment-and-shell-routing",
+                       "An actually missing or unauthorized required path blocks",
+                       "cannot replace a required native Reviewer/Writer tool"):
+            self.assertIn(clause, workflow)
+        examples = (ROOT / "chatgpt/README.md").read_text()
+        for example in ("ChatGPT lacks a deployment App; assigned Codex has an already authorized shell/SSH path",
+                        "Required Codex transport is actually unavailable or unauthorized"):
+            self.assertIn(example, examples)
+        for name in ("custom.md", "instructions.md"):
+            self.assertIn("Use the Skill's execution-capability distinction and accepted shell routing",
+                          (ROOT / "chatgpt" / name).read_text())
 
     def test_current_bootstrap_preserves_closure_and_project_context_boundaries(self):
         text = (ROOT / "chatgpt/instructions.md").read_text()

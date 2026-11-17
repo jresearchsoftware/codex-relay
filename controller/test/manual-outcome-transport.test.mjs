@@ -5,8 +5,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-import { submit } from '../src/manual-outcome-client.mjs';
+import { spawn, spawnSync } from 'node:child_process';
+import { submit, manualClientFailureSummary } from '../src/manual-outcome-client.mjs';
 
 // Native Unix-socket client qualification. This does not install or impersonate
 // a root Writer service, publish GitHub content, or read any credential file.
@@ -87,9 +87,77 @@ test('fixed client CLI rejects extra arguments and oversized streamed input with
     const result = spawnSync(process.execPath, [cli, ...arguments_], { input, encoding: 'utf8',
       env: { PATH: '/usr/bin:/bin', RELAY_MANUAL_OUTCOME_SOCKET: '/nonexistent-fixed-fixture.sock' }, timeout: 5000 });
     assert.equal(result.status, 1);
-    assert.equal(result.stderr, '');
+    const diagnostic = JSON.parse(result.stderr);
+    assert.equal(diagnostic.code, 'MANUAL_SUBMISSION_INVALID');
+    assert.equal(diagnostic.event, 'manual_outcome_transport_failure');
+    assert.ok(!result.stderr.includes('private-input'));
     assert.deepEqual(JSON.parse(result.stdout), { error_code: 'MANUAL_PUBLICATION_UNCERTAIN' });
   }
+});
+
+test('native client preserves bounded private receipt metadata and redacts protected cause text', native, async t => {
+  const privateText = 'private-native-receipt ';
+  const path = await socketFixture(t, socket => {
+    socket.resume(); socket.on('end', () => socket.end(privateText.repeat(2000)));
+  });
+  await assert.rejects(submit(path, Buffer.from('{}')), error => {
+    assert.equal(error.code, 'MANUAL_RECEIPT_INVALID');
+    assert.ok(error.native.receipt.value.includes(privateText));
+    assert.ok(error.native.receipt.captured <= 4096);
+    assert.equal(error.native.receipt.truncated, true);
+    assert.ok(!JSON.stringify(error).includes(privateText));
+    const summary = manualClientFailureSummary(error);
+    assert.ok(summary.stdout.text.includes(privateText));
+    assert.equal(summary.stdout.truncated, true);
+    assert.ok(Buffer.byteLength(JSON.stringify(summary)) < 4096);
+    return true;
+  });
+});
+
+async function runClient(socketPath, input = '{}') {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/manual-outcome-client.mjs', import.meta.url))], {
+    env: { PATH: '/usr/bin:/bin', RELAY_MANUAL_OUTCOME_SOCKET: socketPath }, stdio: ['pipe', 'pipe', 'pipe']
+  });
+  const stdout = []; const stderr = [];
+  child.stdout.on('data', chunk => stdout.push(chunk)); child.stderr.on('data', chunk => stderr.push(chunk));
+  const result = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', status => resolve({ status,
+    stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString() })); });
+  child.stdin.end(input);
+  return result;
+}
+
+test('first invalid native receipt reaches protected stderr redacted while stdout stays generic', native, async t => {
+  const token = 'gh' + 'p_' + 'x'.repeat(35);
+  const response = JSON.stringify({ error_code: 'WRITER_NATIVE_FAILURE', message: 'original Writer backend ENOSPC',
+    token, authorization: 'Bearer fixture-native-credential', padding: 'x'.repeat(40 * 1024) });
+  const path = await socketFixture(t, socket => { socket.resume(); socket.on('end', () => socket.end(response)); });
+  const result = await runClient(path, '{"summary":"private-submitted-claim"}');
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout), { error_code: 'MANUAL_PUBLICATION_UNCERTAIN' });
+  assert.ok(Buffer.byteLength(result.stderr) <= 4096);
+  const diagnostic = JSON.parse(result.stderr);
+  assert.equal(diagnostic.code, 'MANUAL_RECEIPT_INVALID');
+  assert.match(diagnostic.stdout.text, /original Writer backend ENOSPC/);
+  assert.equal(diagnostic.stdout.truncated, true);
+  assert.ok(diagnostic.stdout.bytes > 32 * 1024);
+  assert.match(diagnostic.stack.text, /MANUAL_RECEIPT_INVALID/);
+  for (const secret of [token, 'fixture-native-credential', 'private-submitted-claim']) {
+    assert.ok(!result.stderr.includes(secret)); assert.ok(!result.stdout.includes(secret));
+  }
+});
+
+test('first OS socket failure reaches protected stderr without consumer bootstrap or claim echo', native, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-manual-native-cause-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const result = await runClient(join(root, 'token=fixture-socket-secret.sock'), 'private-submitted-claim');
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout), { error_code: 'MANUAL_PUBLICATION_UNCERTAIN' });
+  const diagnostic = JSON.parse(result.stderr);
+  assert.equal(diagnostic.code, 'ENOENT'); assert.equal(diagnostic.syscall, 'connect');
+  assert.match(diagnostic.message.text, /connect ENOENT/);
+  assert.match(diagnostic.stack.text, /connect ENOENT/);
+  assert.ok(!result.stderr.includes('fixture-socket-secret'));
+  assert.ok(!result.stderr.includes('private-submitted-claim'));
 });
 
 test('manual root helper refuses a nonroot caller before Writer access', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async t => {

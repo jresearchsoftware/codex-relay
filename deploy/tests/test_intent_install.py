@@ -530,7 +530,8 @@ def test_missing_post_apply_pair_proof_never_reports_success(invocation, monkeyp
     output = capsys.readouterr().out
     assert '"hostMutation": "unknown"' in output
     assert '"automaticRetrySafe": false' in output
-    assert '/tmp/protected-install.log' in output
+    assert 'protected-deployment-log' in output
+    assert '/tmp/protected-install.log' not in output
     assert 'RELAY_INSTALL_RESULT=' not in output
 
 
@@ -558,7 +559,7 @@ def test_backend_failure_uses_runtime_cause_and_preserves_mutation_stage_log(inv
     failure = json.loads(capsys.readouterr().out.split('RELAY_INSTALL_FAILURE=')[1])
     assert failure['cause'] == 'RELAY_INSTALL_UPGRADE_APPLY_FAILED'
     assert failure['stage'] == 'upgrade' and failure['installed'] == PREVIOUS
-    assert failure['hostMutation'] == 'unknown' and failure['log'] == '/tmp/protected-upgrade.log'
+    assert failure['hostMutation'] == 'unknown' and failure['log'] == 'protected-deployment-log'
 
 
 @pytest.mark.parametrize('health_failure', [False, True])

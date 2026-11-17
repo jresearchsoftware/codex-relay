@@ -76,6 +76,29 @@ test('ambiguous native DELETE never retries, even after a lost successful respon
   assert.equal((await state.store.get(99)).readyConsumed, undefined);
 });
 
+test('the original ready DELETE cause is recorded before a later Outcome failure', async t => {
+  const f = await fixture(t, { ...options, deferAdmission: true });
+  const original = Object.assign(new Error('native DELETE connection reset'), { code: 'ECONNRESET' });
+  const later = Object.assign(new Error('native Outcome service unavailable'), { code: 'OUTCOME_PUBLICATION_FAILED' });
+  let deletes = 0; const recorded = [];
+  const post = f.api.post;
+  f.api.delete = async () => { deletes++; throw original; };
+  f.api.post = async (path, body) => { if (path.endsWith('/comments')) throw later; return post(path, body); };
+  const { createPublicationBroker } = await import('../src/publication-broker.mjs');
+  const broker = createPublicationBroker({ api: f.api, store: f.store, publisher: f.publisher, journal: f.journal,
+    lifecycleStore: f.lifecycleStore, recordFailure: async value => {
+      recorded.push(value); return { status: 'stored', executionId: `ready-cause-${recorded.length}`, mode: 'normal' };
+    } });
+  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'OUTCOME_PUBLICATION_FAILED' });
+  assert.equal(recorded[0].error, original);
+  assert.equal(recorded[0].operation, 'ready-command-consumption');
+  assert.equal(recorded[0].runId, 99);
+  assert.equal(Object.hasOwn(await f.store.get(99), 'readyConsumptionEvidence'), false);
+  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
+  assert.equal(deletes, 1);
+  assert.equal(recorded.filter(value => value.error === original).length, 1);
+});
+
 test('multiple labeled native events in one timestamp second require a fresh owner command', async t => {
   let state;
   await assert.rejects(fixture(t, { ...options, beforeAdmission(f) {

@@ -83,7 +83,8 @@ def prepare(preparation, guard, pool_guard):
         # Templar filter/register availability is frontend capability, not
         # permission to issue an alternative root operation after submission.
         return False
-    result = preparation.execute(['/usr/bin/python3', '-I', '-c', Path(__file__).read_text()], payload=payload)
+    from lifecycle import failure_reporting_source
+    result = preparation.execute(['/usr/bin/python3', '-I', '-c', failure_reporting_source() + Path(__file__).read_text()], payload=payload)
     guard_alive(guard, 'INTENT_STAGE_HOST_LOCK_LOST')
     guard_alive(pool_guard, 'INTENT_STAGE_POOL_LOCK_LOST')
     require(result == {'status': 'SOURCE_STAGE_READY', 'operationId': preparation.operation,
@@ -130,9 +131,11 @@ def native(payload):
     source = stage / 'release/reviewed-source/controller/src'
     for name in ENTRYPOINTS:
         result = subprocess.run(['/usr/bin/node', '--check', str(source / name)],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
             env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}, timeout=30, check=False)
-        require(result.returncode == 0, 'INTENT_STAGE_SOURCE_SYNTAX_INVALID')
+        if result.returncode:
+            raise ValueError('INTENT_STAGE_SOURCE_SYNTAX_INVALID') from subprocess.CalledProcessError(
+                result.returncode, result.args, stderr=result.stderr)
     return {'status': 'SOURCE_STAGE_READY', 'operationId': payload['operationId'], 'sourceIdentity': identity}
 
 
@@ -143,6 +146,10 @@ if __name__ == '__main__':
         require(len(raw) <= MAX_INPUT)
         print(json.dumps(native(json.loads(raw))))
     except Exception as error:
+        if 'report_failure' in globals():
+            report_failure(error, 'source-stage')
+        else:
+            print('RELAY_DEPLOYMENT_FAILURE_EVIDENCE={"phase":"source-stage","status":"unavailable","reason":"NO_CONFIGURED_HOST_STORE"}', file=sys.stderr)
         code = str(error)
         print(code if re.fullmatch('INTENT_STAGE_[A-Z_]{1,100}', code) else 'INTENT_STAGE_NATIVE_UNPROVEN', file=sys.stderr)
         raise SystemExit(40)

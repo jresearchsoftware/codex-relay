@@ -41,7 +41,9 @@ test('checkout failure and unavailable primary diagnostics retain a private caps
   assert.equal(capsule.cleanup, 'retained');
   assert.equal(capsule.diagnosticStore.storeCode, 'ENOSPC');
   assert.ok(Buffer.byteLength(JSON.stringify(capsule)) < 16 * 1024);
-  assert.doesNotMatch(JSON.stringify(capsule), /private-fixture-value|\/private\//);
+  assert.match(JSON.stringify(capsule.causalEvidence), /\/private\//);
+  assert.doesNotMatch(JSON.stringify(capsule), /token=private-fixture-value/);
+  assert.match(JSON.stringify(capsule.recorderFailure), /primary store unavailable/);
   assert.equal(f.comments.length, 1);
   assert.match(f.comments[0].body, /Fallback diagnostics: stored; reference: run-99; slot: 0/);
   assert.match(f.comments[0].body, /EACCES/);
@@ -74,13 +76,16 @@ test('a journal write failure after a returned child retains known child state a
   assert.match(f.comments[0].body, /Fallback diagnostics: stored/);
 });
 
-test('normal pre-execution domain decisions still terminalize without creating physical failure capsules', async t => {
+test('normal pre-execution domain decisions retain causal evidence and their domain classification', async t => {
   const f = await fixture(t);
+  let recorded;
   const result = await runAttempt({ ...f, journal: f.journal,
     prepare: async () => { throw Object.assign(new Error('existing checkout'), { code: 'CHECKOUT_ALREADY_EXISTS' }); },
     execute: () => assert.fail('domain blocker must not execute'),
-    persistFailure: () => assert.fail('normal domain blocker needs no physical failure capsule') });
+    persistFailure: async value => { recorded = value; return {}; } });
   assert.equal(result.status, 'BLOCKED'); assert.equal(f.comments.length, 1);
+  assert.equal(recorded.error.message, 'existing checkout');
+  assert.equal((await f.journal.get(99)).diagnostic.orchestration, 'COMPLETED');
   assert.match(f.comments[0].body, /CHECKOUT_ALREADY_EXISTS/);
   assert.doesNotMatch(f.comments[0].body, /Fallback diagnostics:/);
 });

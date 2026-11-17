@@ -29,6 +29,7 @@ import { predispatchState, finalizePredispatch, predispatchReplacementState, fin
 // admission, trusted controller reservation/completion and mutation receipts.
 // Runtime observations remain in the separate protected runner journal.
 export function createPublicationBroker({ api, store, publisher, admission, journal, lifecycleStore, admissionLifecycleStore, collectRetained, allowManualOutcome = false, diagnosticSecrets = [], checkoutAbsent,
+  recordFailure = async () => undefined,
   assertPredispatchFence = async () => fail('PREDISPATCH_COMPATIBLE_WRITER_REQUIRED') }) {
   const receipt = value => ({ version: VERSION, repository: REPOSITORY, ...value });
   const bindingLines = e => `Execution admission digest: ${admissionBinding(e.request).sha256}\nEffective authority digest: ${e.authorityDigest}\n`;
@@ -51,7 +52,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         && !(e.target === 'pull_request' && identity.target === 'pull_request' && identity.number === e.number);
     };
     const unknown = rows.find(row => (row.error || !row.record?.envelope) && !independent(row));
-    if (unknown) throw Object.assign(new Error('PUBLICATION_INVENTORY_UNRESOLVED'), {
+    if (unknown) throw Object.assign(new Error('PUBLICATION_INVENTORY_UNRESOLVED', { cause: unknown.cause }), {
       code: 'PUBLICATION_INVENTORY_UNRESOLVED', details: { conflictingAttempt: `run-${unknown.runId}`,
         resource: `repository/${e.repository}`, nextAction: 'inspect-original-unreadable-publication-record' } });
     return rows.filter(row => !row.error && row.record?.envelope).map(row => row.record);
@@ -66,11 +67,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       const failure = admissionFailure(cause, operation, r.envelope.attemptId, diagnosticSecrets);
       r.admissionFailure = failure;
       try { await store.put(r.envelope.runId, r); }
-      catch {
+      catch (error) {
+        failure.recorderFailure = admissionFailure(error, 'admission-diagnostic-write', r.envelope.attemptId, diagnosticSecrets).exception;
+        await recordFailure({ error: Object.assign(new Error('ADMISSION_DIAGNOSTIC_WRITE_FAILED', { cause }), {
+          code: 'ADMISSION_DIAGNOSTIC_WRITE_FAILED', native: { recorderFailure: error } }), operation, phase: 'authority', runId: r.envelope.runId,
+          secrets: { knownSecrets: diagnosticSecrets } });
         // Keep the original failure even when diagnostic retention also fails.
         failure.diagnostic.preview += ' The protected diagnostic write also failed; retention is unverified.';
       }
-      throw Object.assign(new Error(failure.diagnostic.code), { code: failure.diagnostic.code,
+      throw Object.assign(new Error(failure.diagnostic.code, { cause }), { code: failure.diagnostic.code,
         details: { failureDiagnostic: failure.diagnostic } });
     }
   }
@@ -107,6 +112,12 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   }
   async function readyConsumptionFailure(r, code, { cause, transitions = [] } = {}) {
     const e = r.envelope;
+    if (cause) {
+      // A later journal/Outcome failure must not erase the original DELETE or
+      // revalidation error. This evidence write authorizes no native retry.
+      await recordFailure({ error: cause, operation: 'ready-command-consumption',
+        phase: 'authority', runId: e.runId, workerStarted: false, secrets: { knownSecrets: diagnosticSecrets } });
+    }
     const later = transitions.length ? transitions.filter(event => event.id > e.readyEventId).map(event => event.id)
       : r.readyConsumption?.laterEvents ?? [];
     const originalCode = r.readyConsumption?.code ?? code;
@@ -206,6 +217,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     } catch (error) {
       if (error.code === 'PR_AUTHORITY_CHANGED') throw error;
       r.presentationWarnings = ['PRESENTATION_REPAIR_UNAVAILABLE'];
+      r.presentationFailure = admissionFailure(error, 'pr-presentation-repair', e.attemptId, diagnosticSecrets);
+      await recordFailure({ error, operation: 'pr-presentation-repair', phase: 'writer-publication', runId: e.runId, secrets: { knownSecrets: diagnosticSecrets } });
       await store.put(r.envelope.runId, r);
     }
     // Canonical Issue numbering is owner-maintained input for the next launch.
@@ -221,7 +234,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     const failureDiagnostic = failureDiagnosticFromDetails(source, {
       fallbackCode: code, fallbackStage: 'writer-publication', fallbackBoundary: 'writer-publication'
     });
-    const error = new Error(code); error.code = code; error.details = { failureDiagnostic }; throw error;
+    const error = new Error(code, { cause }); error.code = code; error.details = { failureDiagnostic }; throw error;
   }
   async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false, verifyStartingBase = false } = {}) {
     if (!positive(request.runId)) fail('RUN_ID_INVALID');
@@ -438,11 +451,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   function admissionBlockDiagnostic(block) {
     return { observed: { child: 'not_started', exitCode: null }, executionState: 'known-not-executed', executionId: null,
       lastSuccessfulBoundary: 'admission', failureBoundary: 'authority', classification: { code: block.code, source: 'observed', stage: 'authority' },
-      primaryCause: block.code, containment: 'not_required', terminal: 'blocked', durable: { publishedHead: null, diagnosticStore: null },
+      primaryCause: block.code, containment: 'not_required', terminal: 'blocked', durable: { publishedHead: null, diagnosticStore: block.diagnosticStore ?? null },
       nextAction: 'correct-authority-before-new-owner-attempt', orchestration: 'COMPLETED' };
   }
 
-  async function terminalOutcome(r, { terminalCode, diagnostic, publishedHead } = {}) {
+  async function terminalOutcome(r, { terminalCode, diagnostic, publishedHead, executionWarnings = [] } = {}) {
     if (r.outcome) return r.outcome;
     if (r.successOutcomeIntent) fail('SUCCESS_OUTCOME_PUBLICATION_UNCERTAIN');
     const e = r.envelope;
@@ -459,8 +472,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
     }
     const number = e.target === 'pull_request' ? e.number : pr?.number ?? e.issueNumber;
-    const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic }),
-      { pr, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
+    const body = boundOutcomeBody(e, terminalOutcomeBody(e, { publishedHead: publishedHead ?? r.publishedHead, pr, terminalCode, diagnostic, executionWarnings }),
+      { pr, executionWarnings, status: 'blocked', head: publishedHead ?? r.publishedHead, authorityDrift });
     const outcome = await commentOnce(r, 'outcome', number, body);
     r.outcome = { status: 'BLOCKED', head: exactSha(publishedHead ?? r.publishedHead) ? (publishedHead ?? r.publishedHead) : null,
       prNumber: pr?.number ?? null, outcomeId: outcome.id, bodySha256: sha256Body(outcome.body) };
@@ -470,6 +483,25 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
 
   return {
     async dispatch(request) {
+      try {
+        const result = await dispatch(request);
+        if (result?.status === 'BLOCKED' && request?.operation === 'admit') {
+          const error = Object.assign(new Error(result.envelope?.admissionBlock?.code ?? 'ADMISSION_BLOCKED'), {
+            code: result.envelope?.admissionBlock?.code ?? 'ADMISSION_BLOCKED' });
+          const diagnosticStore = result.envelope?.admissionBlock?.diagnosticStore ?? await recordFailure({ error, operation: request?.operation, phase: 'authority',
+            runId: request?.runId, workerStarted: result.envelope?.admissionBlock ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+          return { ...result, diagnosticStore };
+        }
+        return result;
+      } catch (error) {
+        const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
+          runId: request?.runId, workerStarted: request?.operation === 'admit' && ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code) ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+        if (diagnosticStore) error.details = { ...error.details, diagnosticStore };
+        throw error;
+      }
+    }
+  };
+  async function dispatch(request) {
       if (request?.repository !== undefined) {
         if (request.repository !== REPOSITORY) fail('ATTEMPT_REPOSITORY_MISMATCH');
         const { repository, ...operationRequest } = request;
@@ -543,6 +575,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
                   replacementRecord: existing, checkoutAbsent, expectedBinding: state.binding });
               } catch (error) {
                 if (!replacementRetirementCanDefer(error)) throw error;
+                await recordFailure({ error, operation: 'predispatch-retirement-deferred', phase: 'authority', runId: request.runId, secrets: { knownSecrets: diagnosticSecrets } });
               }
             }
           }
@@ -614,7 +647,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // isolation. An older Task Outcome is not a resource reservation.
         const allocation = nativeAdmission ? nextAdmissionStep(priorRecords, task, charter.labels) : {};
         const previousRecord = allocation.lineage ? priorRecords.find(record => record.envelope?.attemptId === allocation.lineage.attempt) : undefined;
-        const admitted = await admitEnvelope(api, request, { nextStep: allocation.step, lineage: allocation.lineage, previousRecord });
+        const admitted = await admitEnvelope(api, request, { nextStep: allocation.step, lineage: allocation.lineage, previousRecord,
+          recordFailure: input => recordFailure({ ...input, secrets: { knownSecrets: diagnosticSecrets } }) });
         const slotBound = { ...admitted, ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) };
         const envelope = admitted.blocked ? { ...blockedAdmissionEnvelope(admitted), ...(request.executionSlot ? { executionSlot: request.executionSlot } : {}) }
           : validateEnvelope(slotBound);
@@ -645,6 +679,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
               replacementStates.push({ record: previous, binding: state.binding });
             } catch (error) {
               if (!replacementRetirementCanDefer(error)) throw error;
+                await recordFailure({ error, operation: 'predispatch-retirement-deferred', phase: 'authority', runId: request.runId, secrets: { knownSecrets: diagnosticSecrets } });
             }
           }
         }
@@ -666,6 +701,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
               replacementRecord: r, checkoutAbsent, expectedBinding: state.binding });
           } catch (error) {
             if (!replacementRetirementCanDefer(error)) throw error;
+                await recordFailure({ error, operation: 'predispatch-retirement-deferred', phase: 'authority', runId: request.runId, secrets: { knownSecrets: diagnosticSecrets } });
           }
         }
         if (!admitted.blocked && nativeAdmission) {
@@ -1084,8 +1120,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'terminal-outcome') {
         if (e.route !== 'auto' || request.status !== 'blocked') fail('TERMINAL_OUTCOME_NOT_ADMITTED');
+        const executionWarnings = request.executionWarnings ?? [];
+        if (!Array.isArray(executionWarnings) || executionWarnings.length > 4
+          || executionWarnings.some(code => !['UNCOMMITTED_WORK_REMAINS', 'WORKTREE_OBSERVATION_INCOMPLETE', 'RUNTIME_CLEANUP_FAILED', 'PRESENTATION_REPAIR_UNAVAILABLE'].includes(code))) fail('EXECUTION_WARNING_INVALID');
         return receipt(await terminalOutcome(r, { publishedHead: request.publishedHead ?? r.publishedHead,
-          terminalCode: request.terminalCode, diagnostic: request.diagnostic }));
+          terminalCode: request.terminalCode, diagnostic: request.diagnostic, executionWarnings }));
       }
       if (request.operation === 'observe-readiness') {
         if (r.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW' || !r.finalHead
@@ -1151,5 +1190,4 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       fail('BROKER_OPERATION_NOT_ALLOWED');
     }
-  };
 }

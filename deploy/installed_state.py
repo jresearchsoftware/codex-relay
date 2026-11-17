@@ -41,9 +41,11 @@ def recipe_digest(source_root):
 
 
 # Frozen against the reviewed recipe surface, not an observed installation.
-# Task 57 retains the owned task/module/path/mode/identity catalogue while
-# qualifying the CLI pin and bounded launcher/isolation implementation changes.
-RECIPE_SHA256 = 'c52dedc57839f20c6c2f554d6bd954d81d622a3da4c9b4a1615e736442826965'
+# Task 244 retains the owned task/module/path/mode/identity catalogue while
+# preserving bounded diagnostic causes, instance preflight evidence and the
+# enriched consumer-transition diagnostic wire. Every Ansible script is part of
+# this fingerprint, including read-only helpers used before installation.
+RECIPE_SHA256 = '76702a3ee9167d6a957e366aa9d4b58125e2fae40e88c4c89d8df687f3af775e'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",

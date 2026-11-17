@@ -90,7 +90,8 @@ export function safeDomainTerminal(error, record, stage) {
   return collected?.clean === true && exactSha(collected.head)
     && (collected.head === record.envelope.startHead || record.progress?.head === collected.head);
 }
-export const fail = code => { throw Object.assign(new Error(code), { code }); };
+export const fail = (code, observation) => { throw Object.assign(new Error(code), { code,
+  ...(observation ? { observation } : {}) }); };
 // A protocol mismatch has no admitted execution or Outcome authority. Keep it
 // outside domain blockers so an old-format rejection cannot create a new chain.
 export function requireCurrentProtocol() {
@@ -158,11 +159,19 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
   const gitDiagnostic = safeDiagnostic.gitExitCode !== undefined || safeDiagnostic.classification?.startsWith('GIT_') === true;
   const launcher = { ...safeLauncherDiagnosticSummary(inherited.launcher),
     ...(!gitDiagnostic ? safeLauncherDiagnosticSummary(safeDiagnostic) : undefined) };
-  const observed = safeDiagnostic.childState ?? inherited.observed?.child ?? (typeof safeDiagnostic.childStarted === 'boolean' ? (safeDiagnostic.childStarted ? 'started' : 'not_started') : child);
+  // A later recorder can lack the child observation already captured by the
+  // dispatcher. Unknown supplies no contrary fact and must not erase it. This
+  // projection does not strengthen capsule containment or cleanup evidence.
+  const observed = [safeDiagnostic.childState, inherited.observed?.child,
+    typeof safeDiagnostic.childStarted === 'boolean' ? (safeDiagnostic.childStarted ? 'started' : 'not_started') : undefined,
+    child].find(value => ['started', 'not_started'].includes(value)) ?? 'unknown';
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
   const parserFailure = ['CODEX_JSON_INVALID', 'CODEX_RESULT_INVALID', 'CODEX_RESULT_MISSING'].includes(code);
   const cause = safeDiagnostic.primaryCause ?? inherited.primaryCause;
-  const primary = parserFailure ? code : /^[A-Z][A-Z0-9_]{0,79}$/.test(cause ?? '') ? cause : null;
+  // The runtime's timeout closes launcher stdin and requests SIGTERM. Its
+  // cancellation receipt describes that termination, not what triggered it.
+  const timeoutTermination = code === 'CODEX_RUNTIME_TIMEOUT' && cause === 'EXECUTION_CANCELLED';
+  const primary = parserFailure || timeoutTermination ? code : /^[A-Z][A-Z0-9_]{0,79}$/.test(cause ?? '') ? cause : null;
   const boundary = value => /^[a-z][a-z-]{0,39}$/.test(value ?? '') ? value : null;
   const executionId = detail.executionId ?? safeDiagnostic.executionId ?? inherited.executionId;
   const exitCode = safeDiagnostic.childExitCode ?? inherited.observed?.exitCode;

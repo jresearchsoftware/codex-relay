@@ -6,6 +6,7 @@ import { fail, REPOSITORY, WRITER } from './execution-contract.mjs';
 import { fileURLToPath } from 'node:url';
 import { realpathSync } from 'node:fs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
+import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { historicalProgram } from './serial-pool-program.mjs';
 import { loadSerialPoolCompatibility, createCompatibilityStore } from './serial-pool-compatibility.mjs';
 
@@ -40,7 +41,9 @@ export async function main(selectedSubmission) {
       url: `https://github.com/${REPOSITORY}/${parent.kind === 'issue' ? 'issues' : 'pull'}/${parent.number}#issuecomment-${receipt.outcomeId}` } };
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
-if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => {
-  process.stdout.write(JSON.stringify({ error_code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'MANUAL_PUBLICATION_FAILED' }) + '\n');
+if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
+  const diagnosticStore = error.details?.diagnosticStore ?? (process.getuid?.() === 0
+    ? await recordHostFailure({ error, operation: 'manual-outcome', phase: 'writer-publication' }) : undefined);
+  process.stdout.write(JSON.stringify({ error_code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'MANUAL_PUBLICATION_FAILED', diagnosticStore }) + '\n');
   process.exitCode = 1;
 });

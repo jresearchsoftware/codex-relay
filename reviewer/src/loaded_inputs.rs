@@ -86,8 +86,12 @@ pub async fn serve(path: &str, proof: Value) -> io::Result<()> {
             continue;
         }
         // Bounded writes to a single root caller; no requests, secrets or mutation.
-        let _ = stream.write_all(&bytes).await;
-        let _ = stream.shutdown().await;
+        if let Err(error) = stream.write_all(&bytes).await {
+            crate::diagnostics::failure("LOADED_INPUT_PROOF_WRITE_FAILED", error);
+        }
+        if let Err(error) = stream.shutdown().await {
+            crate::diagnostics::failure("LOADED_INPUT_PROOF_SHUTDOWN_FAILED", error);
+        }
     }
 }
 

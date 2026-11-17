@@ -19,9 +19,12 @@ class ConsumerPublicationError(ValueError):
         self.controller_diagnostic = controller_diagnostic
 
 
-def require(condition, code):
+def require(condition, code, *, observation=None):
     if not condition:
-        raise ConsumerPublicationError(code)
+        error = ConsumerPublicationError(code)
+        if observation is not None:
+            error.observation = observation
+        raise error
 
 
 def _stamp(info):
@@ -38,7 +41,10 @@ def _protected(path, *, directory=False, owner_uid=0, boundary=Path('/')):
     while True:
         info = at.lstat()
         require(not stat.S_ISLNK(info.st_mode) and info.st_uid == owner_uid and not info.st_mode & 0o022,
-                'CONSUMER_PUBLICATION_PATH_UNSAFE')
+                'CONSUMER_PUBLICATION_PATH_UNSAFE',
+                observation={'check': 'consumer-publication.path-metadata',
+                             'expected': {'symlink': False, 'uid': owner_uid, 'writeBits': 0},
+                             'observed': {'symlink': stat.S_ISLNK(info.st_mode), 'uid': info.st_uid, 'writeBits': info.st_mode & 0o022}})
         if at == path:
             target_info = info
             require(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
@@ -103,6 +109,59 @@ def _controller_trace(stderr):
     return timing if len(stderr) <= 8192 else None, errors
 
 
+def _diagnostic_reference(value, *, fallback=False):
+    """Recognize only the fixed public host-recorder fields, never its cause."""
+    code = lambda item: isinstance(item, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', item) is not None
+    identity = lambda item: isinstance(item, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', item) is not None
+    fields = {'status': lambda item: item in ('stored', 'unavailable', 'released') if fallback
+              else item in ('stored', 'unavailable'), 'executionId': identity, 'code': code}
+    if fallback:
+        fields['slot'] = lambda item: type(item) is int and 0 <= item < 8
+    else:
+        fields.update({'storeCode': code, 'fallbackCode': code, 'originalCode': code,
+            'mode': lambda item: item in ('normal', 'debug'),
+            'originalEvidence': lambda item: item == 'observed_not_retained',
+            'fallbackReference': lambda item: _diagnostic_reference(item, fallback=True)})
+    if (not isinstance(value, dict) or not {'status', 'executionId'} <= value.keys()
+            or not value.keys() <= fields.keys()
+            or not all(fields[key](item) for key, item in value.items())):
+        return False
+    if not fallback:
+        return ('mode' in value if value['status'] == 'stored' else {'code', 'storeCode'} <= value.keys())
+    return True
+
+
+def _controller_error_code(lines):
+    # Timing is removed separately. The only other permitted preceding lines
+    # are the recorder's independent safe fallback; arbitrary noise still
+    # invalidates the complete envelope rather than becoming public evidence.
+    def compact_json(raw):
+        value = json.loads(raw)
+        # Native JSON.stringify is compact. Roundtrip also rejects duplicate
+        # keys, including inside diagnostic references, and trailing material.
+        if json.dumps(value, separators=(',', ':'), ensure_ascii=True).encode() != raw:
+            raise ValueError()
+        return value
+    try:
+        if not lines:
+            return None
+        prefix = b'RELAY_DIAGNOSTIC_UNAVAILABLE '
+        for line in lines[:-1]:
+            if not line.startswith(prefix):
+                return None
+            reference = compact_json(line[len(prefix):])
+            if not _diagnostic_reference(reference) or reference['status'] != 'unavailable':
+                return None
+        value = compact_json(lines[-1])
+        if (not isinstance(value, dict) or set(value) not in ({'code'}, {'code', 'diagnosticStore'})
+                or not isinstance(value['code'], str) or re.fullmatch(r'[A-Z][A-Z0-9_]{0,79}', value['code']) is None
+                or 'diagnosticStore' in value and not _diagnostic_reference(value['diagnosticStore'])):
+            return None
+        return value['code']
+    except (ValueError, TypeError):
+        return None
+
+
 def _execute(argv, env, *, timeout=None):
     # Only fixed action names and the CLI's complete bounded error envelope may
     # cross this boundary. Never publish command arguments or child output.
@@ -153,9 +212,10 @@ def _execute(argv, env, *, timeout=None):
             diagnostic['timing'] = timing
         if child.returncode != 0:
             diagnostic.update(failure='nonzero_exit', exit_code=child.returncode)
-            match = re.fullmatch(rb'\{"code":"([A-Z][A-Z0-9_]{0,79})"\}', b'\n'.join(errors))
-            if action in ('consumer-transition-check', 'consumer-transition') and len(stderr) <= 8192 and match is not None:
-                diagnostic['code'] = match[1].decode('ascii')
+            if action in ('consumer-transition-check', 'consumer-transition') and len(stderr) <= 8192:
+                code = _controller_error_code(errors)
+                if code is not None:
+                    diagnostic['code'] = code
             raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
         diagnostic['failure'] = 'invalid_stdout'
         if len(output['stdout']) > 4096:

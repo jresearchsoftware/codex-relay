@@ -1,5 +1,5 @@
 import { normalizeCodexSemanticResult, isBoundedCodexRuntimeIdentifier } from './codex-result-schema.mjs';
-import { boundedDiagnosticText } from '../../controller/src/diagnostics.mjs';
+import { boundedDiagnosticText, captureCausalDiagnostic } from '../../controller/src/diagnostics.mjs';
 import { WriterBlockedError } from './contracts.mjs';
 import { normalizeCodexUsage, usageFromCodexJsonLines } from '../../controller/src/codex-usage.mjs';
 
@@ -7,7 +7,7 @@ import { normalizeCodexUsage, usageFromCodexJsonLines } from '../../controller/s
 // A lengthy valid tool log must not hide a later small semantic result.
 export const MAX_CODEX_JSONL_RECORD_BYTES = 16 * 1024 * 1024;
 export function createCodexJsonlParser(evidence = {}, secrets = {}) {
-  let buffer = Buffer.alloc(4096), bytes = 0, count = 0, invalid;
+  let buffer = Buffer.alloc(4096), bytes = 0, count = 0, invalid, invalidCause, invalidObservation;
   const append = fragment => {
     const required = bytes + fragment.length;
     if (required > buffer.length) {
@@ -16,7 +16,7 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
     }
     fragment.copy(buffer, bytes); bytes = required;
   };
-  let threadId, sessionId, semanticResult, semanticInvalid = false;
+  let threadId, sessionId, semanticResult, semanticInvalid = false, semanticCause;
   let nativeAgentMessageCount = 0, nativeAgentMessageBytes = 0;
   const eventTypes = new Set(), usageEvents = [], usageCounts = new Map();
   const errorEvents = [];
@@ -27,8 +27,8 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
   const consume = record => {
     if (invalid || record.length === 0) return;
     let event;
-    try { event = JSON.parse(record); } catch { invalid = 'CODEX_JSON_INVALID'; return; }
-    if (!event || typeof event !== 'object' || Array.isArray(event)) { invalid = 'CODEX_JSON_INVALID'; return; }
+    try { event = JSON.parse(record); } catch (error) { invalid = 'CODEX_JSON_INVALID'; invalidCause = error; return; }
+    if (!event || typeof event !== 'object' || Array.isArray(event)) { invalid = 'CODEX_JSON_INVALID'; invalidObservation = { expected: 'JSON object event', observed: event === null ? 'null' : Array.isArray(event) ? 'array' : typeof event }; return; }
     count += 1;
     if (typeof event.type === 'string' && eventTypes.size < 64) eventTypes.add(event.type.slice(0, 256));
     threadId = identifier(event, ['threadId', 'thread_id']) ?? threadId;
@@ -39,11 +39,14 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
       if (n < 2) usageEvents.push(event.type === 'turn.completed' ? { type: event.type, usage: event.usage && typeof event.usage === 'object' && !Array.isArray(event.usage) ? normalizeCodexUsage({ ...event.usage, source: 'codex-exec-turn-completed', scope: 'native-session-total' }) : undefined } : { type: event.type });
     }
     const message = event.type === 'error' ? event.message : event.type === 'turn.failed' ? event.error?.message : undefined;
-    if (typeof message === 'string') {
+    if (['error', 'turn.failed'].includes(event.type)) {
       // Redact before clipping so an incomplete retained key/token cannot
       // become visible merely because its closing delimiter was truncated.
-      errorEvents.push({ type: event.type, message: boundedDiagnosticText(message, 4096, secrets) });
-      if (errorEvents.length > 4) { errorEvents.shift(); omittedErrors += 1; }
+      const native = Object.fromEntries(['code', 'status', 'statusCode', 'error', 'reason', 'details'].filter(key => event[key] !== undefined).map(key => [key, event[key]]));
+      errorEvents.push({ type: event.type,
+        ...(typeof message === 'string' ? { message: boundedDiagnosticText(message, 4096, secrets) } : {}),
+        ...(Object.keys(native).length ? { native: captureCausalDiagnostic({ native, secrets }, { compact: true }).native } : {}) });
+      if (errorEvents.length > 4) { errorEvents.splice(1, 1); omittedErrors += 1; }
     }
     let candidate;
     if (event.type === 'task_result' || event.kind === 'task_result') candidate = event.result ?? event;
@@ -60,8 +63,8 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
       }
     }
     if (candidate !== undefined) {
-      try { semanticResult = normalizeCodexSemanticResult(candidate); semanticInvalid = false; }
-      catch { semanticResult = undefined; semanticInvalid = true; }
+      try { semanticResult = normalizeCodexSemanticResult(candidate); semanticInvalid = false; semanticCause = undefined; }
+      catch (error) { semanticResult = undefined; semanticInvalid = true; semanticCause = error; }
     }
   };
   const finishRecord = () => {
@@ -77,7 +80,7 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
         const newline = data.indexOf(10, start);
         const end = newline < 0 ? data.length : newline;
         const fragment = data.subarray(start, end);
-        if (bytes + fragment.length > MAX_CODEX_JSONL_RECORD_BYTES) { invalid = 'CODEX_OUTPUT_TOO_LARGE'; bytes = 0; buffer = Buffer.alloc(0); return; }
+        if (bytes + fragment.length > MAX_CODEX_JSONL_RECORD_BYTES) { invalid = 'CODEX_OUTPUT_TOO_LARGE'; invalidObservation = { limit: MAX_CODEX_JSONL_RECORD_BYTES, observedBytes: bytes + fragment.length }; bytes = 0; buffer = Buffer.alloc(0); return; }
         if (fragment.length) append(fragment);
         if (newline < 0) break;
         finishRecord();
@@ -92,9 +95,9 @@ export function createCodexJsonlParser(evidence = {}, secrets = {}) {
       evidence.codexEventTypes = [...eventTypes].sort();
       evidence.codexNativeAgentMessageCount = nativeAgentMessageCount;
       evidence.codexNativeAgentMessageBytes = nativeAgentMessageBytes;
-      if (invalid) throw new WriterBlockedError(invalid, invalid === 'CODEX_OUTPUT_TOO_LARGE' ? 'Codex JSONL record exceeded the bounded byte limit' : 'Codex emitted an invalid JSON event');
+      if (invalid) throw Object.assign(new WriterBlockedError(invalid, invalid === 'CODEX_OUTPUT_TOO_LARGE' ? 'Codex JSONL record exceeded the bounded byte limit' : 'Codex emitted an invalid JSON event'), { cause: invalidCause, observation: invalidObservation });
       if (!count) throw new WriterBlockedError('CODEX_JSON_INVALID', 'Codex must return structured JSON events');
-      if (semanticInvalid) throw new WriterBlockedError('CODEX_RESULT_INVALID', 'Codex semantic result does not match the unified result contract');
+      if (semanticInvalid) throw Object.assign(new WriterBlockedError('CODEX_RESULT_INVALID', 'Codex semantic result does not match the unified result contract'), { cause: semanticCause });
       if (!semanticResult) throw new WriterBlockedError('CODEX_RESULT_MISSING', 'Codex did not emit a structured semantic task result');
       evidence.threadId = threadId ?? 'UNAVAILABLE';
       evidence.sessionId = sessionId ?? threadId ?? 'UNAVAILABLE';

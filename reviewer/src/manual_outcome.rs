@@ -7,6 +7,57 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const MAX_INPUT: usize = 60_000;
 const MAX_RECEIPT: usize = 32 * 1024;
 
+async fn helper_stderr(
+    mut stderr: tokio::process::ChildStderr,
+    args: &Value,
+) -> Result<(), &'static str> {
+    struct Captured {
+        bytes: Vec<u8>,
+        truncated: bool,
+        identity: String,
+    }
+    impl Drop for Captured {
+        fn drop(&mut self) {
+            if !self.bytes.is_empty() || self.truncated {
+                crate::diagnostics::record(
+                    "WRITER_HELPER_STDERR",
+                    "writer-helper-stderr",
+                    &format!(
+                        "{} stderr_truncated={} stderr={}",
+                        self.identity,
+                        self.truncated,
+                        String::from_utf8_lossy(&self.bytes)
+                    ),
+                );
+            }
+        }
+    }
+    // Drain concurrently with stdout to preserve the helper's pipe behavior.
+    // Drop records the captured prefix even when the outer deadline cancels it.
+    let mut captured = Captured {
+        bytes: Vec::new(),
+        truncated: false,
+        identity: format!(
+            "repository={} task={} run_id={}",
+            args["repository"], args["task"], args["run_id"]
+        ),
+    };
+    let mut chunk = [0; 4096];
+    loop {
+        let count = stderr
+            .read(&mut chunk)
+            .await
+            .map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
+        if count == 0 {
+            break;
+        }
+        let retained = count.min(4096 - captured.bytes.len());
+        captured.bytes.extend_from_slice(&chunk[..retained]);
+        captured.truncated |= retained < count;
+    }
+    Ok(())
+}
+
 pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
     json!({"name":"submit_manual_outcome",
         "description":"Submit the result of an already admitted manual Codex attempt directly to trusted Writer. Writer validates binding and publishes or recovers one canonical Writer Bot Outcome. This is a claim submission, not independent acceptance; it never starts Codex, merges, or closes an Issue.",
@@ -56,7 +107,7 @@ pub(crate) fn valid_input(
 
 fn receipt(args: &Value, writer_actor: &str, bytes: &[u8]) -> Result<Value, &'static str> {
     let response = serde_json::from_slice::<strict_json::StrictJson>(bytes)
-        .map_err(|_| "WRITER_RECEIPT_INVALID")?
+        .map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_INVALID", error))?
         .0;
     // Never return root helper diagnostics, raw output or caller-selected URLs.
     if let Some(code) = response["error_code"].as_str().filter(|code| {
@@ -111,6 +162,7 @@ fn receipt(args: &Value, writer_actor: &str, bytes: &[u8]) -> Result<Value, &'st
     )
 }
 
+#[tracing::instrument(skip_all, fields(repository = app.repository, task = ?args["task"], run_id = ?args["run_id"]))]
 pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
     if !app.policy.manual_outcome_enabled {
         return task_authority::error("MANUAL_OUTCOME_CAPABILITY_DISABLED");
@@ -122,39 +174,67 @@ pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
             .current_dir("/")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|_| "WRITER_CAPABILITY_UNAVAILABLE")?;
+            .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
         let mut stdin = child.stdin.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
-        let bytes = serde_json::to_vec(args).map_err(|_| "INVALID_MANUAL_OUTCOME")?;
+        let bytes = serde_json::to_vec(args)
+            .map_err(|error| crate::diagnostics::failure("INVALID_MANUAL_OUTCOME", error))?;
         stdin
             .write_all(&bytes)
             .await
-            .map_err(|_| "WRITER_CAPABILITY_UNAVAILABLE")?;
+            .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
         stdin
             .shutdown()
             .await
-            .map_err(|_| "WRITER_CAPABILITY_UNAVAILABLE")?;
+            .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
         drop(stdin);
         let mut bytes = Vec::new();
-        child
+        let mut stdout = child
             .stdout
             .take()
             .ok_or("WRITER_CAPABILITY_UNAVAILABLE")?
-            .take((MAX_RECEIPT + 1) as u64)
-            .read_to_end(&mut bytes)
-            .await
-            .map_err(|_| "WRITER_RECEIPT_UNAVAILABLE")?;
+            .take((MAX_RECEIPT + 1) as u64);
+        let stderr = child.stderr.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
+        let (output, diagnostic, status) = tokio::join!(
+            stdout.read_to_end(&mut bytes),
+            helper_stderr(stderr, args),
+            child.wait()
+        );
+        output.map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
+        diagnostic?;
         if bytes.len() > MAX_RECEIPT {
             return Err("WRITER_RECEIPT_TOO_LARGE");
         }
-        let status = child
-            .wait()
-            .await
-            .map_err(|_| "WRITER_RECEIPT_UNAVAILABLE")?;
+        let status = status
+            .map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
+        if !status.success() {
+            crate::diagnostics::record(
+                "WRITER_RECEIPT_UNAVAILABLE",
+                "writer-helper-exit",
+                &format!(
+                    "task={} run_id={} status={status}",
+                    args["task"], args["run_id"]
+                ),
+            );
+        }
         // A nonzero helper exit can still carry a bounded public error code.
-        let result = receipt(args, &app.policy.writer_actor, &bytes)?;
+        let result = receipt(args, &app.policy.writer_actor, &bytes).map_err(|code| {
+            crate::diagnostics::record(
+                code,
+                "writer-helper-receipt",
+                &String::from_utf8_lossy(&bytes),
+            );
+            code
+        })?;
+        if result["isError"] == true {
+            crate::diagnostics::record(
+                "WRITER_RECEIPT_REJECTED",
+                "writer-helper-receipt",
+                &String::from_utf8_lossy(&bytes),
+            );
+        }
         if !status.success() && result["isError"] != true {
             return Err("WRITER_RECEIPT_UNAVAILABLE");
         }
@@ -163,13 +243,57 @@ pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
     match tokio::time::timeout(std::time::Duration::from_secs(60), operation).await {
         Ok(Ok(result)) => result,
         Ok(Err(code)) => task_authority::error(code),
-        Err(_) => task_authority::error("WRITER_CAPABILITY_TIMEOUT"),
+        Err(error) => task_authority::error(crate::diagnostics::failure(
+            "WRITER_CAPABILITY_TIMEOUT",
+            error,
+        )),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn helper_stderr_is_retained_on_cancellation_and_stays_out_of_public_error() {
+        let mut child = tokio::process::Command::new("sh")
+            .args([
+                "-c",
+                "printf 'native helper EPIPE; token=private-helper-value\\n' >&2; printf ready; read value",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        // Observe the write before testing cancellation, so CPU contention
+        // cannot make the deadline fire before the fixture has emitted stderr.
+        let mut ready = [0; 5];
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_exact(&mut ready)
+            .await
+            .unwrap();
+        assert_eq!(&ready, b"ready");
+        let (subscriber, journal) = crate::diagnostics::capture();
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+        assert!(tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            helper_stderr(child.stderr.take().unwrap(), &input())
+        )
+        .await
+        .is_err());
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(journal.contains("native helper EPIPE"), "{journal}");
+        assert!(journal.contains("run_id=10"));
+        assert!(!journal.contains("private-helper-value"));
+        let public = task_authority::error("WRITER_CAPABILITY_TIMEOUT").to_string();
+        assert!(!public.contains("native helper"));
+    }
+
     fn input() -> Value {
         json!({"repository":"example-org/sample-project","task":24,"run_id":10,"result":{"parent":{"kind":"issue","number":24},"summary":"Bounded result"}})
     }

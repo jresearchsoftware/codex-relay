@@ -19,9 +19,12 @@ import subprocess
 import sys
 
 
-def require(condition, code):
+def require(condition, code, *, observation=None):
     if not condition:
-        raise ValueError('REINSTALL_' + code)
+        error = ValueError('REINSTALL_' + code)
+        if observation is not None:
+            error.observation = observation
+        raise error
 
 
 def present(path):
@@ -820,7 +823,13 @@ def _recovery_bytes(path, root, owner_uid, owner_gid, *, private=False, limit=RE
         require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
                 and before.st_uid == owner_uid and before.st_size <= limit
                 and (not private or (before.st_gid == owner_gid
-                     and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE')
+                     and stat.S_IMODE(before.st_mode) == 0o600)), 'RECOVERY_EVIDENCE_UNSAFE',
+                observation={'check': 'recovery-evidence.metadata',
+                             'expected': {'regularFile': True, 'links': 1, 'uid': owner_uid, 'maxBytes': limit,
+                                          **({'gid': owner_gid, 'mode': 0o600} if private else {})},
+                             'observed': {'regularFile': stat.S_ISREG(before.st_mode), 'links': before.st_nlink,
+                                          'uid': before.st_uid, 'gid': before.st_gid, 'mode': stat.S_IMODE(before.st_mode),
+                                          'bytes': before.st_size}})
         raw = stream.read(limit + 1)
         def stamp(info):
             return (info.st_dev, info.st_ino, info.st_uid, info.st_gid, info.st_mode,
@@ -1320,8 +1329,19 @@ def recovery_admission_program(config, *, source_base=None):
                                ('./execution-effects.mjs', base + 'controller/src/execution-effects.mjs')]:
         require(source.count("'" + relative + "'") == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
         source = source.replace("'" + relative + "'", json.dumps(absolute))
-    require(source.count('import { CONSUMER } from ') == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
-    source = source.replace('import { CONSUMER } from ', 'import { CONSUMER, CONSUMER_DIGEST } from ')
+    # This branch is strictly singleton recovery. The retained CONSUMER is its
+    # complete original installation view; do not require newer metadata/helper
+    # exports from an older accepted release or substitute candidate config.
+    consumer_import = 'import { CONSUMER, INSTALLATION_CONSUMER } from '
+    require(source.count(consumer_import) == 1, 'RECOVERY_ADMISSION_SOURCE_INVALID')
+    source = source.replace(consumer_import,
+        'import { CONSUMER, CONSUMER_DIGEST, CONSUMER as INSTALLATION_CONSUMER } from ')
+    config_import = 'import { parseConsumerJson, configuredRepositories } from '
+    require(source.count(config_import) == 1
+            and source.count('configuredRepositories(installation)') == 1,
+            'RECOVERY_ADMISSION_SOURCE_INVALID')
+    source = source.replace(config_import, 'import { parseConsumerJson } from ')
+    source = source.replace('configuredRepositories(installation)', '[installation.repository]')
     source += 'import { assertRootConsumer } from ' + json.dumps(base + 'consumer/consumer-config.mjs') + ';\n'
     source += 'import { createAttemptStore } from ' + json.dumps(base + 'controller/src/attempt-store.mjs') + ';\n'
     source += "assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n"
@@ -1343,7 +1363,8 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
     require(action in ['prepare', 'decommission', 'complete', 'recover', 'continuation', 'continue'], 'ACTION_INVALID')
     source = Path(__file__).read_text()
     inventory_source = Path(__file__).with_name('inventory.py').read_text()
-    program = source + '\nimport sys\ntry:\n'
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + source + '\nimport sys\ntry:\n'
     program += '    value = __relay_payload\n'
     if 'generalRunnerPool' in config.get('consumer', {}):
         adapter = recovery_admission_program(config, source_base='__REINSTALL_SOURCE_BASE__/')
@@ -1395,6 +1416,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '    result = complete(value["config"], value["revision"]' + pool_arguments + ')\n'
     program += '    print(json.dumps(result, sort_keys=True))\n'
     program += ('except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:\n'
+                '    report_failure(error,"clean-reinstall")\n'
                 '    diagnostic = safe_reinstall_diagnostic(str(error)) or safe_reinstall_diagnostic("REINSTALL_BLOCKED")\n'
                 '    print(diagnostic, file=sys.stderr)\n'
                 '    raise SystemExit(1)\n')

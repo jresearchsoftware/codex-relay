@@ -11,9 +11,12 @@ export function ownerRunRejectionReason(code, reason) {
   return code === 'OWNER_RUN_NOT_ADMITTED' && REASONS.has(reason) ? reason : undefined;
 }
 
-export function rejectOwnerRun(reason) {
+export function rejectOwnerRun(reason, expected, observed) {
   const error = new Error('OWNER_RUN_NOT_ADMITTED');
   error.code = error.message;
   error.details = { reason: ownerRunRejectionReason(error.code, reason) };
+  // Protected evidence only; serializers expose the fixed reason, never values.
+  error.observation = { check: reason, expected, observed: observed === undefined ? null : observed,
+    availability: observed === undefined ? 'unavailable' : 'available' };
   throw error;
 }

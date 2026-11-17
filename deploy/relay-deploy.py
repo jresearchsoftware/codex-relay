@@ -19,6 +19,7 @@ import uuid
 sys.dont_write_bytecode = True
 from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object
 from git_source_locator import expected_locator, resume_receipt
+from lifecycle import progress, report_failure, public_log_reference
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -167,7 +168,8 @@ def apply_guard(target, key, namespace):
     # The same reviewed stdlib-only lock implementation runs on the target for
     # an owner apply and locally for the installed helper. No credential or
     # user-selected command is passed to the holder.
-    source = (ROOT / 'deploy/deployment_lock.py').read_text()
+    from lifecycle import failure_reporting_source
+    source = failure_reporting_source() + (ROOT / 'deploy/deployment_lock.py').read_text()
     remote = ['/usr/bin/python3', '-I', '-c', source,
               '/var/lib/' + namespace + '-deployment.lock']
     return hold_target(target, key, remote, 'DEPLOYMENT_LOCK_READY')
@@ -175,19 +177,80 @@ def apply_guard(target, key, namespace):
 
 def remote_admission(target, key, namespace, *arguments):
     remote = ['/opt/' + namespace + '/relay-admission', *arguments]
-    result = run_target(target, key, remote, timeout=1860)
-    require(result.returncode == 0, 'trusted-admission-operation-failed;inspect-before-recovery')
+    result = run_target(target, key, remote, timeout=1860,
+                        **({'progress': True} if arguments[0] == 'drain' else {}))
+    if result.returncode:
+        codes = re.findall(r'(?m)^ADMISSION_[A-Z_]{1,100}$', result.stderr)
+        raise ValueError((codes[-1] if codes else 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
+            result.returncode, 'fixed-admission-operation', output=result.stdout, stderr=result.stderr)
     return json.loads(result.stdout)
 
 
+def release_guard(guard):
+    """Retain the primary operation failure if releasing its holder also fails."""
+    failing = sys.exc_info()[0] is not None
+    try:
+        guard.stdin.close()
+        require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
+    except Exception:
+        if not failing:
+            raise
+        print('RELAY_DEPLOYMENT_WARNING=host-operation-guard-final-check-unproven;primary-failure-preserved;inspect-before-retry',
+              file=sys.stderr, flush=True)
+
+
 def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
+    log.flush()
+    offset = os.fstat(log.fileno()).st_size
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
     started = time.monotonic()
     next_progress = started + 30
+    # The existing private Ansible log remains the primary diagnostic source.
+    # Only fixed source-owned phase names are projected into the Actions log.
+    pending = b''
+    dependency = 'ansible-playbook'
+    dependencies = {
+        'relay_apt_metadata': 'apt-package-metadata', 'relay_artifacts': 'release-artifacts',
+        'relay_codex_runtime': 'codex-package-and-runtime', 'relay_runtime': 'reviewer-build-and-runtime',
+        'relay_runner': 'production-runner-package', 'relay_general_runner': 'general-runner-package',
+        'relay_controller': 'controller-entrypoints',
+        'Try-restart the previously active Reviewer and production dependency': 'reviewer-activation',
+        'Wait for the previously active Reviewer listener after activation': 'reviewer-listener',
+        'Require previously active services to become healthy in the same operation': 'service-health',
+        'Prove active Reviewer and production processes adopted the installed transition': 'runtime-verification',
+        'Require preserved activation intent and healthy previously active components': 'runtime-verification',
+    }
+    print('RELAY_DEPLOYMENT_PROGRESS=backend;dependency=ansible-playbook;state=started', flush=True)
+    def observe():
+        nonlocal offset, pending, dependency, next_progress
+        log.flush()
+        # Read through a separate descriptor: the backend's shared write offset
+        # must never move while observing progress. Bound each observation.
+        with open(log.name if isinstance(log.name, str) else '/proc/self/fd/' + str(log.fileno()), 'rb') as reader:
+            reader.seek(offset)
+            chunk = reader.read(65536)
+        offset += len(chunk)
+        pending += chunk
+        while b'\n' in pending:
+            raw, pending = pending.split(b'\n', 1)
+            if len(raw) > 4096:
+                continue
+            line = raw.decode('utf-8', errors='replace')
+            match = re.fullmatch(r'TASK \[([^\]]+)\] \*+', line)
+            if match:
+                name = match[1].split(' : ', 1)[0]
+                current = dependencies.get(name)
+                if current and current != dependency:
+                    dependency = current
+                    print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state=running;elapsed_seconds={int(time.monotonic()-started)}', flush=True)
+                    next_progress = time.monotonic() + 30
+        if len(pending) > 4096:
+            pending = b'oversized:'
     try:
         while process.poll() is None:
+            observe()
             if time.monotonic() >= next_progress:
-                print(f'RELAY_DEPLOYMENT_PROGRESS=backend-running;elapsed_seconds={int(time.monotonic()-started)}', flush=True)
+                print(f'RELAY_DEPLOYMENT_PROGRESS=backend-running;dependency={dependency};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
                 next_progress = time.monotonic() + 30
             if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
                 raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
@@ -197,6 +260,8 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
                 pass
         if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
             raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
+        observe()
+        print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state={"completed" if process.returncode == 0 else "failed"};exit={process.returncode};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
         return process.returncode
     finally:
         if process.poll() is None:
@@ -674,13 +739,17 @@ def run(args):
         return
     args.log_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     log_fd, log_name = tempfile.mkstemp(prefix=f'relay-{revision[:12]}-{args.phase}-', suffix='.log', dir=args.log_root)
+    log_ref = public_log_reference(log_name)
     if intent_install:
         args._intent_log_path = log_name
     consumer_label = 'receiving_revision' if git_readonly else 'consumer_revision'
     print(f'requested_revision={requested}\nresolved_revision={revision}\n{consumer_label}={consumer_revision}', flush=True)
+    print(f'RELAY_DEPLOYMENT_LOG={log_ref};access=protected;phase={args.phase}', flush=True)
     lock_name = hashlib.sha256((target['host'] + values['relay_install_root']).encode()).hexdigest()[:24]
     lock_path = (Path(values['relay_state_root']) if args.local_reconcile else Path(tempfile.gettempdir())) / ('relay-deploy-' + lock_name + '.lock')
     with os.fdopen(log_fd, 'w') as log, tempfile.TemporaryDirectory(prefix='relay-deploy-') as temporary:
+        log.write('protected_log=' + log_name + '\n')
+        log.flush()
         work = Path(temporary)
         lock = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
@@ -698,10 +767,9 @@ def run(args):
                     log.write(json.dumps(recovered, sort_keys=True) + '\n')
                     log.flush()
                 finally:
-                    guard.stdin.close()
-                    require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
+                    release_guard(guard)
                 print('RELAY_REINSTALL_RECOVERY=' + json.dumps(recovered, sort_keys=True), flush=True)
-                print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase=reinstall-recover;controller_revision={revision};log={log_name}', flush=True)
+                print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase=reinstall-recover;controller_revision={revision};log={log_ref}', flush=True)
                 return
             if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not args.local_reconcile:
                 archive = work / 'source.tar'
@@ -993,7 +1061,6 @@ def run(args):
                     completed_pool_reinstall = False
                     retirement_report = None
                     if lifecycle_required and not args.local_lifecycle:
-                        from lifecycle import progress
                         lifecycle_operation = admission_operation_id
                         if intent_install:
                             args._intent_mutation_started = True
@@ -1058,9 +1125,7 @@ def run(args):
                         else:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                              '--operation', lifecycle_operation, '--phase', 'applying')
-                        progress('APPLY', revision)
                     elif pool_reinstall:
-                        from lifecycle import progress
                         from clean_reinstall import remote_action, continuation_inventory
                         lifecycle_operation = admission_operation_id
                         if intent_install:
@@ -1157,6 +1222,8 @@ def run(args):
                                 return holder.poll()
                         return None
                     fast_source = preparation is not None and getattr(preparation, 'source_reuse', False)
+                    if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not completed_pool_reinstall:
+                        progress('APPLY', revision)
                     if fast_source:
                         args._intent_mutation_started = True
                         source_proof = preparation.promote_source_reuse(config, guard, pool_guard)
@@ -1173,6 +1240,8 @@ def run(args):
                         # Subsequent native postchecks use the ordinary fixed
                         # installed helper after the publication mutex releases.
                         clear_preparation_inventory()
+                    if returncode == 0 and args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall']:
+                        progress('ACTIVATE/VERIFY', revision)
                     # Expert bootstrap/reinstall materializes an inactive
                     # installation. Pool registration/start belongs to Apply
                     # after the owner's separate Reviewer activation.
@@ -1192,7 +1261,7 @@ def run(args):
                         log.flush()
                         apply_evidence = Path(log_name).read_text()
                         require(returncode == 0 and 'failed=0' in apply_evidence,
-                                f'{args.phase}-apply-failed;log={log_name};next=diagnose-operation-before-retry')
+                                f'{args.phase}-apply-failed;log={log_ref};next=diagnose-operation-before-retry')
                         require(f'PRODUCTION_APPLY_VALIDATED={revision}' in apply_evidence,
                                 args.phase + '-final-runtime-proof')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in apply_evidence,
@@ -1217,7 +1286,7 @@ def run(args):
                         log.flush()
                         checked = Path(log_name).read_text()[offset:]
                         require(returncode == 0 and 'failed=0' in checked,
-                                f'{args.phase}-post-check-failed;log={log_name};next=diagnose-operation-before-retry')
+                                f'{args.phase}-post-check-failed;log={log_ref};next=diagnose-operation-before-retry')
                         require(not re.search(r'changed=[1-9][0-9]*', checked), args.phase + '-post-check-drift')
                         require(f'RELAY_INSTALLED_REVISION={revision};consumer={consumer_revision};' in checked,
                                 args.phase + '-post-check-installed-identity-proof')
@@ -1250,7 +1319,9 @@ def run(args):
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
                         progress('OPEN', revision)
-                except Exception:
+                except Exception as error:
+                    report_failure(error, 'installer', private_log=log_name)
+                    progress('RECOVERY', revision)
                     restored_old = False
                     if (preparation is not None and preparation.captured
                             and (not preparation.cutover_started or preparation.predispatch_bridge_attempted)
@@ -1278,12 +1349,11 @@ def run(args):
                     raise
                 finally:
                     if guard is not None and owns_guard:
-                        guard.stdin.close()
-                        require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
+                        release_guard(guard)
             log.flush()
             evidence = Path(log_name).read_text()
             if returncode:
-                raise RuntimeError(f'BACKEND_FAILED;phase={args.phase};log={log_name};next=diagnose-operation-before-retry')
+                raise RuntimeError(f'BACKEND_FAILED;phase={args.phase};log={log_ref};next=diagnose-operation-before-retry')
             if not fast_source:
                 require('failed=0' in evidence, 'backend-recap')
             if args.phase == 'tls-check':
@@ -1300,7 +1370,7 @@ def run(args):
             if args.phase == 'check':
                 if ('PRODUCTION_RECOVERY_CLASSIFICATION=' in evidence
                         or 'PRODUCTION_RECONCILIATION_STATE=RECOVERY_REQUIRED' in evidence):
-                    raise RuntimeError(f'recovery-requires-disposition;log={log_name}')
+                    raise RuntimeError(f'recovery-requires-disposition;log={log_ref}')
                 if not re.search(r'changed=[1-9][0-9]*', evidence):
                     require(f'PRODUCTION_CHECK_VALIDATED={revision};state=stable-no-op;recovery=none' in evidence, 'final-check-proof')
             if args.stale_apply_shape:
@@ -1336,7 +1406,7 @@ def run(args):
                 receipt_head = revision if args.expected_installed_head else consumer_revision
                 print(f'PRODUCTION_APPLY_VALIDATED={receipt_head}')
                 print(f'PRODUCTION_LIFECYCLE_PRESERVED={receipt_head};activation=owner-after-job')
-            print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};elapsed_seconds={int(time.monotonic()-started)};log={log_name}')
+            print(f'RELAY_DEPLOYMENT_RESULT=PASS;phase={args.phase};elapsed_seconds={int(time.monotonic()-started)};log={log_ref}')
         finally:
             os.close(lock)
 
@@ -1345,6 +1415,7 @@ if __name__ == '__main__':
     try:
         run(arguments())
     except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as error:
+        report_failure(error, 'deployment-entrypoint')
         # Avoid dumping subprocess output or a full consumer/environment input.
         message = str(error) if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)

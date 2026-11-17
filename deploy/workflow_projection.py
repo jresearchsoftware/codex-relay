@@ -166,6 +166,8 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         require(WORKFLOW.fullmatch(path), 'workflow-path')
         text = _read(source_root / 'deploy/workflows' / (template + '.yml.in')).decode('utf-8')
         tokens = set(re.findall(r'@@([A-Z_]+)@@', text))
+        if 'LIFECYCLE_OBSERVER' in tokens:
+            values['LIFECYCLE_OBSERVER'] = _read(source_root / 'deploy/workflows/lifecycle-observer.js.in').decode('utf-8').rstrip().replace('\n', '\n          ')
         require(tokens <= values.keys(), 'workflow-template-token')
         for token in tokens:
             text = text.replace('@@' + token + '@@', values[token])

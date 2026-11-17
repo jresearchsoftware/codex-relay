@@ -2,6 +2,7 @@ import { lstat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { buildCodexProcessSpec } from './codex-process.mjs';
 import { createBoundedUtf8Capture } from '../../controller/src/utf8-capture.mjs';
+import { captureCausalDiagnostic } from '../../controller/src/diagnostics.mjs';
 
 export async function captureSandboxIdentity(sandboxRoot) {
   const entry = await lstat(sandboxRoot, { bigint: true });
@@ -23,29 +24,42 @@ export async function cleanupCodexSandbox({ cwd, sandboxIdentity, spawnImpl = sp
     env: { PATH: '/usr/bin:/bin', LANG: 'C', LC_ALL: 'C' }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true
   }); } catch (error) { error.cleanupContainment = 'not_required'; throw error; }
   const stdout = createBoundedUtf8Capture(4096);
+  const stderr = createBoundedUtf8Capture(4096);
   child.stdout?.on('data', chunk => stdout.push(chunk));
-  child.stderr?.on('data', () => {}); // Raw sudo errors are not publication input.
-  const code = await new Promise((resolve, reject) => {
+  child.stderr?.on('data', chunk => stderr.push(chunk));
+  const attachEvidence = (error, exit = {}) => {
+    error.causalEvidence = captureCausalDiagnostic({ error, phase: 'cleanup', operation: 'cleanup-helper',
+      stdout: stdout.finish(), stderr: stderr.finish(), exitCode: exit.code, signal: exit.signal });
+    return error;
+  };
+  let exit;
+  try { exit = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       // A stuck helper must not stall the durable terminal result indefinitely.
       // Killing its launcher is best effort, not proof that a descendant reaped.
-      try { child.kill('SIGKILL'); } catch { /* retain unknown cleanup containment */ }
+      let killError;
+      try { child.kill('SIGKILL'); } catch (error) { killError = error; }
       child.stdout?.destroy(); child.stderr?.destroy(); child.unref?.();
       reject(Object.assign(new Error('SANDBOX_CLEANUP_TIMEOUT'), { code: 'SANDBOX_CLEANUP_TIMEOUT',
-        operation: 'cleanup-helper', path: '.codex-sandbox', cleanupContainment: 'unknown' }));
+        operation: 'cleanup-helper', path: '.codex-sandbox', cleanupContainment: 'unknown', ...(killError ? { cause: killError } : {}) }));
     }, timeoutMs);
     child.once('error', error => { clearTimeout(timer); error.cleanupContainment = child.pid ? 'unknown' : 'not_required'; reject(error); });
-    child.once('close', value => { clearTimeout(timer); resolve(value); });
-  });
+    for (const stream of [child.stdout, child.stderr]) stream?.once('error', error => {
+      clearTimeout(timer); error.cleanupContainment = 'unknown'; reject(error);
+    });
+    child.once('close', (code, signal) => { clearTimeout(timer); resolve({ code, signal }); });
+  }); } catch (error) { throw attachEvidence(error); }
+  const { code, signal } = exit;
   const output = stdout.finish();
-  let receipt;
-  try { if (!output.truncated) receipt = JSON.parse(output.value); } catch { /* bounded failure below */ }
-  if (code === 0 && receipt?.schemaVersion === 1 && receipt.status === 'removed') return receipt;
+  let receipt, parseError;
+  try { if (!output.truncated) receipt = JSON.parse(output.value); } catch (error) { parseError = error; }
+  if (code === 0 && !signal && receipt?.schemaVersion === 1 && receipt.status === 'removed') return receipt;
   const safeCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(receipt?.code ?? '') ? receipt.code : 'SANDBOX_CLEANUP_FAILED';
-  const error = Object.assign(new Error(safeCode), { code: safeCode, cleanupContainment: Number.isInteger(code) ? 'reaped' : 'unknown' });
+  const error = Object.assign(new Error(safeCode), { code: safeCode, cleanupContainment: Number.isInteger(code) ? 'reaped' : 'unknown',
+    ...(parseError ? { cause: parseError } : {}) });
   // Helper emits fixed operation names and hashes arbitrary filenames.
   if (/^(?:open|stat|fstat|scandir|readdir|unlink|rmdir|fsync)$/.test(receipt?.syscall ?? '')) error.syscall = receipt.syscall;
   if (/^[a-z-]{1,40}$/.test(receipt?.operation ?? '')) error.operation = receipt.operation;
   if (/^\.codex-sandbox(?:\/(?:home|config|cache|data|state|tmp|arg0|task-input\.md|codex-result-schema\.json|<entry-[a-f0-9]{12}>)){0,8}$/.test(receipt?.path ?? '')) error.path = receipt.path;
-  throw error;
+  throw attachEvidence(error, exit);
 }

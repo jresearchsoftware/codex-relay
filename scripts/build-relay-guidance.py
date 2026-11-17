@@ -54,6 +54,13 @@ def materialize(files, destination):
 def assemble(root=ROOT):
     metadata = json.loads((root / "guidance/source.json").read_text())
     name = metadata["name"]
+    licenses_bytes = read_file(root, "guidance/licenses.json")
+    licenses = json.loads(licenses_bytes)
+    if (licenses.get("package") != "org.jresearch.ai/" + name
+            or licenses.get("version") != metadata["version"]
+            or licenses.get("license") != "MIT"
+            or licenses.get("components", [{}])[0].get("contract_revision") != metadata["contract_revision"]):
+        raise ValueError("License metadata differs from the selected Relay package identity")
     slot = root / "guidance/dependency-closure/vibevm/vibedeps" / metadata["shared_coordinate"].replace("/", ".") / metadata["shared_version"]
     shared = inventory(slot)
     shared.pop(".vibe-slot.toml", None)
@@ -175,7 +182,7 @@ spec_format = "mixed"
 "{metadata['shared_coordinate']}" = {{ version = "={metadata['shared_version']}", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "{metadata['shared_distribution_revision']}", auth = "none" }}
 '''.encode()
     expected.update({"vpm/" + path: data for path, data in inventory(root / "guidance/dependency-closure").items()})
-    expected["vpm/LICENSES.json"] = (root / "guidance/licenses.json").read_bytes()
+    expected["vpm/LICENSES.json"] = licenses_bytes
     expected["vpm/LICENSE"] = (root / "LICENSE").read_bytes()
     expected["vpm/README.md"] = f'''# Codex Relay {metadata['version']} guidance package
 

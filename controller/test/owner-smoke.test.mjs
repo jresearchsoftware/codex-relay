@@ -106,3 +106,15 @@ test('owner smoke reuses root helper manifest gate and reports exact failed auth
     }
   }), error => error.code === 'EACCES' && error.details.operation === 'owner-smoke-root-command');
 });
+
+test('owner smoke domain rejection retains safe observed binding without caller command text', async () => {
+  await assert.rejects(assertOwnerSmokeCaller(request(), callerFixture({
+    read: async path => path.endsWith('/cmdline') ? '/usr/bin/node\0private-caller-secret\0' : ''
+  })), error => {
+    assert.equal(error.code, 'SMOKE_OWNER_TRANSITION_REQUIRED');
+    assert.equal(error.observation.check, 'owner-smoke-parent-command');
+    assert.equal(error.observation.observed.producerMatches, false);
+    assert.ok(!JSON.stringify(error).includes('private-caller-secret'));
+    return true;
+  });
+});

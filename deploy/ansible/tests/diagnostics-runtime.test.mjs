@@ -5,14 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, persistControllerFailureDiagnostic, redactDiagnosticText } from "../../../controller/src/diagnostics.mjs";
+import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, persistControllerFailureDiagnostic, redactDiagnosticText, safeFailureDiagnosticReference } from "../../../controller/src/diagnostics.mjs";
 import { normalizeDiagnosticRequest, writeDiagnosticBundle } from "../../../controller/src/diagnostic-store.mjs";
 import { reserveRuntimeDiagnostic } from "../../../controller/src/diagnostic-fallback.mjs";
 import { runGovernedCodexTask } from "../../../runtime/src/codex-runtime.mjs";
 import { buildChildDiagnostic } from "../roles/relay_codex_runtime/files/relay-codex-diagnostic.mjs";
 import { CONSUMER } from "../../../consumer/consumer.mjs";
 
-test('normal diagnostics retain late native errors without retaining agent or tool output', () => {
+test('normal diagnostics separate native errors from bounded protected output and public references', () => {
   const codex = 'synthetic-native-error-codex-credential';
   const github = 'synthetic-native-error-github-credential';
   const known = 'synthetic-native-error-known-credential';
@@ -38,20 +38,31 @@ test('normal diagnostics retain late native errors without retaining agent or to
     assert.ok(diagnostic.codexErrors.events[0].message.text.includes(marker));
   }
   assert.equal(diagnostic.codexErrors.events[1].message.text, 'Final synthetic provider refusal');
+  assert.equal(diagnostic.causalEvidence.stdout.available, true);
+  assert.equal(diagnostic.causalEvidence.stdout.truncated, true);
+  assert.ok(Buffer.byteLength(diagnostic.causalEvidence.stdout.text) <= 8192);
+  assert.ok(diagnostic.causalEvidence.stdout.bytes > Buffer.byteLength(diagnostic.causalEvidence.stdout.text));
+  assert.match(diagnostic.causalEvidence.stdout.text, /PRIVATE_AGENT_BODY/);
+  assert.doesNotMatch(JSON.stringify(diagnostic.codexErrors), /PRIVATE_AGENT_BODY|PRIVATE_TOOL_BODY|PRIVATE_EXTRA_BODY/);
   const saved = JSON.stringify(diagnostic);
-  for (const privateText of [codex, github, known, 'synthetic-bearer-credential', 'PRIVATE_AGENT_BODY', 'PRIVATE_TOOL_BODY', 'PRIVATE_EXTRA_BODY']) {
-    assert.equal(saved.includes(privateText), false);
+  for (const secret of [codex, github, known, 'synthetic-bearer-credential']) {
+    assert.equal(saved.includes(secret), false);
   }
+  const publicReference = safeFailureDiagnosticReference(diagnostic);
+  assert.equal(publicReference.classification, 'CODEX_NONZERO_EXIT');
+  assert.doesNotMatch(JSON.stringify(publicReference), /PRIVATE_|provider refusal|authentication warning|causalEvidence|codexErrors/);
 });
 
-test('native error diagnostics retain the last four messages within UTF-8 byte bounds', () => {
+test('native error diagnostics retain the first and three latest messages within UTF-8 byte bounds', () => {
   const events = Array.from({ length: 7 }, (_, index) => ({ type: 'error', message: `failure-${index}: ` + '\u0416'.repeat(3000) }));
   const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout: events.map(value => JSON.stringify(value)).join('\n') });
   assert.equal(diagnostic.codexErrors.omittedEvents, 3);
   assert.equal(diagnostic.codexErrors.events.length, 4);
-  for (const [index, event] of diagnostic.codexErrors.events.entries()) {
-    assert.ok(event.message.text.startsWith(`failure-${index + 3}: `));
-    assert.equal(event.message.bytes, Buffer.byteLength(events[index + 3].message));
+  const retainedIndices = [0, 4, 5, 6];
+  for (const [position, event] of diagnostic.codexErrors.events.entries()) {
+    const index = retainedIndices[position];
+    assert.ok(event.message.text.startsWith(`failure-${index}: `));
+    assert.equal(event.message.bytes, Buffer.byteLength(events[index].message));
     assert.equal(event.message.truncated, true);
     assert.ok(Buffer.byteLength(event.message.text) <= 4096);
     assert.doesNotMatch(event.message.text, /\uFFFD/);
@@ -68,7 +79,11 @@ test('native error diagnostics reject malformed records and nested error lookali
     + JSON.stringify({ type: 'turn.failed', error: { message: 'Observed final failure' } });
   const diagnostic = createExecutionDiagnostic({ mode: 'normal', stdout });
   assert.deepEqual(diagnostic.codexErrors.events, [{ type: 'turn.failed', message: { text: 'Observed final failure', bytes: 22, truncated: false } }]);
-  assert.doesNotMatch(JSON.stringify(diagnostic), /PRIVATE_/);
+  assert.doesNotMatch(JSON.stringify(diagnostic.codexErrors), /PRIVATE_/);
+  // Rejected/lookalike records remain observed process output in the protected
+  // causal capture, but cannot become native error events or public evidence.
+  assert.match(diagnostic.causalEvidence.stdout.text, /PRIVATE_OBJECT|PRIVATE_NESTED/);
+  assert.doesNotMatch(JSON.stringify(safeFailureDiagnosticReference(diagnostic)), /PRIVATE_|Observed final failure/);
 });
 
 test('truncated stdout does not treat its unterminated final record as observed error evidence', () => {
@@ -131,7 +146,12 @@ test('failed runtime persists late JSONL errors separately from early stderr wit
   assert.equal(evidence.codexStdoutTruncated, true);
   assert.equal(parsed.codexErrors.stdoutTruncated, true);
   assert.deepEqual(parsed.codexErrors.events.map(event => event.message.text), ['Distinct late synthetic provider failure']);
-  assert.doesNotMatch(saved, /PRIVATE_COMMAND_OUTPUT/);
+  assert.equal(parsed.causalEvidence.stdout.available, true);
+  assert.equal(parsed.causalEvidence.stdout.truncated, true);
+  assert.match(parsed.causalEvidence.stdout.text, /PRIVATE_COMMAND_OUTPUT/);
+  assert.ok(Buffer.byteLength(parsed.causalEvidence.stdout.text) <= 8192);
+  assert.doesNotMatch(JSON.stringify(parsed.codexErrors), /PRIVATE_COMMAND_OUTPUT/);
+  assert.doesNotMatch(JSON.stringify(evidence), /PRIVATE_COMMAND_OUTPUT|Distinct late synthetic provider failure/);
 });
 
 test("persisted launcher diagnostics retain validated inner child evidence independently of the outer process exit", async t => {

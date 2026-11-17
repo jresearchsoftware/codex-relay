@@ -183,7 +183,11 @@ def test_six_member_plural_self_consumer_projects_one_v4_general_pool_and_anchor
             assert value['environment']['runner']['group'] != job['runs-on']['group']
             assert value['environment']['runner']['labels'][0] not in job['runs-on']['labels']
             assert selected['env']['EXPECTED_WORKFLOW_CONTRACT'] == 'relay-workflows-v4'
-            assert selected['run'].startswith(guard + '\n')
+            if name == workflow_projection.PRODUCTION:
+                assert selected['run'].startswith('trap ')
+                assert guard + '\n' in selected['run']
+            else:
+                assert selected['run'].startswith(guard + '\n')
             assert '${{' not in selected['run']
             assert "github.repository == '" + repository + "'" in job['if']
             if name != workflow_projection.PRODUCTION:

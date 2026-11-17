@@ -1,6 +1,6 @@
 import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest } from './execution-contract.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
-import { boundedDiagnosticText } from './diagnostics.mjs';
+import { boundedDiagnosticText, captureCausalDiagnostic } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // One runner-owned journal records whether the potentially paid call happened.
@@ -87,6 +87,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
           executionWarnings: returned.executionWarnings ?? [] };
       } catch (error) {
         record.execution = { ...record.execution, returned: true, child: error.details?.childState ?? 'unknown',
+          causalEvidence: captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'execution', operation: 'dispatch',
+            secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }),
           containment: error.details?.containment ?? 'unknown', errorCode: error.code ?? 'EXECUTION_FAILED',
           codexUsage: normalizeCodexUsage(error.details?.codexUsage ?? error.details?.causal?.codexUsage),
           diagnostic: causalEvidence(error, { child: error.details?.childState ?? 'unknown', containment: error.details?.containment, stage: 'execution' }) };
@@ -101,6 +103,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (typeof progress.clean !== 'boolean' && !(progress.clean === null && progress.worktreeObservation?.status === 'unknown')) fail('WORKTREE_STATE_UNKNOWN');
     const executionWarnings = [...(record.execution.executionWarnings ?? []),
       ...(progress.clean === null ? ['WORKTREE_OBSERVATION_INCOMPLETE'] : progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'])];
+    record.executionWarnings = executionWarnings;
     record.collection = { head: progress.head, clean: progress.clean, preserved: true, ...(progress.worktreeObservation ? { worktreeObservation: progress.worktreeObservation } : {}) };
     lastSuccessfulBoundary = 'collection';
     // Collection observes the complete retained checkout after containment.
@@ -116,7 +119,9 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     stage = 'readiness';
     // Dirtiness alone is not an automation failure after known successful
     // execution. An incomplete worker still needs its unsaved work reconciled.
-    if (!progress.clean && record.execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
+    if (!progress.clean && !record.execution.errorCode && record.execution.result?.status !== 'success') {
+      fail(progress.clean === null ? 'WORKTREE_OBSERVATION_INCOMPLETE' : 'UNCOMMITTED_WORK_REMAINS');
+    }
     if (record.execution.result?.status !== 'success') {
       if (record.execution.errorCode) stage = 'execution';
       const code = record.execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED';
@@ -138,6 +143,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     record.diagnostic = null; await journal.put(e.runId, record);
     return record.outcome;
   } catch (error) {
+    error.native = { ...error.native, ...(record.execution?.causalEvidence ? { executionEvidence: record.execution.causalEvidence } : {}),
+      ...(record.execution?.result ? { workerResult: record.execution.result } : {}) };
     error.details = { ...error.details,
       ...(stage === 'execution' ? { causal: error.details?.causal ?? record.execution?.diagnostic } : {}),
       childState: error.details?.childState ?? (record.execution ? record.execution.child ?? 'unknown' : 'not_started'),
@@ -146,7 +153,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (!error.details.lastSuccessfulBoundary && !error.details.causal?.lastSuccessfulBoundary) error.details.lastSuccessfulBoundary = lastSuccessfulBoundary;
     // Preparation, collection and journal/finalization failures also need a
     // durable diagnostic. The runtime capsule is reused when it already exists.
-    if (persistFailure && !safeDomainTerminal(error, record, stage)) {
+    if (persistFailure) {
       const durable = await persistFailure({ executionId: e.attemptId, error, stage, lastSuccessfulBoundary });
       error.details = { ...error.details, ...durable };
     }
@@ -167,12 +174,18 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     if (e.route === 'auto' && !record.outcome) {
       try {
         const outcome = await invoke('terminal-outcome', { status: 'blocked', terminalCode: error.code,
-          diagnostic: record.diagnostic, publishedHead: record.progress?.head ?? null,
+          diagnostic: record.diagnostic, executionWarnings: record.executionWarnings ?? record.execution?.executionWarnings ?? [], publishedHead: record.progress?.head ?? null,
           lastSuccessfulBoundary: record.diagnostic.lastSuccessfulBoundary,
           failureBoundary: record.diagnostic.failureBoundary });
         record.outcome = outcome;
         error.details.outcomePublication = safeOutcomePublication(null, 'published');
       } catch (publicationError) {
+        // Preserve the independently observed publication cause before reducing
+        // it to the public uncertainty classification. Never repeat the POST.
+        if (persistFailure) await persistFailure({ executionId: `${e.attemptId}-publication`, error: publicationError,
+          stage: 'writer-publication', lastSuccessfulBoundary });
+        record.outcomePublicationEvidence = captureCausalDiagnostic({ error: publicationError, executionId: e.attemptId,
+          phase: 'writer-publication', operation: 'terminal-outcome', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } });
         error.details.outcomePublication = safeOutcomePublication(publicationError);
         record.diagnostic = { ...record.diagnostic, orchestration: 'FAILED', outcomePublication: error.details.outcomePublication };
       }

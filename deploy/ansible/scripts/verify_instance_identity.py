@@ -1,4 +1,5 @@
 """Read-only guard: never adopt another consumer's installed Reviewer or units."""
+import errno
 import json
 from pathlib import Path
 import re
@@ -116,6 +117,36 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
             raise ValueError('RELAY_INSTANCE_UNIT_COLLISION')
 
 
+IDENTITY_REASONS = frozenset({
+    'RELAY_INSTANCE_REPOSITORIES_INVALID', 'RELAY_INSTANCE_POOL_BINDING_INVALID',
+    'RELAY_INSTANCE_CONFIG_UNSAFE', 'RELAY_INSTANCE_REPOSITORY_COLLISION',
+    'RELAY_INSTANCE_UNIT_UNSAFE', 'RELAY_INSTANCE_UNIT_COLLISION',
+    'RELAY_INSTANCE_REVIEWER_IDENTITY_COLLISION',
+})
+
+
+def failure_evidence(error):
+    """Project the observed cause into the existing private backend log.
+
+    The guard runs inline before an installation exists. Its Ansible stderr is
+    already retained by the protected deployment log; it needs no installed
+    helper or new store. Only fixed reasons and native numeric observations
+    cross this boundary, never raw exception/configuration/path text.
+    """
+    cause = {'type': type(error).__name__, 'messageAvailability': 'redacted',
+             'configAvailability': 'redacted', 'pathAvailability': 'redacted'}
+    reason = str(error)
+    if reason in IDENTITY_REASONS:
+        cause['reason'] = reason
+    if isinstance(error, OSError) and error.errno in errno.errorcode:
+        cause['errno'] = errno.errorcode[error.errno]
+        cause['errnoNumber'] = error.errno
+    if isinstance(error, json.JSONDecodeError):
+        cause.update(jsonLine=error.lineno, jsonColumn=error.colno, jsonPosition=error.pos)
+    return {'version': 1, 'phase': 'host-preflight', 'operation': 'verify-instance-identity',
+            'causes': [cause]}
+
+
 if __name__ == '__main__':
     try:
         repositories = json.loads(sys.argv[3]) if sys.argv[3].startswith('[') else sys.argv[3]
@@ -125,8 +156,11 @@ if __name__ == '__main__':
         units, general_pool = parse_pool_argument(unit_args)
         verify(*sys.argv[1:3], repositories, units, reviewer_user=sys.argv[4], general_pool=general_pool,
                git_desired=git_desired)
-    except (OSError, ValueError, TypeError):
-        # Config/unit contents can contain private data; never print them.
+    except (OSError, ValueError, TypeError) as error:
+        # Preserve the actual failed check before the generic caller code.
+        # Config/unit contents and raw exception paths stay omitted for privacy.
+        print('RELAY_DEPLOYMENT_CAUSAL_EVIDENCE=' + json.dumps(failure_evidence(error),
+              sort_keys=True, separators=(',', ':')), file=sys.stderr, flush=True)
         print('RELAY_INSTANCE_IDENTITY_REJECTED', file=sys.stderr)
         sys.exit(1)
     print('RELAY_INSTANCE_IDENTITY_VALID')

@@ -89,7 +89,10 @@ test("grouped diagnostic snapshot correlates claim and execution without protect
     await Promise.all([mkdir(paths.claimRoot), mkdir(paths.dispatchRoot), mkdir(paths.debugRoot)]);
     await writeFile(paths.diagnosticsConfig, JSON.stringify({ schemaVersion: "1.0", mode: "debug" }));
     await writeFile(join(paths.claimRoot, "claims.json"), JSON.stringify({ claims: [{ claimId: "claim-1", phase: "uncertain", failureCode: "CODEX_NONZERO_EXIT", failureDiagnostic: { code: "CHILD_STDERR", diagnosticStore: { status: "stored", executionId: "exec-1", mode: "debug" } } }] }));
-    await writeFile(join(paths.dispatchRoot, "dispatch-1.json"), JSON.stringify({ claimId: "claim-1", executionId: "exec-1", workerState: "failed" }));
+    await writeFile(join(paths.dispatchRoot, "dispatch-1.json"), JSON.stringify({ claimId: "claim-1", executionId: "exec-1", workerState: "failed",
+      causalEvidence: { claimId: "claim-1", classification: "PRIVATE_CAUSAL_DETAIL" },
+      recorderFailure: { claimId: "claim-1", classification: "PRIVATE_RECORDER_DETAIL" },
+      secondaryEvidence: [{ claimId: "claim-1", classification: "PRIVATE_SECONDARY_DETAIL" }] }));
     await writeFile(join(paths.debugRoot, "exec-1.json"), JSON.stringify({ executionId: "exec-1", mode: "debug", phase: "cleanup-complete", classification: "CHILD_STDERR", stderr: "protected-body", stdout: "protected-body",
       codexErrors: { source: 'codex-jsonl', events: [{ type: 'turn.failed', message: { text: 'protected-terminal-error' },
         // These valid-looking correlation fields must never become records by
@@ -103,7 +106,7 @@ test("grouped diagnostic snapshot correlates claim and execution without protect
     assert.equal(snapshot.dispatchRecords.some(record => record.executionId === "exec-1"), true);
     assert.equal(snapshot.debugBundles[0].executionId, "exec-1");
     assert.equal(snapshot.debugBundles[0].classification, "CHILD_STDERR");
-    assert.doesNotMatch(encoded, /protected-body|stderr|stdout|codexErrors|protected-terminal-error|FORGED_PRIVATE_CLASSIFICATION|private-error-claim/);
+    assert.doesNotMatch(encoded, /protected-body|stderr|stdout|codexErrors|protected-terminal-error|FORGED_PRIVATE_CLASSIFICATION|private-error-claim|causalEvidence|recorderFailure|secondaryEvidence|PRIVATE_CAUSAL_DETAIL|PRIVATE_RECORDER_DETAIL|PRIVATE_SECONDARY_DETAIL/);
     assert.equal(snapshot.debugBundles.length, 1);
   } finally {
     await rm(root, { recursive: true, force: true });

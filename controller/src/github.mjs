@@ -4,31 +4,31 @@ import { createBoundedUtf8Capture } from './utf8-capture.mjs';
 import { OWNER_SMOKE_TIMEOUT_MS, validateOwnerSmokeRequest } from './owner-smoke.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
-import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { captureCausalDiagnostic, createExecutionDiagnostic, failureDiagnosticFromDetails, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
 import { DEFAULT_CODEX_RUNTIME_TIMEOUT_MS } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 const TERMINATION_GRACE_MS = 5000;
-function signalProcessGroup(pid, signal) {
+function signalProcessGroup(pid, signal, onError) {
   if (process.platform === "win32" || !pid) return;
-  try { process.kill(-pid, signal); } catch {}
+  try { process.kill(-pid, signal); } catch (error) { if (error.code !== 'ESRCH') onError?.(error); }
 }
 
-function signalProcessTree(child, signal, nestedProcessGroupPids = []) {
+function signalProcessTree(child, signal, nestedProcessGroupPids = [], onError) {
   if (process.platform !== "win32") {
-    signalProcessGroup(child.pid, signal);
-    for (const pid of nestedProcessGroupPids) signalProcessGroup(pid, signal);
+    signalProcessGroup(child.pid, signal, onError);
+    for (const pid of nestedProcessGroupPids) signalProcessGroup(pid, signal, onError);
     return;
   }
-  try { child.kill?.(signal); } catch {}
+  try { child.kill?.(signal); } catch (error) { onError?.(error); }
 }
 
-function processGroupGone(pid) {
+function processGroupGone(pid, onError) {
   if (process.platform === "win32" || !pid) return true;
-  try { process.kill(-pid, 0); return false; } catch (error) { return error.code === "ESRCH"; }
+  try { process.kill(-pid, 0); return false; } catch (error) { if (error.code !== 'ESRCH') onError?.(error, 'probe-dispatch-group'); return error.code === "ESRCH"; }
 }
 
-function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChildClosed) {
+function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChildClosed, onError) {
   return new Promise(resolve => {
     const deadline = Date.now() + timeoutMs;
     const poll = () => {
@@ -36,8 +36,8 @@ function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChild
       // This proves only the runner-owned group. The model UID launcher must
       // separately acknowledge its inner group; successful kill(-pid) does not
       // prove that a different UID was signalled.
-      const ownerGroupGone = process.platform === "win32" || processGroupGone(child.pid);
-      const groupsGone = ownerGroupGone && nestedProcessGroupPids.every(processGroupGone);
+      const ownerGroupGone = process.platform === "win32" || processGroupGone(child.pid, onError);
+      const groupsGone = ownerGroupGone && nestedProcessGroupPids.every(pid => processGroupGone(pid, onError));
       if (childGone && groupsGone) return resolve(true);
       if (Date.now() >= deadline) return resolve(false);
       setTimeout(poll, 25);
@@ -46,16 +46,17 @@ function waitForOwnedExecution(child, nestedProcessGroupPids, timeoutMs, isChild
   });
 }
 
-async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed) {
-  signalProcessTree(child, "SIGTERM", nestedProcessGroupPids);
-  if (await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed)) return true;
-  signalProcessTree(child, "SIGKILL", nestedProcessGroupPids);
-  return await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed);
+async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed, onError) {
+  signalProcessTree(child, "SIGTERM", nestedProcessGroupPids, onError);
+  if (await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed, onError)) return true;
+  signalProcessTree(child, "SIGKILL", nestedProcessGroupPids, onError);
+  return await waitForOwnedExecution(child, nestedProcessGroupPids, TERMINATION_GRACE_MS, isChildClosed, onError);
 }
 
 
 function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = DEFAULT_CODEX_RUNTIME_TIMEOUT_MS + 10 * 60 * 1000,
-  reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts, signal } = {}) {
+  reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts,
+  diagnosticStore = persistExecutionDiagnostic, readDiagnosticConfig = readDiagnosticsConfig, signal } = {}) {
   return {
     async dispatch(envelope) {
       validate(envelope);
@@ -67,7 +68,7 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
       try { fallbackStore = await reserveDiagnostic({ executionId: envelope.attemptId }); }
       catch (error) {
         const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'DIAGNOSTIC_FALLBACK_FAILED';
-        throw Object.assign(new Error(code), { code, details: {
+        throw Object.assign(new Error(code), { code, cause: error, details: {
           executionId: envelope.attemptId, childState: 'not_started', containment: 'not_required',
           primaryCause: code, stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence',
           operation: 'reserve-fallback', persistence: 'failed', cleanup: 'not_required', retention: 'none',
@@ -80,7 +81,42 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
       let value; let pendingError; let exit; let exitSignal; let processError; let runtimeLifecycle;
       let codexUsage = normalizeCodexUsage();
       let containment = 'not_required';
-      const reap = () => termination ??= terminateProcessTree(child, [], () => closed);
+      const auxiliaryErrors = [];
+      const observeError = (error, operation) => { if (auxiliaryErrors.length < 4) auxiliaryErrors.push(captureCausalDiagnostic({ error, executionId: envelope.attemptId, phase: 'dispatcher', operation }, { compact: true })); };
+      const reap = () => termination ??= terminateProcessTree(child, [], () => closed, (error, operation = 'terminate-dispatch') => observeError(error, operation));
+      const preserveFailure = async (error, operation) => {
+        const executionId = `${envelope.attemptId}-${operation}`;
+        const causalEvidence = captureCausalDiagnostic({ error, executionId: envelope.attemptId, phase: 'dispatcher', operation,
+          stdout: stdout.finish(), stderr: stderr.finish(), exitCode: exit, signal: exitSignal,
+          native: { auxiliaryErrors } });
+        let recorderFailure;
+        // Keep causal bytes independently durable before cleanup/finalization.
+        try {
+          const prior = await fallbackStore.read();
+          await fallbackStore.write({ ...prior, causalEvidence: prior.causalEvidence ?? causalEvidence,
+            ...(prior.causalEvidence ? { secondaryEvidence: causalEvidence } : {}) });
+        } catch (error) { recorderFailure = error; }
+        try {
+          const mode = (await readDiagnosticConfig()).mode;
+          const diagnostic = createExecutionDiagnostic({ executionId, mode, phase: 'dispatcher',
+            lifecycle: { operation, containment }, classification: error.code ?? 'EXECUTION_FAILED',
+            causalEvidence, error, exitCode: exit, signal: exitSignal });
+          const receipt = await diagnosticStore(diagnostic);
+          const reference = safeDiagnosticStoreReference(typeof receipt?.stdout === 'string' ? JSON.parse(receipt.stdout) : receipt);
+          if (reference?.status !== 'stored' || reference.executionId !== executionId || reference.mode !== mode) {
+            throw Object.assign(new Error('Dispatch diagnostic storage is not proven'), { code: receipt?.storeCode ?? receipt?.code ?? 'DIAGNOSTICS_STORE_FAILED', native: receipt });
+          }
+        } catch (error) { recorderFailure = error; }
+        if (recorderFailure) {
+          try {
+            const prior = await fallbackStore.read();
+            await fallbackStore.write({ ...prior, causalEvidence: prior.causalEvidence ?? causalEvidence,
+              recorderFailure: captureCausalDiagnostic({ error: recorderFailure, executionId: envelope.attemptId,
+                phase: 'diagnostic-persistence', operation }, { compact: true }) });
+          } catch { /* The preceding capsule remains; report the evidence gap. */ }
+          error.details = { ...error.details, diagnosticWarning: 'DISPATCH_DIAGNOSTIC_PERSISTENCE_FAILED' };
+        }
+      };
       const onSignal = () => { cancelled = true; void reap().then(() => finishWait?.(null)); };
       try {
         await fallbackStore.write({ stage: 'dispatcher', operation: 'dispatch', childState: 'unknown',
@@ -94,7 +130,7 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
             stdio: ['pipe', 'pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true });
         } catch (error) {
           processError = error;
-          throw Object.assign(new Error('DISPATCH_NOT_STARTED'), { code: 'DISPATCH_NOT_STARTED',
+          throw Object.assign(new Error('DISPATCH_NOT_STARTED'), { code: 'DISPATCH_NOT_STARTED', cause: error,
             details: { childState: 'not_started', containment: 'not_required', primaryCause: error?.code,
               syscall: error?.syscall, operation: 'dispatch', boundary: 'dispatcher' } });
         }
@@ -106,27 +142,30 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
           finishWait = code => { clearTimeout(timer); resolve(code); };
           child.stdout?.on('data', c => stdout.push(c)); child.stderr?.on('data', c => stderr.push(c));
           child.once('error', error => { processError = error; spawnFailed = !child.pid; clearTimeout(timer); resolve(null); });
+          for (const [name, stream] of [['stdout', child.stdout], ['stderr', child.stderr]]) stream?.once('error', error => {
+            processError ??= error; observeError(error, `dispatch-${name}`); clearTimeout(timer); resolve(null);
+          });
           child.once('close', (code, signal) => { closed = true; exitSignal = signal; clearTimeout(timer); resolve(code); });
-          child.stdin?.once('error', () => {}); child.stdin?.end(JSON.stringify(envelope));
+          child.stdin?.once('error', error => observeError(error, 'dispatch-stdin')); child.stdin?.end(JSON.stringify(envelope));
           if (signal?.aborted) onSignal();
         });
         const outerContained = await reap();
         const out = stdout.finish(); const err = stderr.finish();
-        let diagnostic; let workerCode;
-        try { value = JSON.parse(out.value); } catch { /* unknown */ }
+        let diagnostic; let workerCode; let parseError;
+        try { value = JSON.parse(out.value); } catch (error) { parseError = error; }
         try {
           const failure = JSON.parse(err.value);
           if (failure.version === VERSION && failure.status === 'blocked' && /^[A-Z][A-Z0-9_]{0,79}$/.test(failure.code ?? '')) {
             diagnostic = failure.diagnostic; workerCode = failure.code;
           }
-        } catch { /* unknown */ }
+        } catch (error) { if (err.value) observeError(error, 'parse-dispatch-stderr'); }
         const innerContained = value?.containment === 'reaped' || diagnostic?.containment === 'reaped'
           || (diagnostic?.containment === 'not_required' && diagnostic?.observed?.child === 'not_started');
         const contained = outerContained && (spawnFailed || innerContained);
         containment = contained ? (spawnFailed ? 'not_required' : 'reaped') : 'unknown';
         if (!contained || timedOut || cancelled || exit !== 0 || out.truncated || value?.version !== VERSION || value?.attemptId !== envelope.attemptId) {
           const code = !contained ? 'CONTAINMENT_NOT_PROVEN' : spawnFailed ? 'DISPATCH_NOT_STARTED' : timedOut ? 'EXECUTION_TIMEOUT' : cancelled ? 'EXECUTION_CANCELLED' : (workerCode ?? 'EXECUTION_FAILED');
-          throw Object.assign(new Error(code), { code, details: { causal: diagnostic, executionId: envelope.attemptId,
+          throw Object.assign(new Error(code), { code, cause: processError ?? parseError, details: { causal: diagnostic, executionId: envelope.attemptId,
             codexUsage: normalizeCodexUsage(err.truncated ? undefined : diagnostic?.codexUsage),
             childState: spawnFailed ? 'not_started' : diagnostic?.observed?.child ?? 'unknown', containment,
             primaryCause: diagnostic?.primaryCause ?? processError?.code ?? null, syscall: processError?.syscall,
@@ -140,8 +179,9 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         child?.stdio?.[3]?.destroy();
         if (child && !termination) {
           try { if (!await reap()) containment = 'unknown'; }
-          catch { containment = 'unknown'; }
+          catch (error) { containment = 'unknown'; observeError(error, 'reap-dispatch'); }
         }
+        if (pendingError) await preserveFailure(pendingError, 'dispatch');
         const failure = pendingError ? failureDiagnosticFromDetails({ ...pendingError.details,
           executionId: envelope.attemptId, code: pendingError.code, operation: 'dispatch', stage: 'dispatcher',
           childState: pendingError.details?.childState ?? (child ? 'unknown' : 'not_started'),
@@ -152,9 +192,10 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         try {
           // The finalizer re-reads the runtime capsule. Do not replace its
           // primary evidence with the dispatcher's initial reservation state.
-          lifecycle = await finalizeArtifacts({ executionId: envelope.attemptId, containment, fallbackStore, failure });
+          lifecycle = await finalizeArtifacts({ executionId: envelope.attemptId, containment, fallbackStore, failure, diagnosticStore, readDiagnosticConfig });
           runtimeLifecycle = lifecycle;
         } catch (error) {
+          await preserveFailure(error, 'finalization');
           lifecycle = error.details ?? {};
           // Keep a proven semantic result when only bounded cleanup failed and
           // that cleanup's process is also contained. Retain the resource and

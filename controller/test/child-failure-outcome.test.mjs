@@ -36,7 +36,7 @@ for (const example of [
   const diagnosticStore = async value => {
     if (example.storeFails) throw Object.assign(new Error(privateText), { code: 'ENOSPC' });
     primary.push(value);
-    return { status: 'stored', executionId: value.executionId };
+    return { status: 'stored', executionId: value.executionId, mode: value.mode };
   };
   const launcher = {
     ...buildChildDiagnostic({ code: 'PROCESS_IO_ERROR', childStarted: !example.notStarted, exitCode: example.exit,
@@ -46,6 +46,7 @@ for (const example of [
     childExitCode: example.exit, signal: example.signal, primaryCause: example.notStarted ? 'EACCES' : null
   };
   const dispatcher = createOnDemandDispatchAdapter({
+    diagnosticStore, readDiagnosticConfig: async () => ({ mode: 'normal' }),
     reserveDiagnostic: async ({ executionId }) => capsule = await reserveRuntimeDiagnostic({ executionId, root: join(f.root, 'fallback') }),
     spawnImpl: () => {
       const child = processFixture();
@@ -118,6 +119,59 @@ test('public child evidence rejects free text, invalid numbers and raw diagnosti
   assert.match(body, /Launcher diagnostic: UNAVAILABLE/);
   assert.match(body, /Codex child: unknown; exit code: UNAVAILABLE; signal: UNAVAILABLE/);
   assert.doesNotMatch(body, /private-prompt-fixture|protected\/private-file|synthetic-private-secret/);
+});
+
+test('later unknown recorder state preserves definite child observations without strengthening containment', () => {
+  for (const example of [
+    { inherited: 'started', expected: 'started' },
+    { inherited: 'not_started', expected: 'not_started' },
+    { inherited: 'unknown', expected: 'unknown' },
+    { inherited: privateText, expected: 'unknown' },
+    { inherited: 'unknown', childStarted: true, expected: 'started' },
+    { inherited: 'unknown', childStarted: false, expected: 'not_started' },
+    { inherited: 'unknown', child: 'started', expected: 'started' },
+    { inherited: 'not_started', current: 'started', expected: 'started' }
+  ]) {
+    const diagnostic = causalEvidence({ code: 'CODEX_RUNTIME_TIMEOUT', details: {
+      causal: { observed: { child: example.inherited, exitCode: null, signal: 'SIGTERM' } },
+      failureDiagnostic: { childState: example.current ?? 'unknown', childStarted: example.childStarted,
+        containment: 'unknown', cleanup: 'retained' }
+    } }, { child: example.child });
+    assert.equal(diagnostic.observed.child, example.expected);
+    assert.equal(diagnostic.observed.signal, 'SIGTERM');
+    assert.equal(diagnostic.executionState, example.expected === 'started' ? 'confirmed'
+      : example.expected === 'not_started' ? 'known-not-executed' : 'uncertain');
+    assert.equal(diagnostic.containment, 'unknown');
+    assert.equal(diagnostic.runtime.cleanup, 'retained');
+    assert.equal(diagnostic.runtime.containment, 'unknown');
+    const body = terminalOutcomeBody({}, { terminalCode: 'CODEX_RUNTIME_TIMEOUT', diagnostic });
+    assert.match(body, new RegExp(`Codex child: ${example.expected}; exit code: UNAVAILABLE; signal: SIGTERM`));
+    assert.doesNotMatch(body, /private-prompt-fixture|protected\/private-file|synthetic-private-secret/);
+  }
+});
+
+test('runtime timeout remains the cause when its termination produces a cancellation receipt', () => {
+  for (const example of [
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EXECUTION_CANCELLED', expected: 'CODEX_RUNTIME_TIMEOUT' },
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EXECUTION_CANCELLED', inherited: true, expected: 'CODEX_RUNTIME_TIMEOUT' },
+    { code: 'EXECUTION_CANCELLED', cause: 'EXECUTION_CANCELLED', expected: 'EXECUTION_CANCELLED' },
+    { code: 'CODEX_NONZERO_EXIT', cause: 'EXECUTION_CANCELLED', expected: 'EXECUTION_CANCELLED' },
+    { code: 'CODEX_RUNTIME_TIMEOUT', cause: 'EIO', expected: 'EIO' }
+  ]) {
+    const diagnostic = causalEvidence({ code: example.code, details: {
+      ...(example.inherited ? { causal: { primaryCause: example.cause } } : {}),
+      failureDiagnostic: { ...(example.inherited ? {} : { primaryCause: example.cause }),
+        diagnosticCode: 'EXECUTION_CANCELLED', childState: 'started', signal: 'SIGTERM' }
+    } });
+    assert.equal(diagnostic.primaryCause, example.expected);
+    assert.equal(diagnostic.classification.code, example.code);
+    assert.equal(diagnostic.launcher.diagnosticCode, 'EXECUTION_CANCELLED');
+    assert.equal(diagnostic.observed.child, 'started');
+    assert.equal(diagnostic.observed.signal, 'SIGTERM');
+    const body = terminalOutcomeBody({}, { terminalCode: example.code, diagnostic });
+    assert.match(body, new RegExp(`Cause summary: ${example.expected}`));
+    assert.match(body, /Launcher diagnostic: EXECUTION_CANCELLED/);
+  }
 });
 
 test('normal and debug truncation retain total observed bytes without raising capture limits', () => {

@@ -1,11 +1,11 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "c8e990bef9aabefe9ec0bd74141afdba7d2dfde1",
+  "contract_revision": "7f95a60c485ccf40025dae78f652adc8df3b19ea",
   "contract_revision_role": "accepted-baseline",
   "contract_source": "source-tree",
   "name": "codex-relay",
-  "publication": "MAJOR 8.0.0 candidate from accepted 7.0.0; trusted Task requirement drift permits safe automatic source publication, separate execution control, same-head changed-authority CR continuation; no installation or publication claim",
+  "publication": "MAJOR 9.0.0 candidate from independently accepted 8.0.0; Task 244 protected causal evidence, live lifecycle progress and failed Actions status for terminal BLOCKED results; no installation or publication claim",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -15,6 +15,6 @@
   "shared_requirement": ">=10.0.0",
   "shared_source_revision": "c207adca23cb3c022dac9ea953dd96364097fa85",
   "shared_version": "10.0.0",
-  "version": "8.0.0",
+  "version": "9.0.0",
   "workflow_contract": "relay-workflows-v4"
 }

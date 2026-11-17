@@ -117,7 +117,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--phase') + 1], 'install')
         self.assertEqual(argv[argv.index('--resolved-revision') + 1], OLD)
         self.assertNotIn('--expected-installed-head', argv)
-        self.assertFalse(self.gate.calls)
+        self.assertEqual(self.gate.calls, [('status',)])
         self.assertEqual(self.parser_inputs, [(self.source, self.raw)])
         self.assertEqual(self.readbacks[0][2], self.receipt)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + OLD, output)
@@ -145,7 +145,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--install-recovery-target') + 1], OLD)
         self.assertEqual(argv[argv.index('--resolved-revision') + 1], HEAD)
         self.assertEqual(observed, [(raw, 0o600)])
-        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(self.gate.calls, [('status',)])
         self.assertEqual(len(self.readbacks), 1)
 
     def test_unavailable_maintenance_stops_recover_and_apply_never_infers_recovery(self):
@@ -174,7 +174,16 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.readbacks[0][1:3], (frozen_product, original))
         self.assertIn('RELAY_GIT_RECOVERY_CONTROLLER=' + HEAD, output)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + frozen_product, output)
-        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(self.gate.calls, [('status',)])
+
+    def test_successful_backend_and_installed_pair_do_not_imply_open_admission(self):
+        self.gate = Gate(phase='recovery-required')
+        with self.assertRaisesRegex(ValueError, '^git-apply-admission-not-open$'):
+            self.invoke()
+        self.assertEqual(len(self.primitive), 1)
+        self.assertEqual(len(self.readbacks), 1)
+        self.assertEqual(self.gate.calls, [('status',)])
+        self.assertEqual(self.gate.phase, 'recovery-required')
 
     def test_wrong_source_namespace_owner_or_install_root_stop_before_primitive(self):
         for modify in [lambda: self.desired['environment'].update(namespace='foreign'),
@@ -334,6 +343,24 @@ class GitOwnerLifecycleTests(unittest.TestCase):
 
 
 class SelectedTargetConfigTests(unittest.TestCase):
+    def test_selected_parser_keeps_native_stderr_behind_the_original_public_code(self):
+        with REAL_TEMPORARY(prefix='relay-selected-parser-failure-') as directory:
+            source = Path(directory)
+            (source / 'deploy').mkdir()
+            (source / 'deploy/config.py').write_text('raise RuntimeError("native parser loader failed")\n')
+            with self.assertRaisesRegex(ValueError, '^git-selected-config-invalid$') as caught:
+                owner.selected_config(source, b'{}')
+            self.assertIn(b'native parser loader failed', caught.exception.__cause__.stderr)
+            self.assertNotIn('native parser loader failed', str(caught.exception))
+
+    def test_git_failure_retains_actionable_transport_stderr(self):
+        error = owner.subprocess.CalledProcessError(7, ['fixed-git-fetch'], stderr='TLS peer verification failed')
+        with patch.object(owner.subprocess, 'check_output', side_effect=error) as invoke:
+            with self.assertRaises(owner.subprocess.CalledProcessError) as caught:
+                owner.git('/fixture', 'fetch', 'https://github.com/example/product.git', HEAD)
+        self.assertEqual(caught.exception.stderr, 'TLS peer verification failed')
+        self.assertIs(invoke.call_args.kwargs['stderr'], owner.subprocess.PIPE)
+
     def test_parser_executes_target_schema_in_isolated_process(self):
         with REAL_TEMPORARY(prefix='relay-selected-parser-') as directory:
             source = Path(directory)
@@ -407,6 +434,13 @@ class SelectedTargetConfigTests(unittest.TestCase):
                 owner.git_result(install, HEAD, receipt, desired)
                 owner.git_result(install, HEAD, {**receipt, 'workflow_run_id': 32}, desired)
                 self.assertEqual(manifest['gitConfigReceipt']['workflow_run_id'], 31)
+                consumer_module = source / 'consumer/consumer-config.mjs'
+                original_module = consumer_module.read_bytes()
+                consumer_module.write_text('throw new Error("native consumer loader failed");\n')
+                with self.assertRaisesRegex(ValueError, '^git-consumer-readback-mismatch$') as caught:
+                    owner.git_result(install, HEAD, receipt, desired)
+                self.assertIn('native consumer loader failed', caught.exception.__cause__.stderr)
+                consumer_module.write_bytes(original_module)
                 actual['defaultProfile']['effort'] = 'low'
                 with self.assertRaisesRegex(ValueError, '^git-consumer-readback-mismatch$'):
                     owner.git_result(install, HEAD, receipt, desired)

@@ -108,7 +108,7 @@ export async function git(cwd, args, { token, allowFailure = false, allowedExitC
   } catch (error) {
     if (Number.isInteger(error.code) && (allowFailure || allowedExitCodes.includes(error.code))
       && !(rejectStderr && String(error.stderr ?? '').trim())) return null;
-    const failure = new Error('TRUSTED_GIT_FAILED'); failure.code = 'TRUSTED_GIT_FAILED';
+    const failure = new Error('TRUSTED_GIT_FAILED', { cause: error }); failure.code = 'TRUSTED_GIT_FAILED';
     failure.details = { failureDiagnostic: gitFailureDetails(error, args, token) };
     throw failure;
   }
@@ -313,7 +313,7 @@ async function importCandidateObjects(dir, metadata, device, head) {
 }
 function sourceFailure(error, operation, observedHead) {
   if (error.code === 'TRUSTED_GIT_FAILED' || error.code && !/^E[A-Z0-9]+$/.test(error.code)) throw error;
-  const failure = new Error('TRUSTED_GIT_FAILED'); failure.code = 'TRUSTED_GIT_FAILED';
+  const failure = new Error('TRUSTED_GIT_FAILED', { cause: error }); failure.code = 'TRUSTED_GIT_FAILED';
   const safeReasons = new Set(['WORKTREE_CHANGED_DURING_OBSERVATION', 'WORKTREE_OBSERVATION_TOO_LARGE',
     'WORKTREE_OBSERVATION_TOO_DEEP', 'WORKTREE_PATH_ENCODING_INVALID']);
   const reason = /^E[A-Z0-9]+$/.test(error.code ?? '') ? error.code

@@ -173,7 +173,7 @@ def run(args):
             assert failure['controller'] == controller and failure['target'] == desired
             assert failure['hostMutation'] == 'unknown' and failure['automaticRetrySafe'] is False
             assert failure['stage'] == 'activation-verification'
-            assert failure['log'] == '/var/log/fixture-recovery.log'
+            assert failure['log'] == 'protected-deployment-log'
     else:
         result = recovery.run(args, root, {'revision': controller}, guard_factory=lambda *_a: Guard())
         assert result['product'] == desired and result['controller'] == controller

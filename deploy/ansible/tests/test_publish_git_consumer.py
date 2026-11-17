@@ -58,6 +58,51 @@ class ControllerDiagnosticTests(unittest.TestCase):
         self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
             'failure': 'nonzero_exit', 'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED'})
 
+    def test_enriched_cli_errors_and_independent_fallback_preserve_native_code_and_timing(self):
+        timing = dict(elapsedMs=2, originalCalls=0, originalMs=0, nativeCalls=0, nativeMs=0,
+                      compositeCalls=1, compositeMs=1)
+        stored = {'status': 'stored', 'executionId': 'host-unknown-fixture', 'mode': 'normal'}
+        unavailable = {'status': 'unavailable', 'executionId': 'host-unknown-fixture',
+            'code': 'DIAGNOSTICS_STORE_FAILED', 'storeCode': 'ENOSPC',
+            'fallbackReference': {'status': 'stored', 'executionId': 'host-unknown-fixture', 'slot': 0}}
+        both_unavailable = {**unavailable, 'fallbackCode': 'EROFS', 'originalCode': 'ADMISSION_NOT_DRAINED',
+            'originalEvidence': 'observed_not_retained',
+            'fallbackReference': {'status': 'unavailable', 'executionId': 'host-unknown-fixture', 'code': 'EROFS'}}
+        compact = lambda value: json.dumps(value, separators=(',', ':'))
+        for reference in (stored, unavailable, both_unavailable):
+            for action in ('consumer-transition-check', 'consumer-transition'):
+                with self.subTest(reference=reference['status'], action=action):
+                    stderr = 'RELAY_TRANSITION_TIMING ' + compact(timing) + '\n'
+                    if reference is both_unavailable:
+                        stderr += 'RELAY_DIAGNOSTIC_UNAVAILABLE ' + compact(reference) + '\n'
+                    stderr += compact({'code': 'ADMISSION_NOT_DRAINED', 'diagnosticStore': reference}) + '\n'
+                    diagnostic = self.failure('import sys;sys.stderr.write(' + repr(stderr) + ');sys.exit(1)', action=action)
+                    self.assertEqual(diagnostic, {'action': action, 'failure': 'nonzero_exit',
+                        'exit_code': 1, 'code': 'ADMISSION_NOT_DRAINED', 'timing': timing})
+                    self.assertNotIn('diagnosticStore', diagnostic)
+
+    def test_private_or_malformed_diagnostic_fields_never_promote_a_native_code(self):
+        reference = {'status': 'stored', 'executionId': 'host-fixture', 'mode': 'normal'}
+        malformed = [None, [], {'status': 'stored'}, {**reference, 'mode': 'private-mode'},
+            {**reference, 'executionId': '/private/path'}, {**reference, 'executionId': 'x' * 129},
+            {**reference, 'preview': 'private token'},
+            {'status': 'unavailable', 'executionId': 'host-fixture', 'code': 'DIAGNOSTICS_STORE_FAILED'},
+            {'status': 'unavailable', 'executionId': 'host-fixture', 'code': 'DIAGNOSTICS_STORE_FAILED',
+             'storeCode': 'ENOSPC', 'fallbackReference': {'status': 'stored', 'executionId': 'host-fixture', 'slot': True}}]
+        compact = lambda value: json.dumps(value, separators=(',', ':'))
+        streams = [compact({'code': 'ADMISSION_FAILED', 'diagnosticStore': item}) for item in malformed]
+        streams += [
+            '{"code":"ADMISSION_FAILED","diagnosticStore":{"status":"stored","status":"stored","executionId":"fixture","mode":"normal"}}',
+            'RELAY_DIAGNOSTIC_UNAVAILABLE {"status":"unavailable","message":"private token"}\n{"code":"ADMISSION_FAILED"}',
+            'RELAY_DIAGNOSTIC_UNAVAILABLE ' + compact(reference) + '\n{"code":"ADMISSION_FAILED"}',
+            compact({'code': 'ADMISSION_FAILED', 'diagnosticStore': reference, 'path': '/private/path'}),
+            compact({'code': 'ADMISSION_FAILED', 'diagnosticStore': reference}) + '\n{"code":"SECOND"}']
+        for stderr in streams:
+            with self.subTest(stderr=stderr[:80]):
+                diagnostic = self.failure('import sys;sys.stderr.write(' + repr(stderr) + ');sys.exit(7)')
+                self.assertEqual(diagnostic, {'action': 'consumer-transition-check',
+                    'failure': 'nonzero_exit', 'exit_code': 7})
+
     def test_invalid_noisy_oversize_and_duplicate_envelopes_never_expose_stderr(self):
         for stderr in ('', 'private token /private/path', '{"code":"private-token"}',
                        '{"code":"ADMISSION_FAILED","path":"/private/path"}',

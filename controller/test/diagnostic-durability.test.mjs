@@ -177,6 +177,8 @@ test('repeated native dispatcher spawn failures archive their proven no-child st
   const root = await fixture(t); const fallbackRoot = join(root, 'fallback'); const primaryRoot = join(root, 'primary');
   let spawns = 0;
   const adapter = createOnDemandDispatchAdapter({
+    diagnosticStore: value => writeDiagnosticBundle(value, { root: primaryRoot }),
+    readDiagnosticConfig: async () => ({ mode: 'normal' }),
     reserveDiagnostic: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: fallbackRoot }),
     spawnImpl: () => { spawns++; throw Object.assign(new Error('dispatch could not start'), { code: 'EACCES', syscall: 'spawn' }); },
     finalizeArtifacts: options => finalizeRuntimeArtifacts({ ...options,
@@ -203,6 +205,8 @@ test('proven no-runtime dispatch archive follows the existing debug diagnostics 
   const root = await fixture(t); const fallbackRoot = join(root, 'fallback'); const primaryRoot = join(root, 'primary');
   const envelope = currentEnvelope({ runId: 900 });
   const adapter = createOnDemandDispatchAdapter({
+    diagnosticStore: value => writeDiagnosticBundle(value, { root: primaryRoot, mode: 'debug' }),
+    readDiagnosticConfig: async () => ({ mode: 'debug' }),
     reserveDiagnostic: ({ executionId }) => reserveRuntimeDiagnostic({ executionId, root: fallbackRoot }),
     spawnImpl: () => { throw Object.assign(new Error('dispatch could not start'), { code: 'EACCES', syscall: 'spawn' }); },
     finalizeArtifacts: options => finalizeRuntimeArtifacts({ ...options, readDiagnosticConfig: async () => ({ mode: 'debug' }),

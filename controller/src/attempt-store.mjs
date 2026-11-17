@@ -6,23 +6,26 @@ import { positive, fail, REPOSITORY } from './execution-contract.mjs';
 import { withStoreLock } from './store-lock.mjs';
 import { INSTALLATION_CONSUMER } from '../../consumer/consumer.mjs';
 import { configuredRepositories } from '../../consumer/consumer-config.mjs';
+import { recordEntrypointFailure } from './repository-entrypoint.mjs';
 export const ATTEMPT_RECORD_BYTES = 512 * 1024;
+const recordFailureError = (code, observation) => Object.assign(new Error(code), { code, observation });
 
 // Root broker uses its repository lock; runner attempts claim their own run.
 // Historical numeric filenames stay readable in separately scoped roots.
-export function createAttemptStore(root, { repository = REPOSITORY, repositories = [repository], namespace = false } = {}) {
+export function createAttemptStore(root, { repository = REPOSITORY, repositories = [repository], namespace = false,
+  recordFailure = recordEntrypointFailure } = {}) {
   const targetRoot = target => {
-    if (!repositories.includes(target)) fail('ATTEMPT_REPOSITORY_MISMATCH');
+    if (!repositories.includes(target)) throw recordFailureError('ATTEMPT_REPOSITORY_MISMATCH', { check: 'attempt-store-repository', expected: repositories, observed: target });
     return namespace ? join(root, 'repositories', ...target.split('/')) : root;
   };
   const path = (id, target = repository) => { if (!positive(id)) fail('RUN_ID_INVALID'); return join(targetRoot(target), `${id}.json`); };
   const validate = (value, target = repository) => {
-    if (value?.envelope && value.envelope.repository !== target) fail('ATTEMPT_REPOSITORY_MISMATCH');
+    if (value?.envelope && value.envelope.repository !== target) throw recordFailureError('ATTEMPT_REPOSITORY_MISMATCH', { check: 'attempt-record-repository', expected: target, observed: value.envelope.repository });
     return value;
   };
   const encode = value => {
     const bytes = JSON.stringify(validate(value), null, 2) + '\n';
-    if (Buffer.byteLength(bytes) > ATTEMPT_RECORD_BYTES) fail('ATTEMPT_RECORD_TOO_LARGE');
+    if (Buffer.byteLength(bytes) > ATTEMPT_RECORD_BYTES) throw recordFailureError('ATTEMPT_RECORD_TOO_LARGE', { check: 'attempt-record-byte-limit', expected: ATTEMPT_RECORD_BYTES, observed: Buffer.byteLength(bytes) });
     return bytes;
   };
   async function syncDirectory() {
@@ -41,7 +44,9 @@ export function createAttemptStore(root, { repository = REPOSITORY, repositories
     const pathname = path(id, target);
     let value;
     try { value = JSON.parse(await readFile(pathname, 'utf8')); }
-    catch (error) { if (error.code === 'ENOENT') return null; fail('ATTEMPT_RECORD_UNREADABLE'); }
+    catch (error) { if (error.code === 'ENOENT') return null;
+      throw Object.assign(new Error('ATTEMPT_RECORD_UNREADABLE', { cause: error }), {
+        code: 'ATTEMPT_RECORD_UNREADABLE', native: { operation: 'attempt-record-read', path: pathname, runId: id, repository: target } }); }
     return validate(value, target);
   }
   async function scan() {
@@ -57,11 +62,24 @@ export function createAttemptStore(root, { repository = REPOSITORY, repositories
           const record = await readRecord(runId, target);
           const error = record === null ? 'ATTEMPT_RECORD_UNAVAILABLE'
             : !record?.envelope || record.envelope.runId !== runId ? 'ATTEMPT_RECORD_INVALID' : null;
-          rows.push({ runId, repository: target, record, error });
+          const row = { runId, repository: target, record, error };
+          if (error) {
+            const cause = Object.assign(new Error(error), { code: error, observation: {
+              check: 'attempt-record-identity', expected: { runId, repository: target },
+              observed: { exists: record !== null, runId: record?.envelope?.runId, repository: record?.envelope?.repository } } });
+            Object.defineProperty(row, 'cause', { value: cause });
+            const diagnosticStore = await recordFailure(cause, 'attempt-store-scan');
+            if (diagnosticStore) row.diagnosticStore = diagnosticStore;
+          }
+          rows.push(row);
         } catch (error) {
           // Preserve the known namespace/run identity. Callers may scope a
           // check, but cannot silently turn an unreadable row into absence.
-          rows.push({ runId, repository: target, record: null, error: error.code ?? 'ATTEMPT_RECORD_UNREADABLE' });
+          const row = { runId, repository: target, record: null, error: error.code ?? 'ATTEMPT_RECORD_UNREADABLE' };
+          const diagnosticStore = await recordFailure(error, 'attempt-store-scan');
+          if (diagnosticStore) row.diagnosticStore = diagnosticStore;
+          Object.defineProperty(row, 'cause', { value: error });
+          rows.push(row);
         }
       }
     }
@@ -100,7 +118,7 @@ export function createAttemptStore(root, { repository = REPOSITORY, repositories
     },
     scan,
     async all() {
-      return (await scan()).map(row => { if (row.error) fail(row.error); return row.record; });
+      return (await scan()).map(row => { if (row.error) throw Object.assign(new Error(row.error, { cause: row.cause }), { code: row.error }); return row.record; });
     }
   };
 }

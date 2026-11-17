@@ -91,11 +91,22 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
         result = subprocess.run([str(helper), 'stop:' + values['relay_release_commit']
                                  + ':' + values['relay_release_commit']],
                                 text=True, capture_output=True, timeout=15)
-        assert result.returncode == 1 and result.stdout == '', result
+        assert result.returncode == 1, result
         if accepted:
-            assert result.stderr == ('RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;'
-                                     'inspect-state-and-protected-deployment-log\n'), result.stderr
+            assert result.stdout == ('RELAY_LIFECYCLE_PROGRESS=PREFLIGHT;target='
+                                     + values['relay_release_commit'] + '\n'), result.stdout
+            evidence, blocked = result.stderr.splitlines()
+            prefix = 'RELAY_DEPLOYMENT_FAILURE_EVIDENCE='
+            assert evidence.startswith(prefix), evidence
+            receipt = json.loads(evidence[len(prefix):])
+            assert receipt['phase'] == 'owner-lifecycle', receipt
+            assert receipt['status'] in ['stored', 'submitted', 'unavailable'], receipt
+            if receipt['status'] == 'unavailable':
+                assert receipt['reason'] in ['HOST_JOURNAL_UNAVAILABLE', 'NO_CONFIGURED_HOST_STORE'], receipt
+            assert blocked == ('RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;'
+                               'inspect-state-and-protected-deployment-log'), blocked
         else:
+            assert result.stdout == '', result.stdout
             assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=' not in result.stderr, result.stderr
             assert 'AssertionError' in result.stderr, result.stderr
 
@@ -221,7 +232,36 @@ def consumer_trust_chain_proof(temp, values, env, deploy_umask, config, source):
         result = subprocess.run(['/usr/sbin/runuser', '-u', values['relay_runner_user'], '--',
             'sudo', '-n', str(wrapper)], input='{', env=clean_env, text=True, capture_output=True, timeout=15)
         assert result.returncode == 1 and result.stdout == '', result
-        assert result.stderr == json.dumps({'code': expected}, separators=(',', ':')) + '\n', result.stderr
+        rejected = json.loads(result.stderr)
+        assert rejected['code'] == expected, rejected
+        assert rejected.keys() == {'code', 'diagnosticStore'}, rejected
+        receipt = rejected['diagnosticStore']
+        assert receipt['status'] == 'stored' and receipt['mode'] == 'normal', receipt
+        identity = receipt['executionId']
+        assert re.fullmatch(r'host-unknown-[a-f0-9-]{36}', identity), receipt
+        # Read the actual protected archive in this disposable host namespace.
+        # A public receipt alone is not durability/readability evidence.
+        root = Path(json.loads(consumer.read_text())['paths']['diagnosticsRoot'])
+        stored = root / (identity + '.json')
+        metadata = stored.lstat()
+        assert stat.S_ISREG(metadata.st_mode) and metadata.st_nlink == 1, metadata
+        assert (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)) == (0, 0, 0o600), metadata
+        raw = stored.read_text()
+        assert len(raw.encode()) <= 1024 * 1024 and 'fixture-only-credential' not in raw
+        diagnostic = json.loads(raw)
+        assert diagnostic['executionId'] == identity and diagnostic['mode'] == receipt['mode'], diagnostic
+        assert diagnostic['classification'] == expected and diagnostic['phase'] == 'authority', diagnostic
+        assert diagnostic['lifecycle']['operation'] == 'writer-bootstrap', diagnostic
+        causal = diagnostic['causalEvidence']
+        assert causal['phase'] == 'authority' and causal['operation'] == 'writer-bootstrap', causal
+        assert causal['exception']['available'] and not causal['exception']['truncated'], causal
+        chain = json.loads(causal['exception']['text'])['chain']
+        # The original JSON parser/ownership error and its safe wrapper both
+        # survive. Do not assert a Node-version-specific exception message.
+        assert len(chain) >= 2 and chain[0]['message']['text'], chain
+        assert chain[-1]['code']['text'] == expected, chain
+        if expected == 'REQUEST_INVALID':
+            assert chain[0]['name']['text'] == 'SyntaxError', chain
 
     def ordinary_load():
         run(['/usr/sbin/runuser', '-u', 'relay-general-runner', '--', '/usr/bin/node',
@@ -1041,12 +1081,14 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         diagnostics_before = set(Path('/var/lib/codex-relay/debug').glob('*.json'))
         rust_test = [*node_command, '--test-name-pattern=dedicated Rust development', test_path]
         run_installed(rust_test, env={**env, 'INSTALLED_RUST_LINKER': 'missing', 'INSTALLED_FIXTURE_EVENT_BASE': '960'}, umask=deploy_umask)
-        # The original Cargo cause and the independent retirement archive are
-        # separate records. Bind both exact IDs instead of counting every new
-        # diagnostic as though it were another child execution.
+        # The original Cargo cause, dispatcher failure and retirement archive
+        # are separate records for one child. Bind all exact identities and
+        # inspect their distinct evidence instead of treating a diagnostic as
+        # another child execution.
         diagnostics_root = Path('/var/lib/codex-relay/debug')
         added_diagnostics = set(diagnostics_root.glob('*.json')) - diagnostics_before
         expected_diagnostics = {diagnostics_root / 'run-960.json',
+                                diagnostics_root / 'run-960-dispatch.json',
                                 diagnostics_root / 'run-960-finalization.json'}
         assert added_diagnostics == expected_diagnostics, added_diagnostics
         original_path = diagnostics_root / 'run-960.json'
@@ -1055,6 +1097,25 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         final_path = diagnostics_root / 'run-960-finalization.json'
         final = json.loads(final_path.read_bytes())
         assert original['executionId'] == 'run-960' and original['classification'] == 'CODEX_NONZERO_EXIT'
+        dispatcher_path = diagnostics_root / 'run-960-dispatch.json'
+        dispatcher = json.loads(dispatcher_path.read_bytes())
+        assert dispatcher['executionId'] == 'run-960-dispatch' and dispatcher['phase'] == 'dispatcher', dispatcher
+        assert dispatcher['classification'] == original['classification'], dispatcher
+        assert dispatcher['lifecycle'] == {'operation': 'dispatch', 'containment': 'reaped'}, dispatcher
+        causal = dispatcher['causalEvidence']
+        assert causal['executionId'] == original['executionId'], causal
+        assert causal['phase'] == 'dispatcher' and causal['operation'] == 'dispatch', causal
+        assert len(json.dumps(causal).encode()) <= 64 * 1024, 'RUST_PROOF_DISPATCH_CAUSE_UNBOUNDED'
+        assert causal['process']['observed'] and causal['process']['exitCode'] == 1, causal
+        assert causal['exception']['available'] and original['classification'] in causal['exception']['text'], causal
+        assert causal['stderr']['available'] and not causal['stderr']['truncated'], causal
+        # Preserve the actual emitted dispatch failure, with its original
+        # runtime archive reference, rather than another high-level code alone.
+        emitted = json.loads(causal['stderr']['text'])
+        assert emitted['status'] == 'blocked' and emitted['code'] == original['classification'], emitted
+        assert emitted['diagnostic']['executionId'] == original['executionId'], emitted
+        assert emitted['diagnostic']['observed']['child'] == 'started', emitted
+        assert emitted['diagnostic']['durable']['diagnosticStore']['executionId'] == original['executionId'], emitted
         assert final['executionId'] == 'run-960-finalization' and final['phase'] == 'finalization'
         lifecycle = final['lifecycle']
         assert lifecycle['childState'] == 'started' and lifecycle['containment'] == 'reaped', lifecycle
@@ -1070,9 +1131,13 @@ def proof(runtime_only=False, rust_archive=None, consumer_only=False):
         assert capsule['diagnosticStore'] == lifecycle['diagnosticStore'], capsule
         assert capsule['failureDiagnostic'] == lifecycle['failureDiagnostic'], capsule
         for path in expected_diagnostics:
-            assert not path.is_symlink() and (path.stat().st_uid, stat.S_IMODE(path.stat().st_mode)) == (0, 0o600)
+            info = path.lstat()
+            assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1, info
+            assert (info.st_uid, info.st_gid, stat.S_IMODE(info.st_mode)) == (0, 0, 0o600), info
+            raw = path.read_bytes()
+            assert len(raw) <= 16 * 1024 * 1024 and b'fixture-only-credential' not in raw, path
         records = launcher_diagnostics_since(diagnostics_before)
-        assert len(records) == 2, 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
+        assert len(records) == len(expected_diagnostics), 'RUST_PROOF_DIAGNOSTIC_BINDING_CHANGED'
         child_records = [record for record in records if record['code'] is not None]
         assert len(child_records) == 1, 'RUST_PROOF_CAUSAL_DIAGNOSTIC_MISSING'
         records = child_records

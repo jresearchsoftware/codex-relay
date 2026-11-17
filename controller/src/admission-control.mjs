@@ -2,8 +2,8 @@ import { constants } from 'node:fs';
 import { open, lstat, rename } from 'node:fs/promises';
 import { dirname, join, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
-import { CONSUMER } from '../../consumer/consumer.mjs';
+import { parseConsumerJson, configuredRepositories } from '../../consumer/consumer-config.mjs';
+import { CONSUMER, INSTALLATION_CONSUMER } from '../../consumer/consumer.mjs';
 import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './execution-contract.mjs';
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord,
@@ -15,6 +15,18 @@ const PHASES = new Set(['open', 'quiesced', 'drained', 'applying', 'verified', '
 const operation = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
 const fields = ['version', 'consumerDigest', 'phase', 'operationId', 'target', 'previousActive', 'verifiedRevision'];
 const configDigest = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+// Project only native location fields bound to the protected installation.
+// Missing historical slot identity must stay missing rather than defaulting it.
+export function verifiedPendingLocation(value, installation = INSTALLATION_CONSUMER) {
+  if (typeof value?.repository !== 'string'
+    || !/^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(value.repository)
+    || !configuredRepositories(installation).includes(value.repository)) return {};
+  const slot = value.executionSlot;
+  return { repository: value.repository,
+    ...(typeof slot === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(slot)
+      && installation.executionSlots?.some(item => item.id === slot) ? { executionSlot: slot } : {}) };
+}
+
 // A lifecycle completion may predate native body hashes. Validate the original
 // terminal core without requiring a new journal or rewriting retained receipts.
 export function terminalAdmissionOutcome(record) {
@@ -185,7 +197,7 @@ function validServices(value) {
 // The gate is the sole lifecycle admission state; active reservations stay in
 // the existing Writer attempts, alongside their immutable admission.
 export function createAdmissionControl({ root, consumerDigest, store, journal, protectedRoot = true,
-  stateName = 'admission-v1.json', supplementalInventory = null, supplementalVerify = null, checkoutAbsent = null }) {
+  stateName = 'admission-v1.json', installation = INSTALLATION_CONSUMER, supplementalInventory = null, supplementalVerify = null, checkoutAbsent = null }) {
   if (!isAbsolute(root) || !/^[a-f0-9]{64}$/.test(consumerDigest ?? '')
     || !['admission-v1.json', 'admission-pool-v1.json'].includes(stateName)
     || (supplementalInventory !== null && typeof supplementalInventory !== 'function')
@@ -220,13 +232,16 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     await protect();
     let file;
     try { file = await open(pathname, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK); }
-    catch (error) { if (error.code === 'ENOENT' && missing) return null; fail(error.code === 'ENOENT' ? 'ADMISSION_STATE_MISSING' : 'ADMISSION_STATE_UNREADABLE'); }
+    catch (cause) { if (cause.code === 'ENOENT' && missing) return null;
+      const code = cause.code === 'ENOENT' ? 'ADMISSION_STATE_MISSING' : 'ADMISSION_STATE_UNREADABLE';
+      throw Object.assign(new Error(code, { cause }), { code }); }
     try {
       const stat = await file.stat();
       if (!stat.isFile() || stat.nlink !== 1 || stat.size > ADMISSION_STATE_BYTES || (stat.mode & 0o077)
         || (protectedRoot && stat.uid !== 0)) fail('ADMISSION_STATE_UNSAFE');
       let value;
-      try { value = parseConsumerJson(await file.readFile('utf8')); } catch { fail('ADMISSION_STATE_INVALID'); }
+      try { value = parseConsumerJson(await file.readFile('utf8')); }
+      catch (cause) { throw Object.assign(new Error('ADMISSION_STATE_INVALID', { cause }), { code: 'ADMISSION_STATE_INVALID' }); }
       return validate(value, previousDigest);
     } finally { await file.close(); }
   }
@@ -314,7 +329,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (identity && task !== null && identity.issueNumber !== task) continue;
       if (identity && slot !== null && (identity.executionSlot ?? 'primary') !== slot) continue;
       if (row.error || !identity) {
-        throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID'), { code: 'ADMISSION_ATTEMPT_INVALID',
+        throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID', { cause: row.cause }), { code: 'ADMISSION_ATTEMPT_INVALID',
+          observation: { check: 'inventory.record', expected: 'readable native envelope', observed: { runId: row.runId, code: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } },
           details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } });
       }
       // A handoff is not evidence of physical runner occupation.
@@ -365,7 +381,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
             && !await journal.get(e.runId, e.repository) ? true : await resourceReleased(record);
         }
         catch (error) {
-          throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE'), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
+          throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE', { cause: error }), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
             details: { conflictingRunId: e.runId, repository: e.repository, resource: slot,
               cause: /^[A-Z][A-Z0-9_]{0,100}$/.test(error.code ?? '') ? error.code : 'JOURNAL_UNREADABLE' } });
         }
@@ -420,7 +436,15 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         unknown.push(e.runId);
       }
     }
-    return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b) };
+    const pendingRuns = new Set([...active, ...unknown]);
+    const pending = rows.filter(row => pendingRuns.has(row.record?.envelope?.runId)).flatMap(row => {
+      const e = row.record.envelope;
+      const location = verifiedPendingLocation(e, installation);
+      return location.repository && positive(e.issueNumber) && positive(e.step)
+        && e.attemptId === `run-${e.runId}`
+        ? [{ task: e.issueNumber, step: e.step, runId: e.runId, ...location }] : [];
+    });
+    return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b), pending };
   }
   async function inventory(task = null, slot = null, resourceOnly = false) {
     const current = await currentInventory(task, slot, resourceOnly);
@@ -485,7 +509,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const state = bound(await read(), operationId);
       if (!['quiesced', 'drained'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
       const pending = await inventory();
-      if (pending.unknown.length) fail('ADMISSION_DRAIN_UNKNOWN');
+      if (pending.unknown.length) throw Object.assign(new Error('ADMISSION_DRAIN_UNKNOWN'), {
+        code: 'ADMISSION_DRAIN_UNKNOWN', observation: { check: 'drain.unknown', expected: [], observed: pending.unknown }, details: { inventory: pending } });
       if (pending.active.length) return { ...state, ...pending, drained: false };
       return { ...await write({ ...state, phase: 'drained' }), ...pending, drained: true };
     },

@@ -5,9 +5,11 @@ import { createAttemptStore } from './attempt-store.mjs';
 import { createLocalWriterAdapter } from './local-writer.mjs';
 import { reportRoutingResult } from './entrypoint.mjs';
 import { causalEvidence, digest, fail, positive, validateEnvelope } from './execution-contract.mjs';
-import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { failureDiagnosticFromDetails, captureCausalDiagnostic } from './diagnostics.mjs';
+import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { historicalProgram } from './serial-pool-program.mjs';
+import { randomUUID } from 'node:crypto';
 
 export function parseRecoveryRequest(request) {
   if (!request || !positive(request.runId) || !/^(?:event|run)-[1-9][0-9]*$/.test(request.attemptId ?? '')) fail('RECOVERY_REQUEST_INVALID');
@@ -85,12 +87,17 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
     await journal.put(runId, record);
     return record.outcome;
   } catch (error) {
+    record.publicationRecoveryEvidence = captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'writer-publication', operation: 'recover-attempt-publication', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }, { compact: true, maxBytes: 4096 });
     const failureDiagnostic = failureDiagnosticFromDetails(error?.details);
     record.diagnostic = { ...causalEvidence(error, { child: execution.child, containment: execution.containment,
       publishedHead: record.progress?.head, stage: 'writer-publication' }),
       orchestration: 'FAILED', codexUsage: normalizeCodexUsage(execution.codexUsage),
       ...(failureDiagnostic ? { publicationRecovery: failureDiagnostic } : {}) };
-    await journal.put(runId, record);
+    try { await journal.put(runId, record); }
+    catch (failure) {
+      Object.defineProperty(failure, 'native', { value: { ...failure.native, publicationRecovery: record.publicationRecoveryEvidence }, configurable: true });
+      throw failure;
+    }
     error.details = { ...error.details, diagnostic: record.diagnostic };
     throw error;
   }
@@ -109,14 +116,28 @@ export async function publicationRecoveryJournal(request, broker, { createStore 
   return createStore(journalRoot);
 }
 
-export async function main() {
+export async function main({ persistFailure = persistAttemptFailureDiagnostic } = {}) {
+  try { return await runRecovery(); }
+  catch (error) {
+    const durable = await persistFailure({ executionId: `publication-recovery-${randomUUID()}`, error, stage: 'writer-publication', lastSuccessfulBoundary: 'recovery-entrypoint' });
+    error.details = { ...error.details, ...durable };
+    throw error;
+  }
+}
+
+async function runRecovery() {
   if (process.argv.length !== 2) fail('RECOVERY_REQUEST_INVALID');
   let bytes = 0; const chunks = [];
   for await (const chunk of process.stdin) {
     bytes += chunk.length; if (bytes > 4096) fail('RECOVERY_REQUEST_INVALID'); chunks.push(chunk);
   }
   let request;
-  try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { fail('RECOVERY_REQUEST_INVALID'); }
+  try { request = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+  catch (cause) {
+    const error = Object.assign(new Error('RECOVERY_REQUEST_INVALID'), { code: 'RECOVERY_REQUEST_INVALID' });
+    Object.defineProperty(error, 'runtimeCause', { value: cause });
+    throw error;
+  }
   parseRecoveryRequest(request);
   const historical = await historicalProgram({ kind: 'publication-recovery', request, consumer: CONSUMER,
     consumerPath: process.env.RELAY_CONSUMER_CONFIG });

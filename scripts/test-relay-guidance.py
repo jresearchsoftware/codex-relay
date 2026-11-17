@@ -270,6 +270,25 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(provenance["source_files"]["scripts/build-relay-guidance.py"],
                          hashlib.sha256((root / "scripts/build-relay-guidance.py").read_bytes()).hexdigest())
 
+    def test_project_builder_rejects_stale_license_identity_before_changing_outputs(self):
+        root = self.build_fixture()
+        path = root / "guidance/licenses.json"
+        original = json.loads(path.read_text())
+        before = builder.inventory(root / "guidance/artifacts")
+        for field, value in (("package", "org.jresearch.ai/other"), ("version", "8.0.0"),
+                             ("license", "other"), ("contract_revision", "0" * 40)):
+            with self.subTest(field=field):
+                metadata = json.loads(json.dumps(original))
+                if field == "contract_revision":
+                    metadata["components"][0][field] = value
+                else:
+                    metadata[field] = value
+                path.write_text(json.dumps(metadata))
+                for check in (True, False):
+                    with self.assertRaisesRegex(ValueError, "License metadata differs"):
+                        builder.build(root, check=check)
+                self.assertEqual(builder.inventory(root / "guidance/artifacts"), before)
+
     def test_project_builder_rejects_changed_frozen_shared_input(self):
         root = self.build_fixture()
         snapshot = root / ("guidance/dependency-closure/vibevm/vibedeps/"
@@ -316,7 +335,7 @@ class GeneratedTests(unittest.TestCase):
         self.assertIn("no new owner-choice prompt, policy-change Decision", handoff)
         current = json.loads((ROOT / "guidance/source.json").read_text())
         self.assertEqual((current["version"], current["shared_requirement"], current["shared_version"]),
-                         ("8.0.0", ">=10.0.0", "10.0.0"))
+                         ("9.0.0", ">=10.0.0", "10.0.0"))
         workflow = " ".join((ROOT / "packages/codex-relay/skill/references/workflow.md").read_text().split())
         self.assertIn("required publication or owner-run Apply after merge uses this policy", workflow)
         self.assertIn("No new owner-choice prompt, policy-change Decision or conversion", workflow)

@@ -27,6 +27,8 @@ function fixture(options = {}) {
   const handle = { reference: { status: 'stored', executionId: envelope.attemptId, slot: 0 },
     async read() { return capsule; }, async write(value) { capsule = value; }, async release() {} };
   return createOnDemandDispatchAdapter({
+    diagnosticStore: async value => ({ status: 'stored', executionId: value.executionId, mode: value.mode }),
+    readDiagnosticConfig: async () => ({ mode: 'normal' }),
     reserveDiagnostic: async () => handle,
     finalizeArtifacts: async () => ({ cleanup: 'complete', persistence: 'not_required', retention: 'none' }),
     ...options });
@@ -257,4 +259,44 @@ test('automatic dispatch default follows the scrubbed worker budget rather than 
   assert.equal((await dispatcher.dispatch(envelope)).result.status, 'success');
   assert.ok(delays.includes(100 * 60 * 1000), JSON.stringify(delays));
   assert.ok(!delays.includes(1000 + 10 * 60 * 1000), JSON.stringify(delays));
+});
+
+test('dispatch preserves malformed native output plus recorder failure before finalization and excludes it from public details', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-dispatch-causal-')); t.after(() => rm(root, { recursive: true, force: true }));
+  let handle; let beforeFinalization;
+  const dispatcher = fixture({ reserveDiagnostic: async options => handle = await reserveRuntimeDiagnostic({ ...options, root }),
+    diagnosticStore: async () => { throw Object.assign(new Error('primary filesystem unavailable'), { code: 'ENOSPC' }); },
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(1,"{native malformed response token=private-fixture");writeSync(2,"transport error at boundary");process.exitCode=2;'),
+    finalizeArtifacts: async () => { beforeFinalization = await handle.read(); return { cleanup: 'retained', retention: 'retained' }; }
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.doesNotMatch(JSON.stringify(error.details), /native malformed|transport error|private-fixture/);
+    return error.code === 'CONTAINMENT_NOT_PROVEN';
+  });
+  assert.match(beforeFinalization.causalEvidence.stdout.text, /native malformed response/);
+  assert.match(beforeFinalization.causalEvidence.stderr.text, /transport error at boundary/);
+  assert.match(beforeFinalization.causalEvidence.exception.text, /SyntaxError/);
+  assert.match(beforeFinalization.recorderFailure.exception.text, /primary filesystem unavailable|ENOSPC/);
+  assert.equal(beforeFinalization.causalEvidence.process.exitCode, 2);
+  assert.doesNotMatch(JSON.stringify(beforeFinalization), /private-fixture/);
+});
+test('containment group probe exceptions survive as protected observations without proving absence', async t => {
+  const originalKill = process.kill;
+  let probeFailed = false; let saved;
+  t.mock.method(process, 'kill', function(pid, signal) {
+    if (signal === 0 && !probeFailed) {
+      probeFailed = true; throw Object.assign(new Error('group existence probe denied'), { code: 'EPERM', syscall: 'kill' });
+    }
+    return originalKill.call(process, pid, signal);
+  });
+  const dispatcher = fixture({
+    diagnosticStore: async value => { saved = value; return { status: 'stored', executionId: value.executionId, mode: value.mode }; },
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(2,JSON.stringify({version:2,status:"blocked",code:"CODEX_RESULT_MISSING",diagnostic:{containment:"reaped",observed:{child:"started"}}}));process.exitCode=1;')
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.equal(error.code, 'CODEX_RESULT_MISSING');
+    assert.doesNotMatch(JSON.stringify(error.details), /group existence probe denied/); return true;
+  });
+  assert.equal(probeFailed, true);
+  assert.match(saved.causalEvidence.native.text, /probe-dispatch-group|group existence probe denied/);
 });

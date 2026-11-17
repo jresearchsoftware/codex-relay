@@ -153,6 +153,32 @@ class ConsumerPreflightCliTests(unittest.TestCase):
             '/usr/bin/python3', '-I', '-c', PRIVATE, str(self.root), str(self.source), *arguments],
             text=True, capture_output=True, timeout=180)
 
+    def assert_cli_failure(self, result, code, prior_codes=()):
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, '')
+        self.assertLessEqual(len(result.stderr.encode('utf8')), 4096)
+        lines = result.stderr.splitlines()
+        self.assertEqual(len(lines), len(prior_codes) + 2)
+        # PRIVATE intentionally supplies no RELAY_CONSUMER_CONFIG. Diagnostic
+        # bootstrap therefore reports its independent bounded fallback, without
+        # claiming durable storage or exposing either original exception.
+        prefix = 'RELAY_DIAGNOSTIC_UNAVAILABLE '
+        for line, original_code in zip(lines[:-1], (*prior_codes, code)):
+            self.assertTrue(line.startswith(prefix))
+            self.assertEqual(json.loads(line[len(prefix):]), {
+                'status': 'unavailable', 'code': 'DIAGNOSTICS_STORE_UNAVAILABLE',
+                'storeCode': 'CONSUMER_CONFIG_INVALID', 'originalCode': original_code,
+                'phase': 'bootstrap', 'originalEvidence': 'observed_not_retained'})
+        error = json.loads(lines[-1])
+        self.assertEqual(set(error), {'code', 'next'})
+        self.assertEqual(error['code'], code)
+        self.assertIsInstance(error['next'], str)
+        self.assertTrue(error['next'])
+        self.assertLessEqual(len(error['next']), 1024)
+        self.assertNotIn(str(self.root), result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        return error
+
     def test_valid_and_invalid_live_drift_still_observe_real_serial_and_current_pending_history(self):
         for drift in ['valid', 'invalid']:
             with self.subTest(drift=drift):
@@ -219,22 +245,18 @@ class ConsumerPreflightCliTests(unittest.TestCase):
                     gate.write_text(json.dumps(value))
                 before = self.protected_snapshot()
                 result = self.run_cli()
-                self.assertEqual(result.returncode, 1)
-                self.assertEqual(result.stdout, '')
-                error = json.loads(result.stderr)
-                self.assertRegex(error['code'], r'^[A-Z][A-Z0-9_]{0,79}$')
-                self.assertTrue(error['next'])
-                self.assertNotIn(str(self.root), result.stderr)
+                code = ('CONSUMER_PREFLIGHT_BASELINE_PROJECTION_UNAVAILABLE'
+                        if failure == 'gate-mismatch' else 'CONSUMER_PREFLIGHT_BASELINE_SNAPSHOT_UNPROVEN')
+                self.assert_cli_failure(result, code, prior_codes=('BOOTSTRAP_FAILED',))
                 self.assertFalse(list(self.stage.glob('consumer-context-*')))
                 self.assertEqual(self.protected_snapshot(), before)
 
     def test_invalid_arguments_produce_only_a_bounded_error_and_next_action(self):
+        before = self.protected_snapshot()
         result = self.run_cli(extra=['--unknown', 'private-value'])
-        self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stdout, '')
-        error = json.loads(result.stderr)
-        self.assertEqual(error['code'], 'CONSUMER_PREFLIGHT_ARGUMENTS_INVALID')
+        self.assert_cli_failure(result, 'CONSUMER_PREFLIGHT_ARGUMENTS_INVALID')
         self.assertNotIn('private-value', result.stderr)
+        self.assertEqual(self.protected_snapshot(), before)
 
     def test_legacy_current_consumer_without_snapshot_or_serial_receipt_has_no_new_prerequisite(self):
         original = self.root / 'etc/relay-compat/serial-consumer-v1.json'

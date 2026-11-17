@@ -572,9 +572,13 @@ the protected retained-history inventory the remaining overall drain
 deadline rather than a separate five-second subprocess limit. The one-second
 lock acquisition wait remains unchanged; contention permits another observation
 while the deadline remains. A slow inventory does not bypass any history checks.
-Drain emits only bounded active/unknown
-counts and elapsed time on stderr every thirty seconds; stdout remains one JSON
-receipt. Timeout, unreadable state or an unknown attempt preserves quiesce for
+Drain emits bounded active/unknown counts, elapsed time and up to 20 verified
+pending Task/Step/run identities on stderr when inventory changes and every
+thirty seconds while unchanged; stdout remains one JSON receipt. Pending
+identities include the configured repository and an explicitly recorded,
+configured execution slot when known, including peers in a multi-repository
+installation. Historical absent locations stay absent. These fields are
+projections of the protected inventory, never caller-selected metadata. Timeout, unreadable state or an unknown attempt preserves quiesce for
 owner inspection. Drain neither relaunches Codex nor discards retained work or
 diagnostics. Registered runners remain online; graceful stop disables new
 automatic admission without stopping those runners.
@@ -1320,9 +1324,11 @@ Governed runtime attempts reserve an independent diagnostic capsule under
 `paths.attemptRoot/runtime-diagnostics` before launching the dispatcher. It is
 outside the runtime user's mutable checkout and separate from the root-owned
 primary diagnostic store. File and directory synchronization precede the stored
-reference. Each capsule contains only bounded, allowlisted execution/lifecycle
-fields, OS codes and syscalls, categorical path context, protected sandbox inode
-identity and sanitized store references. Primary bundles may additionally retain
+reference. Each protected capsule retains bounded execution/lifecycle fields, OS codes and
+syscalls, categorical path context, protected sandbox inode identity, sanitized
+store references and compact redacted original/secondary/recorder causal evidence.
+Causal text is private; public reference projections and shareable qualification
+snapshots omit it. Primary bundles may additionally retain
 bounded redacted path context; Outcomes never include those paths or raw streams.
 
 The automatic terminal Outcome projects the existing launcher diagnostic code,
@@ -1411,3 +1417,81 @@ secret-redacted projection retains at most 64 KiB of body text, preserving its
 start and final diagnostics when clipping is necessary; clipping is explicit in
 the input and execution warning. Original native bytes and source hashes remain
 unchanged, and current Task scope, holds and publication boundaries still govern.
+
+
+## Causal evidence before admission and at Writer boundaries
+
+A handled domain rejection is separate from execution and Task completion.
+Routing emits an Actions `::error` annotation and exits **1** for every terminal
+`BLOCKED`, including quiesce and a rejected owner run. A safely completed domain
+operation keeps its native `orchestration: COMPLETED` classification; the red job
+means the requested execution did not complete. Successful implementation/handoff
+continues to exit 0. No rerun is authorized by this convention: reservation,
+ready-event consumption, mutation intents and replay guards are unchanged. The
+projected routing wrapper directly propagates this exit without `continue-on-error`.
+Existing consumers must inspect the semantic JSON/Outcome rather than equate the
+job conclusion with worker admission, execution or Task completion.
+
+Native run guards retain the fixed `OWNER_RUN_NOT_ADMITTED` code and predicate
+reason from Task #243. The original failed observation (expected and observed
+run/actor/status/workflow/title/target fields) now also enters the protected
+normal-mode diagnostic bundle. Ready-event checks preserve their exact failed
+field and available timeline values. An unavailable response is recorded as
+unavailable; no later API read becomes a historical observation. Nothing here
+diagnoses or replays Shared Governance Task #96.
+
+The protected Writer records original causes at its admission/publication
+boundary, including domain stops before a worker exists. These records use the
+existing bounded diagnostic store and independent capsule implementation, **not**
+the attempt/publication store as a new reservation. Host-only fallback capsules
+use `paths.claimRoot/runtime-diagnostics`; runner capsules continue under
+`paths.attemptRoot/runtime-diagnostics`. A rejected unbound target receives no
+Writer Outcome, label mutation or execution reservation. Normal output carries
+only the safe code/reason, known worker state and diagnostic reference.
+
+Normal primary bundles expose protected `causalEvidence`: operation/phase,
+exception cause chain, observed OS/HTTP code and native response, bounded original
+stdout/stderr, availability, byte counts and truncation. Those are observations,
+not proof that any particular stderr line caused a nonzero exit. Original causes
+survive Git/helper/dispatcher wrapping. A later controller, publication or
+recorder failure is retained separately. An invalid store receipt does not prove
+durability. Failure of the primary recorder retains the original and recorder
+cause in an independent protected capsule where possible. If configuration,
+both stores, or the process output surface are unavailable, the independent
+`RELAY_DIAGNOSTIC_UNAVAILABLE` summary identifies the recorder boundary/code and
+explicitly marks original evidence as observed but not retained. It does not
+claim durable bytes after host/power loss.
+
+An authorized host operator uses the existing approved shell/SSH/admin route:
+read the selected consumer's `paths.diagnosticsRoot`, then inspect the exact
+`<executionId>.json` identified by the run/Outcome reference. For a fallback
+reference, inspect that identity in its reported slot beneath the appropriate
+`runtime-diagnostics` root; a released capsule's original pointer leads to the
+primary finalization archive. Keep the read in the protected session and inspect
+`causalEvidence`, `secondaryEvidence`, `recorderFailure`, lifecycle and native
+availability/truncation fields together. Use the configured repository/slot
+paths, never a path supplied by an untrusted event. The qualification snapshot
+remains a sanitized shareable projection and intentionally omits causal text;
+it is not the full diagnostic reader. An App's absence does not itself remove
+an already authorized host shell route. No new reader credential, ACL, mandatory
+operator command or debug-mode switch is introduced.
+
+For example, a future `OWNER_RUN_NOT_ADMITTED (status)` rejection states that no
+worker started, exits 1 and points to a protected bundle whose observation can
+show expected `in_progress` and the actual observed `queued`. Inspect that
+original run/owner command before selecting a supported correction. A GitHub
+403 preserves its bounded original native error and operation privately; verify
+the configured actor's existing repository permission rather than blindly
+repeating a mutation. A missing body remains explicitly unavailable. See the
+[Task 244 boundary matrix](../docs/qualification/task-244-step-1.md) for source
+coverage, representative tests and installed-runtime limits.
+
+
+A later dirty-checkout or incomplete-observation result does not replace an
+already observed execution failure. Terminal Outcomes retain the original
+execution code, child state and causal pointer, while reporting
+`UNCOMMITTED_WORK_REMAINS` or `WORKTREE_OBSERVATION_INCOMPLETE` separately in the
+readable warning summary and canonical warning fields. Incomplete observation
+is unknown residue, not proof of uncommitted files. These cases remain failed
+handoffs pending reconciliation; replay publishes no second Outcome and never
+restarts execution.

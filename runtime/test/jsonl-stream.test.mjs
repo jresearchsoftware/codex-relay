@@ -49,6 +49,8 @@ test('late diagnostic errors retain bounded redacted messages independently of t
   for (let i = 0; i < 6; i++) parser.push(frame({ type: 'error', message: `failure ${i}: synthetic-sensitive-value; retry operation safely` }));
   const d = parser.diagnostics();
   assert.equal(d.omittedEvents, 2); assert.equal(d.events.length, 4);
+  assert.match(d.events[0].message.text, /failure 0/);
+  assert.match(d.events[1].message.text, /failure 3/);
   assert.match(d.events[3].message.text, /failure 5.*REDACTED_SECRET.*retry operation safely/);
 });
 
@@ -61,7 +63,7 @@ test('governed runtime keeps semantic result and late diagnostic errors after ca
     env: { PATH: '/usr/bin:/bin' }, buildArgs: () => [],
     readDiagnosticConfig: async () => ({ mode: 'debug' }),
     fallbackStore: async () => ({ reference: { status: 'stored', executionId: 'stream-fixture', slot: 0 }, write: async () => undefined }),
-    diagnosticStore: async value => { diagnostic = value; },
+    diagnosticStore: async value => { diagnostic = value; return { status: 'stored', executionId: value.executionId, mode: value.mode }; },
     spawnImpl() {
       const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
       setImmediate(() => {

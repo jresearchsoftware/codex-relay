@@ -122,11 +122,12 @@ async fn bounded_body(mut response: Response, limit: usize) -> Result<Vec<u8>, F
         return Err(Failure::truncated("GITHUB_RESPONSE_BYTE_LIMIT"));
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| Failure::unavailable("GITHUB_RESPONSE_READ_FAILED"))?
-    {
+    while let Some(chunk) = response.chunk().await.map_err(|error| {
+        Failure::unavailable(crate::diagnostics::failure(
+            "GITHUB_RESPONSE_READ_FAILED",
+            error,
+        ))
+    })? {
         if chunk.len() > limit.saturating_sub(body.len()) {
             return Err(Failure::truncated("GITHUB_RESPONSE_BYTE_LIMIT"));
         }
@@ -169,9 +170,13 @@ impl ReadSession<'_> {
             .timeout(remaining.min(REQUEST_TIMEOUT))
             .send()
             .await
-            .map_err(|_| Failure::unavailable("GITHUB_REQUEST_FAILED"))?;
+            .map_err(|error| {
+                Failure::unavailable(crate::diagnostics::failure("GITHUB_REQUEST_FAILED", error))
+            })?;
         if !response.status().is_success() {
-            return Err(http_failure(response.status().as_u16()));
+            let failure = http_failure(response.status().as_u16());
+            super::rejected_response(response, failure.reason, &[&self.token]).await;
+            return Err(failure);
         }
         let next = response
             .headers()
@@ -190,8 +195,12 @@ impl ReadSession<'_> {
             }
         };
         self.bytes += body.len();
-        let value = serde_json::from_slice(&body)
-            .map_err(|_| Failure::unavailable("GITHUB_RESPONSE_INVALID"))?;
+        let value = serde_json::from_slice(&body).map_err(|error| {
+            Failure::unavailable(crate::diagnostics::failure(
+                "GITHUB_RESPONSE_INVALID",
+                error,
+            ))
+        })?;
         Ok((value, next))
     }
 
@@ -650,7 +659,12 @@ impl Github {
             .redirect(Policy::none())
             .timeout(REQUEST_TIMEOUT)
             .build()
-            .map_err(|_| Failure::unavailable("GITHUB_CLIENT_UNAVAILABLE"))?;
+            .map_err(|error| {
+                Failure::unavailable(crate::diagnostics::failure(
+                    "GITHUB_CLIENT_UNAVAILABLE",
+                    error,
+                ))
+            })?;
         let jwt = self.app_jwt().await.map_err(Failure::unavailable)?;
         let installation = {
             #[cfg(test)]
@@ -678,24 +692,37 @@ impl Github {
             .bearer_auth(&jwt)
             .json(&json!({"repositories": [name], "permissions": {
                 "metadata": "read", "pull_requests": "read", "checks": "read", "actions": "read", "issues": "read"
-            }})).send().await.map_err(|_| Failure::unavailable("GITHUB_AUTH_FAILED"))?;
+            }})).send().await.map_err(|error| Failure::unavailable(crate::diagnostics::failure("GITHUB_AUTH_FAILED", error)))?;
         if !response.status().is_success() {
-            return Err(http_failure(response.status().as_u16()));
+            let failure = http_failure(response.status().as_u16());
+            super::rejected_response(response, failure.reason, &[&jwt]).await;
+            return Err(failure);
         }
         let body = bounded_body(response, RESPONSE_BYTES).await?;
-        let payload: Value = serde_json::from_slice(&body)
-            .map_err(|_| Failure::unavailable("GITHUB_AUTH_FAILED"))?;
+        let payload: Value = serde_json::from_slice(&body).map_err(|error| {
+            Failure::unavailable(crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))
+        })?;
         let token = payload
             .get("token")
             .and_then(Value::as_str)
             .filter(|token| !token.is_empty() && token.len() <= 4096)
-            .ok_or(Failure::unavailable("GITHUB_AUTH_FAILED"))?
+            .ok_or_else(|| {
+                Failure::unavailable(crate::diagnostics::failure(
+                    "GITHUB_AUTH_FAILED",
+                    "Successful evidence token response lacks a bounded nonempty token",
+                ))
+            })?
             .to_owned();
         if payload
             .get("expires_at")
             .and_then(Value::as_str)
             .is_none_or(str::is_empty)
         {
+            crate::diagnostics::record(
+                "GITHUB_TOKEN_LIFETIME_UNAVAILABLE",
+                "evidence-token-response",
+                "Successful evidence installation token response lacks expires_at",
+            );
             return Err(Failure::unavailable("GITHUB_TOKEN_LIFETIME_UNAVAILABLE"));
         }
         Ok(ReadSession {
@@ -711,6 +738,7 @@ impl Github {
 
     /// Observe the configured repository's current PR head with explicit gaps.
     /// Passing a different repository fails before any authentication/API request.
+    #[tracing::instrument(skip_all, fields(repository, pr_number))]
     pub async fn review_evidence(
         &self,
         configured_repository: &str,
@@ -841,7 +869,8 @@ impl Github {
                             "native_url":format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),"workflow_run_id":run_id,"warning_summaries":warning_summaries,"text_redacted_or_truncated":altered}));
                         continue;
                     }
-                    Err(_) => {
+                    Err(error) => {
+                        crate::diagnostics::failure("GITHUB_RESPONSE_INVALID", error);
                         outcomes.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
                         continue;
                     }

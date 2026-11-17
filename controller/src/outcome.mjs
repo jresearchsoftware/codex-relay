@@ -132,14 +132,15 @@ export function usageOutcomeSummary(value) {
   ].join('\n');
 }
 
-export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagnostic } = {}) {
+export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagnostic, executionWarnings = [] } = {}) {
   const d = diagnostic && typeof diagnostic === 'object' ? diagnostic : {};
   const head = exactSha(publishedHead) ? publishedHead : 'NONE PUBLISHED';
   const integrationBase = exactSha(pr?.base?.sha) ? pr.base.sha : 'UNAVAILABLE';
   const cause = safeCode(d.primaryCause);
   const next = safeAction(d.nextAction);
   const profile = e?.profile && typeof e.profile === 'object' ? e.profile : {};
-  const warnings = admissionWarningSummary(e?.admission?.warnings ?? e?.warnings);
+  const warnings = [admissionWarningSummary(e?.admission?.warnings ?? e?.warnings),
+    executionWarningSummary(executionWarnings)].filter(Boolean).join('; ');
   const admissionStatus = e?.admissionBlock ? 'BLOCKED_BEFORE_WORKER' : warnings ? 'COMPLETED_WITH_WARNINGS' : 'COMPLETED';
   const runtime = safeFailureDiagnosticReference(d.runtime) ?? {};
   const launcher = safeLauncherDiagnosticSummary(d.launcher) ?? {};

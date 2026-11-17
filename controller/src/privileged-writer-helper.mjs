@@ -10,7 +10,8 @@ import { createGitPublisher, collectProgress } from './trusted-git.mjs';
 import { checkoutPath } from './attempt-runtime.mjs';
 import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
-import { failureDiagnosticFromDetails } from './diagnostics.mjs';
+import { failureDiagnosticFromDetails, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';
+import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
 import { assertCompatibleInstalledWriter } from './predispatch-target-compatibility.mjs';
@@ -105,7 +106,8 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
     currentStore: createPublicationStore(compatibility.current.storeRoot),
     originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) })
     : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
-  return createPublicationBroker({ api: createGithubApi({ token: value, runToken }),
+  return createPublicationBroker({ api: { ...createGithubApi({ token: value, runToken }),
+      recordFailure: input => recordHostFailure({ ...input, secrets: { knownSecrets: [value, runToken].filter(Boolean) } }) },
     store,
     lifecycleStore: compatibility?.currentConsumer.repositories ? createSerialPrLifecycleStore(compatibility)
       : createPublicationStore(`${deployment.claimRoot}/pr-lifecycle-v1`),
@@ -119,16 +121,18 @@ export async function protectedWriterBroker({ deployment = resolveWriterDeployme
       try { await lstat(checkoutPath(e)); return false; }
       catch (error) { if (error.code === 'ENOENT') return true; throw error; }
     },
-    admission, allowManualOutcome, diagnosticSecrets: [value, runToken].filter(Boolean),
+    admission, allowManualOutcome, recordFailure: recordHostFailure, diagnosticSecrets: [value, runToken].filter(Boolean),
     assertPredispatchFence: () => assertCompatibleInstalledWriter({ consumer: CONSUMER }) });
 }
 export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';
   const failureDiagnostic = failureDiagnosticFromDetails(error?.details);
   const reason = ownerRunRejectionReason(code, error?.details?.reason);
-  return { code, ...(reason ? { reason } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {}) };
+  return { code, ...(safeDiagnosticStoreReference(error?.details?.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(error.details.diagnosticStore) } : {}),
+    ...(safeFallbackReference(error?.details?.diagnosticStore?.fallbackReference) ? { fallbackReference: safeFallbackReference(error.details.diagnosticStore.fallbackReference) } : {}), ...(reason ? { reason } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {}) };
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
-if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => {
+if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
+  if (!error.details?.diagnosticStore) error.details = { ...error.details, diagnosticStore: await recordHostFailure({ error, operation: 'writer-entrypoint', phase: 'writer-publication' }) };
   process.stderr.write(JSON.stringify(serializeWriterFailure(error)) + '\n'); process.exitCode = 1;
 });

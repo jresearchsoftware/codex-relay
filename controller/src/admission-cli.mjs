@@ -1,4 +1,4 @@
-import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
+import { CONSUMER, CONSUMER_DIGEST, INSTALLATION_CONSUMER } from '../../consumer/consumer.mjs';
 import { assertRootConsumer, parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { realpathSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
@@ -9,10 +9,11 @@ import { execFile } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { setTimeout } from 'node:timers/promises';
 import { createAttemptStore, createPublicationStore } from './attempt-store.mjs';
-import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, ADMISSION_STATE_BYTES } from './admission-control.mjs';
+import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, verifiedPendingLocation, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 import { fail } from './execution-contract.mjs';
+import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 import { assertPredispatchTargetCompatible } from './predispatch-target-compatibility.mjs';
 
@@ -143,22 +144,50 @@ export async function readAdmissionSnapshot(input = process.stdin) {
   catch { fail('ADMISSION_SNAPSHOT_INVALID'); }
 }
 export async function drainAdmission({ operationId, timeout }, { snapshot, wait = setTimeout,
-  now = () => performance.now(), reportProgress = () => {} } = {}) {
+  now = () => performance.now(), reportProgress = () => {}, installation = INSTALLATION_CONSUMER } = {}) {
   const started = now(); const deadline = started + timeout * 1000;
-  let nextProgress = started + 30000;
-  while (true) {
-    const value = await snapshot(operationId, Math.max(1, Math.ceil(deadline - now())));
-    if (value.drained === true) return value;
-    if (now() >= nextProgress) {
-      const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
-      reportProgress({ phase: 'drain', active: count(value.active), unknown: count(value.unknown),
-        elapsedSeconds: Math.min(timeout, Math.max(0, Math.floor((now() - started) / 1000))) });
-      nextProgress = now() + 30000;
+  let nextProgress = started; let previous;
+  const report = (value, reason) => {
+    const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
+    const identities = Array.isArray(value.pending) ? value.pending.filter(item =>
+      [item?.task, item?.step, item?.runId].every(value => Number.isSafeInteger(value) && value > 0))
+      .slice(0, 20).map(item => {
+        const location = verifiedPendingLocation(item, installation);
+        const suffix = location.repository ? `[repository=${location.repository}${location.executionSlot ? `;slot=${location.executionSlot}` : ''}]` : '';
+        return `Task-${item.task}/Step-${item.step}/run-${item.runId}${suffix}`;
+      }) : [];
+    // Configured long repository names must not overflow the transport's line
+    // bound. Counts still report the whole inventory when identities are capped.
+    const bounded = []; let bytes = 0;
+    for (const identity of identities) {
+      bytes += Buffer.byteLength(identity) + 1;
+      if (bytes > 3500) break;
+      bounded.push(identity);
     }
-    if (now() >= deadline) fail('ADMISSION_DRAIN_TIMEOUT');
+    const pending = bounded.join(',');
+    reportProgress({ phase: 'drain', active: count(value.active), unknown: count(value.unknown), pending: pending || 'none', reason,
+      elapsedSeconds: Math.min(timeout, Math.max(0, Math.floor((now() - started) / 1000))) });
+  };
+  while (true) {
+    let value;
+    try { value = await snapshot(operationId, Math.max(1, Math.ceil(deadline - now()))); }
+    catch (error) {
+      report(error.details?.inventory ?? {}, error.code === 'ADMISSION_DRAIN_UNKNOWN' ? 'inventory-unknown' : 'lock-or-inventory-unavailable');
+      throw error;
+    }
+    const identity = JSON.stringify([value.active, value.unknown, value.pending]);
+    if (value.drained === true) { report(value, 'drained'); return value; }
+    if (identity !== previous || now() >= nextProgress) {
+      report(value, Array.isArray(value.active) ? 'waiting-for-controllers' : 'lock-or-inventory-unavailable');
+      previous = identity; nextProgress = now() + 30000;
+    }
+    if (now() >= deadline) throw Object.assign(new Error('ADMISSION_DRAIN_TIMEOUT'), {
+      code: 'ADMISSION_DRAIN_TIMEOUT', observation: { check: 'drain.deadline', expected: { drained: true, timeoutSeconds: timeout },
+        observed: { drained: value.drained, active: value.active, unknown: value.unknown } }, details: { inventory: value, elapsedSeconds: timeout } });
     await wait(Math.min(1000, deadline - now()));
   }
 }
+
 export async function readDrainSnapshot(operationId, remaining, { execute = exec } = {}) {
   try {
     const result = await execute('/usr/bin/flock', ['-w', '1', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
@@ -170,10 +199,13 @@ export async function readDrainSnapshot(operationId, remaining, { execute = exec
     return JSON.parse(result.stdout);
   } catch (error) {
     let payload;
-    try { payload = JSON.parse(error.stderr); } catch { /* flock contention has no JSON */ }
-    if (payload?.code) fail(payload.code);
+    // A failed primary recorder can emit an independent fallback line before
+    // the fixed final helper envelope. Keep its original native stop code.
+    try { payload = JSON.parse(String(error.stderr ?? '').trim().split('\n').at(-1)); }
+    catch { /* flock contention and malformed helper output have no envelope */ }
+    if (/^[A-Z][A-Z0-9_]{0,79}$/.test(typeof payload?.code === 'string' ? payload.code : '')) throw Object.assign(new Error(payload.code, { cause: error }), { code: payload.code, details: payload.details });
     if (error.code === 1 && !error.stdout && !error.stderr) return { drained: false };
-    fail('ADMISSION_DRAIN_STATUS_UNAVAILABLE');
+    throw Object.assign(new Error('ADMISSION_DRAIN_STATUS_UNAVAILABLE', { cause: error }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
   }
 }
 export async function main(args = process.argv.slice(2)) {
@@ -184,7 +216,7 @@ export async function main(args = process.argv.slice(2)) {
     // Each snapshot has the same lock as admission and final Writer release.
     // Never hold that lock during the wait: admitted controllers must finish.
     return drainAdmission(options, {
-      reportProgress: value => process.stderr.write(`ADMISSION_DRAIN_PROGRESS phase=${value.phase} active=${value.active ?? 'UNAVAILABLE'} unknown=${value.unknown ?? 'UNAVAILABLE'} elapsedSeconds=${value.elapsedSeconds}\n`),
+      reportProgress: value => process.stderr.write(`ADMISSION_DRAIN_PROGRESS phase=${value.phase} active=${value.active ?? 'UNAVAILABLE'} unknown=${value.unknown ?? 'UNAVAILABLE'} elapsedSeconds=${value.elapsedSeconds} pending=${value.pending} reason=${value.reason}\n`),
       snapshot: readDrainSnapshot });
   }
   const admission = installedAdmissionControl();
@@ -201,7 +233,8 @@ export async function main(args = process.argv.slice(2)) {
   return admission[command](options);
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
-if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => {
-  process.stderr.write(JSON.stringify({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED' }) + '\n');
+if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
+  const diagnosticStore = await recordHostFailure({ error, operation: 'admission-lifecycle', phase: 'finalization' });
+  process.stderr.write(JSON.stringify({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED', diagnosticStore, ...(error.details?.inventory ? { details: { inventory: error.details.inventory } } : {}) }) + '\n');
   process.exitCode = 1;
 });

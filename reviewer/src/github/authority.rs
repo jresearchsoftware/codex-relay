@@ -30,15 +30,21 @@ impl Github {
             .header("Authorization", format!("Bearer {token}"))
             .send()
             .await
-            .map_err(|_| "AUTHORITY_SOURCE_UNAVAILABLE")?;
+            .map_err(|error| crate::diagnostics::failure("AUTHORITY_SOURCE_UNAVAILABLE", error))?;
         if !response.status().is_success() {
-            return Err("AUTHORITY_SOURCE_UNAVAILABLE");
+            return Err(
+                rejected_response(response, "AUTHORITY_SOURCE_UNAVAILABLE", &[&token]).await,
+            );
         }
         // Observe completion metadata, but never follow a server-supplied URL.
         let has_next = response
             .headers()
             .get(reqwest::header::LINK)
-            .map(|value| value.to_str().map_err(|_| "AUTHORITY_SOURCE_INVALID"))
+            .map(|value| {
+                value
+                    .to_str()
+                    .map_err(|error| crate::diagnostics::failure("AUTHORITY_SOURCE_INVALID", error))
+            })
             .transpose()?
             .is_some_and(|links| {
                 links.split(',').any(|link| {
@@ -51,7 +57,7 @@ impl Github {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|_| "AUTHORITY_SOURCE_UNAVAILABLE")?
+            .map_err(|error| crate::diagnostics::failure("AUTHORITY_SOURCE_UNAVAILABLE", error))?
         {
             if let Some(total) = transferred.as_deref_mut() {
                 *total = total.saturating_add(chunk.len());
@@ -66,7 +72,7 @@ impl Github {
         }
         serde_json::from_slice::<crate::strict_json::StrictJson>(&bytes)
             .map(|value| (value.0, has_next))
-            .map_err(|_| "AUTHORITY_SOURCE_INVALID")
+            .map_err(|error| crate::diagnostics::failure("AUTHORITY_SOURCE_INVALID", error))
     }
 
     async fn authority_collection(
@@ -80,7 +86,12 @@ impl Github {
             self.authority_collection_pages(repository, path, query),
         )
         .await
-        .unwrap_or(Err("AUTHORITY_COLLECTION_TIMEOUT"))
+        .unwrap_or_else(|error| {
+            Err(crate::diagnostics::failure(
+                "AUTHORITY_COLLECTION_TIMEOUT",
+                error,
+            ))
+        })
     }
 
     async fn authority_collection_pages(

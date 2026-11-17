@@ -298,6 +298,10 @@ elif '/relay-admission' in sys.argv[-1]:
 from pathlib import Path
 a=sys.argv; task=json.loads(Path(a[a.index('-i')+1]).with_name('request.json').read_text())
 command=task['argv']; base=Path({str(cls.base)!r}); output=''; errors=''; rc=0
+# Lifecycle progress wraps the SAME admission argv in the private request. The
+# live wrapper/SSH behavior has separate unprivileged transport qualification.
+if len(command)>3 and 'relay-ansible-progress-' in command[3] and command[-1].startswith('ADMISSION_DRAIN_PROGRESS'):
+    task=json.loads(task['input']); command=task['argv']
 if 'RELAY_TARGET_IDENTITY=PASS' in shlex.join(command):
     output='RELAY_TARGET_IDENTITY=PASS\\n'
 elif 'parent_start' in shlex.join(command):

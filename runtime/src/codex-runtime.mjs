@@ -11,7 +11,7 @@ import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from '../../controlle
 import { captureSandboxIdentity } from './sandbox-cleanup.mjs';
 import { CODEX_RESULT_SCHEMA } from "./codex-result-schema.mjs";
 import { WriterBlockedError } from "./contracts.mjs";
-import { createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig } from "../../controller/src/diagnostics.mjs";
+import { captureCausalDiagnostic, createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from "../../controller/src/diagnostics.mjs";
 import { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
 import { normalizeCodexUsage } from "../../controller/src/codex-usage.mjs";
 import { createCodexJsonlParser } from './codex-jsonl.mjs';
@@ -122,15 +122,16 @@ function inside(candidate, root) {
   return value !== "" && value !== ".." && !value.startsWith(`..${sep}`) && !isAbsolute(value);
 }
 
-async function assertWritableDirectory(directory, label) {
+async function assertWritableDirectory(directory, label, { onWarning, removeProbe }) {
   const probe = join(directory, `.codex-write-probe-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   try {
     await access(directory, fsConstants.W_OK | fsConstants.X_OK);
     await writeFile(probe, "", { flag: "wx", mode: 0o660 });
   } catch (error) {
-    throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", `Codex runtime path is not writable: ${label}`);
+    throw Object.assign(new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", `Codex runtime path is not writable: ${label}`), { cause: error });
   } finally {
-    await rm(probe, { force: true }).catch(() => undefined);
+    try { await removeProbe(probe, { force: true }); }
+    catch (error) { onWarning(error, 'preflight-probe-cleanup'); }
   }
 }
 
@@ -150,10 +151,10 @@ async function assertNoSymlinkComponents(root, normalized) {
   }
 }
 
-export async function preflightCodexWorkspace({ cwd, sandboxRoot } = {}) {
+export async function preflightCodexWorkspace({ cwd, sandboxRoot, onWarning = () => {}, removeProbe = rm } = {}) {
   if (typeof cwd !== "string" || cwd.trim() === "") throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_INVALID", "Codex checkout root is required");
   const checkoutRoot = resolve(cwd);
-  const rootEntry = await lstat(checkoutRoot).catch(() => { throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", "Codex checkout root is unavailable"); });
+  const rootEntry = await lstat(checkoutRoot).catch(error => { throw Object.assign(new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", "Codex checkout root is unavailable"), { cause: error }); });
   if (!rootEntry.isDirectory() || rootEntry.isSymbolicLink()) throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", "Codex checkout root must be a real directory");
 
   const runtimeRoot = resolve(sandboxRoot ?? join(checkoutRoot, CODEX_SANDBOX_NAME));
@@ -169,10 +170,10 @@ export async function preflightCodexWorkspace({ cwd, sandboxRoot } = {}) {
     if (entry.isSymbolicLink() || !entry.isDirectory()) throw new WriterBlockedError("CODEX_PATH_PREFLIGHT_FAILED", `Codex runtime directory is not a real directory: ${name}`);
   }
   await grantSharedCheckoutAccess(runtimeRoot);
-  await assertWritableDirectory(runtimeRoot, CODEX_SANDBOX_NAME);
-  for (const name of RUNTIME_DIRECTORIES) await assertWritableDirectory(join(runtimeRoot, name), `${CODEX_SANDBOX_NAME}/${name}`);
+  await assertWritableDirectory(runtimeRoot, CODEX_SANDBOX_NAME, { onWarning, removeProbe });
+  for (const name of RUNTIME_DIRECTORIES) await assertWritableDirectory(join(runtimeRoot, name), `${CODEX_SANDBOX_NAME}/${name}`, { onWarning, removeProbe });
 
-  await assertWritableDirectory(checkoutRoot, "repository checkout");
+  await assertWritableDirectory(checkoutRoot, "repository checkout", { onWarning, removeProbe });
   return { checkoutRoot, sandboxRoot: runtimeRoot, directories: RUNTIME_DIRECTORIES.map(name => join(runtimeRoot, name)) };
 }
 
@@ -219,7 +220,7 @@ export function parseCodexJsonLines(stdout, evidence = {}) {
   return result;
 }
 
-export function terminateCodexChild(child) {
+export function terminateCodexChild(child, { onError = () => {} } = {}) {
   return new Promise(resolve => {
     if (!child || typeof child.kill !== "function" || typeof child.once !== "function") {
       resolve(false);
@@ -239,25 +240,27 @@ export function terminateCodexChild(child) {
     const force = () => {
       if (settled) return;
       clearTimeout(timer);
-      try { child.kill("SIGKILL"); } catch { /* The outer process-group owner still owns final containment. */ }
+      try { child.kill("SIGKILL"); } catch (error) { onError(error); /* The outer process-group owner still owns final containment. */ }
       timer = setTimeout(() => finish(false), CODEX_TERMINATION_GRACE_MS);
     };
     timer = setTimeout(force, CODEX_TERMINATION_GRACE_MS);
     try {
       if (child.kill("SIGTERM") === false) force();
-    } catch {
+    } catch (error) {
+      onError(error);
       force();
     }
   });
 }
 
-function filesystemSnapshot(paths) {
+function filesystemSnapshot(paths, secrets) {
   return Promise.all(paths.map(async ([name, path]) => {
     try {
       const value = await stat(path);
       return [name, { exists: true, type: value.isDirectory() ? "directory" : value.isFile() ? "file" : "other", bytes: value.size, mode: (value.mode & 0o7777).toString(8), uid: value.uid, gid: value.gid }];
-    } catch {
-      return [name, { exists: false }];
+    } catch (error) {
+      return [name, { exists: error.code === 'ENOENT' ? false : null, availability: 'unavailable',
+        causalEvidence: captureCausalDiagnostic({ error, phase: 'diagnostic-capture', operation: 'filesystem-snapshot', secrets }, { compact: true }) }];
     }
   })).then(entries => Object.fromEntries(entries));
 }
@@ -355,6 +358,12 @@ export async function runGovernedCodexTask({
   let childLaunchError = false;
   let launcherDiagnostic;
   let pendingError;
+  let warningError;
+  const auxiliaryErrors = [];
+  const observeAuxiliaryError = (error, operation) => {
+    if (auxiliaryErrors.length < 4) auxiliaryErrors.push(captureCausalDiagnostic({ error, executionId, phase: state.stage, operation, secrets }, { compact: true }));
+  };
+  const publicState = () => { const { causalEvidence, secondaryEvidence, recorderFailure, ...safe } = state; return safe; };
   let stdoutCapture = createBoundedUtf8Capture(MAX_NORMAL_DIAGNOSTIC_BYTES);
   const jsonlParser = createCodexJsonlParser(evidence, secrets);
   let stderrCapture = createBoundedUtf8Capture(MAX_NORMAL_DIAGNOSTIC_BYTES);
@@ -401,7 +410,7 @@ export async function runGovernedCodexTask({
     // Existing sandboxes may be the last evidence of an earlier failed attempt.
     const existing = await lstat(stagingDir).catch(error => { if (error.code === 'ENOENT') return null; throw error; });
     if (existing) throw new WriterBlockedError('CODEX_SANDBOX_ALREADY_EXISTS', 'Existing runtime artifacts require inspection');
-    await preflightCodexWorkspace({ cwd: checkoutRoot, sandboxRoot: stagingDir });
+    await preflightCodexWorkspace({ cwd: checkoutRoot, sandboxRoot: stagingDir, onWarning: observeAuxiliaryError });
     await checkpoint({ sandboxCreated: true, sandboxIdentity: await captureSandboxIdentity(stagingDir),
       lastSuccessfulBoundary: 'worker', operation: 'input-schema-write', pathContext: 'input' });
     diagnosticPhases.push("sandbox-created", "path-preflight-passed");
@@ -445,11 +454,12 @@ export async function runGovernedCodexTask({
     evidence.codexChildStarted = null;
     child.once("spawn", () => {
       evidence.launcherStarted = true;
+      state.operation = 'launcher-wait';
       diagnosticPhases.push("launcher-started");
     });
     child.stdout.on("data", chunk => { stdoutCapture.push(chunk); jsonlParser.push(chunk); });
     child.stderr.on("data", chunk => stderrCapture.push(chunk));
-    child.stdin?.on('error', () => {});
+    child.stdin?.on('error', error => observeAuxiliaryError(error, 'launcher-stdin'));
     const timeoutMs = resolvedCodexRuntimeTimeoutMs(env?.CODEX_RUNTIME_TIMEOUT_MS);
     const exit = await new Promise((resolveExit, rejectExit) => {
       let settled = false;
@@ -462,7 +472,7 @@ export async function runGovernedCodexTask({
         evidence.codexTerminationRequested = true;
         settled = true;
         finish();
-        const terminated = await terminateCodexChild(child);
+        const terminated = await terminateCodexChild(child, { onError: error => observeAuxiliaryError(error, 'terminate-child') });
         evidence.codexTerminationConfirmed = terminated;
         if (!terminated) {
           child.stdout?.destroy?.();
@@ -475,6 +485,11 @@ export async function runGovernedCodexTask({
         childLaunchError = true;
         if (!child.pid) evidence.codexChildStarted = false;
         if (!settled) { settled = true; finish(); rejectExit(Object.assign(new WriterBlockedError("PROCESS_START_FAILED", "Codex launcher failed before completing", { childStarted: evidence.codexChildStarted, primaryCause: error?.code, cause: error?.code }), { runtimeCause: error })); }
+      });
+      for (const [name, stream] of [['stdout', child.stdout], ['stderr', child.stderr]]) stream?.on('error', error => {
+        state.operation = `launcher-${name}`;
+        observeAuxiliaryError(error, `launcher-${name}`);
+        if (!settled) { settled = true; finish(); rejectExit(Object.assign(new WriterBlockedError('CODEX_STREAM_FAILED', 'Codex output could not be observed completely'), { runtimeCause: error })); }
       });
       child.on("close", (code, signal) => {
         if (!settled) { settled = true; finish(); resolveExit({ code, signal }); }
@@ -525,7 +540,7 @@ export async function runGovernedCodexTask({
       childState: 'started', lastSuccessfulBoundary: 'result-parse' });
     if (appServer?.setThreadName && result.threadId !== "UNAVAILABLE") {
       try { await appServer.setThreadName(result.threadId, taskTitle); }
-      catch { evidence.threadNameWarning = true; }
+      catch (error) { evidence.threadNameWarning = true; warningError = error; }
     }
     return result;
   } catch (error) {
@@ -539,6 +554,13 @@ export async function runGovernedCodexTask({
     let store;
     const safeCode = (error, fallback) => /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : fallback;
     const cause = pendingError?.runtimeCause ?? pendingError;
+    // Observe streams before a fallible recorder update. A failed capsule write
+    // must not prevent the independent primary store from seeing the cause.
+    finalizeStreams();
+    if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
+    if (launcherDiagnostic) evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
+    const nativeErrors = jsonlParser.diagnostics();
+    const hasNativeErrors = nativeErrors.events.length > 0;
     if (pendingError && launcherDiagnostic) addDiagnosticDetails(pendingError, launcherDiagnostic, undefined, evidence.codexChildStarted);
     state = { ...state, childState: evidence.codexChildStarted === true ? 'started' : evidence.codexChildStarted === false ? 'not_started' : state.childState,
       ...(launcherDiagnostic ? { childExitCode: launcherDiagnostic.childExitCode, signal: launcherDiagnostic.signal } : {}),
@@ -547,20 +569,27 @@ export async function runGovernedCodexTask({
           primaryCause: pendingError.details?.primaryCause ?? (launcherDiagnostic ? null : pendingError.code),
           stage: pendingError.details?.failureDiagnostic?.stage ?? state.stage,
           boundary: pendingError.details?.failureDiagnostic?.boundary ?? state.boundary, operation: state.operation,
-          syscall: cause?.syscall, pathContext: state.pathContext } } : {}) };
+          syscall: cause?.syscall, pathContext: state.pathContext } } : {}),
+      ...((pendingError || warningError || auxiliaryErrors.length || hasNativeErrors) ? { causalEvidence: captureCausalDiagnostic({
+        error: cause ?? warningError, executionId, phase: state.stage,
+        operation: warningError && !pendingError ? 'thread-name' : state.operation,
+        stdout: { text: stdout, bytes: stdoutBytes, truncated: stdoutTruncated },
+        stderr: { text: stderr, bytes: stderrBytes, truncated: stderrTruncated },
+        exitCode: childExitCode, signal: childSignal,
+        native: { codexErrors: nativeErrors.events.slice().reverse().map(event => ({ type: event.type,
+          message: event.message?.text, native: event.native?.text })), omittedCodexErrorEvents: nativeErrors.omittedEvents,
+          auxiliaryErrors, launcherDiagnostic }, secrets }) } : {}) };
+    let checkpointError;
+    try { await checkpoint({ cleanup: 'pending', retention: 'unknown' }); }
+    catch (error) {
+      checkpointError = error;
+      state.recorderFailure = captureCausalDiagnostic({ error, executionId, phase: 'diagnostic-persistence', operation: 'persist-fallback', secrets }, { compact: true });
+    }
     try {
-      // This capsule already contains the operation about to run. Even a failed
-      // replacement leaves the previous durable frontier and blocks cleanup.
-      await checkpoint({ cleanup: 'pending', retention: 'unknown' });
-      finalizeStreams();
-      if (!launcherDiagnostic && !childLaunchError && child) launcherDiagnostic = parseLauncherDiagnostic(stderr, { truncated: stderrTruncated });
-      // Timeout rejects before the normal result path. Retain only the native
-      // inner receipt parsed here; child close alone is not containment proof.
-      if (launcherDiagnostic) evidence.codexContainment = launcherDiagnostic.containment ?? 'unknown';
-      const shouldPersist = pendingError || diagnosticMode === 'debug';
+      const shouldPersist = pendingError || warningError || auxiliaryErrors.length || hasNativeErrors || checkpointError || diagnosticMode === 'debug';
       if (shouldPersist) {
         const filesystem = checkoutRoot ? await filesystemSnapshot([
-          ['checkout', checkoutRoot], ['git', join(checkoutRoot, '.git')], ['sandbox', stagingDir], ['input', inputPath], ['schema', schemaPath]]) : {};
+          ['checkout', checkoutRoot], ['git', join(checkoutRoot, '.git')], ['sandbox', stagingDir], ['input', inputPath], ['schema', schemaPath]], secrets) : {};
         const diagnostic = createDiagnostic({
           executionId, mode: diagnosticMode, startedAt: diagnosticStartedAt, endedAt: new Date().toISOString(),
           phase: state.stage, phases: diagnosticPhases, lifecycle: { ...state, cleanupComplete: false, cleanupRequiredByOwner: true },
@@ -568,20 +597,26 @@ export async function runGovernedCodexTask({
           argv: finalProcessSpec?.args ?? [], env: childEnv ? diagnosticEnvironmentSnapshot(childEnv) : {}, checkout: checkoutRoot,
           filesystem, input: { path: inputPath, bytes: Buffer.byteLength(taskInput), exists: filesystem.input?.exists === true },
           schema: { path: schemaPath, bytes: Buffer.byteLength(schemaText), exists: filesystem.schema?.exists === true },
-          stdout, stdoutTruncated, codexErrorEvents: jsonlParser.diagnostics(), stderr, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
+          stdout, stdoutTruncated, codexErrorEvents: jsonlParser.diagnostics(), stderr, stderrTruncated, launcherDiagnostic, exitCode: childExitCode, signal: childSignal,
           classification: pendingError?.code ?? launcherDiagnostic?.code ?? 'CODEX_EXIT_OK',
+          error: cause ?? warningError ?? checkpointError, causalEvidence: state.causalEvidence,
           runtimeFailure: cause ? { operation: state.operation, code: cause.code, syscall: cause.syscall, path: cause.path, dest: cause.dest } : undefined,
           secrets
         });
         const receipt = await diagnosticStore(diagnostic);
-        if (receipt?.status === 'unavailable') throw Object.assign(new Error('Primary diagnostic store unavailable'), { code: receipt.storeCode ?? receipt.code });
-        store = { status: 'stored', mode: diagnosticMode, executionId };
+        const reference = safeDiagnosticStoreReference(typeof receipt?.stdout === 'string' ? JSON.parse(receipt.stdout) : receipt);
+        if (reference?.status !== 'stored' || reference.executionId !== executionId || reference.mode !== diagnosticMode) {
+          throw Object.assign(new Error('Primary diagnostic storage is not proven'), { code: receipt?.storeCode ?? receipt?.code ?? 'DIAGNOSTICS_STORE_FAILED', native: receipt });
+        }
+        store = reference;
+        if (checkpointError) throw checkpointError;
         await checkpoint({ persistence: 'stored', diagnosticStore: store });
       } else {
         await checkpoint({ persistence: 'not_required' });
       }
     } catch (error) {
       const code = safeCode(error, 'DIAGNOSTICS_STORE_FAILED');
+      state.recorderFailure = captureCausalDiagnostic({ error, executionId, phase: 'diagnostic-persistence', operation: 'persist-diagnostic', secrets }, { compact: true });
       store = { status: 'unavailable', code: 'DIAGNOSTICS_STORE_FAILED', storeCode: error?.storeDiagnosticCode ?? code, executionId, mode: diagnosticMode };
       finalizationError = new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Runtime diagnostics failed; attempt artifacts are retained', {
         stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence', operation: 'persist-diagnostic', primaryCause: code });
@@ -593,7 +628,7 @@ export async function runGovernedCodexTask({
     }
     const failure = pendingError ?? finalizationError;
     if (failure) {
-      failure.details = { ...state, ...failure.details, executionId, fallbackReference: capsule.reference,
+      failure.details = { ...publicState(), ...failure.details, executionId, fallbackReference: capsule.reference,
         cleanup: state.cleanup, persistence: state.persistence, retention: state.retention,
         lastSuccessfulBoundary: state.lastSuccessfulBoundary, ...(store ? { diagnosticStore: store } : {}) };
       addDiagnosticDetails(failure, launcherDiagnostic, store, evidence.codexChildStarted);
@@ -603,7 +638,7 @@ export async function runGovernedCodexTask({
     evidence.executionId = executionId;
     evidence.fallbackReference = capsule.reference;
     evidence.diagnosticStore = store;
-    evidence.runtimeLifecycle = state;
+    evidence.runtimeLifecycle = publicState();
     if (!pendingError && finalizationError) throw finalizationError;
   }
 }

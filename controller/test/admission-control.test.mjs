@@ -8,7 +8,7 @@ import { execFile, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { setTimeout } from 'node:timers/promises';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
-import { createAdmissionControl } from '../src/admission-control.mjs';
+import { createAdmissionControl, verifiedPendingLocation } from '../src/admission-control.mjs';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { parseAdmissionArguments, drainAdmission, readDrainSnapshot, readAdmissionSnapshot } from '../src/admission-cli.mjs';
 import { runAttempt } from '../src/attempt.mjs';
@@ -423,10 +423,40 @@ test('long drain emits bounded counts every thirty seconds without exposing atte
   });
   assert.equal(value.drained, true);
   assert.deepEqual(progress, [
-    { phase: 'drain', active: 2, unknown: 0, elapsedSeconds: 30 },
-    { phase: 'drain', active: 2, unknown: 0, elapsedSeconds: 60 }
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 0 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 30 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 60 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'drained', elapsedSeconds: 65 }
   ]);
   assert.doesNotMatch(JSON.stringify(progress), /private-attempt|12345678/);
+});
+
+test('drain reports two independently finishing controllers and the verified final gate transition promptly', async () => {
+  let clock = 0; const progress = [];
+  const identities = [{ task: 244, step: 1, runId: 111 }, { task: 245, step: 3, runId: 222 }];
+  await drainAdmission({ operationId, timeout: 5 }, { now: () => clock,
+    wait: async ms => { clock += ms; }, reportProgress: value => progress.push(value),
+    snapshot: async () => {
+      const pending = clock < 1000 ? identities : clock < 2000 ? identities.slice(1) : [];
+      return { active: pending.map(item => item.runId), unknown: [], pending, drained: pending.length === 0 };
+    } });
+  assert.deepEqual(progress.map(value => [value.active, value.elapsedSeconds, value.pending, value.reason]), [
+    [2, 0, 'Task-244/Step-1/run-111,Task-245/Step-3/run-222', 'waiting-for-controllers'],
+    [1, 1, 'Task-245/Step-3/run-222', 'waiting-for-controllers'], [0, 2, 'none', 'drained']
+  ]);
+  assert.doesNotMatch(JSON.stringify(progress), /task.*success|completed/i);
+});
+
+test('unknown drain inventory reports the actual blocker before preserving the original stop', async () => {
+  const progress = [];
+  await assert.rejects(drainAdmission({ operationId, timeout: 5 }, {
+    reportProgress: value => progress.push(value), snapshot: async () => {
+      throw Object.assign(new Error('uncontained original attempt'), { code: 'ADMISSION_DRAIN_UNKNOWN',
+        details: { inventory: { active: [11], unknown: [22], pending: [{ task: 244, step: 1, runId: 11 }] } } });
+    } }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  assert.equal(progress[0].active, 1); assert.equal(progress[0].unknown, 1);
+  assert.equal(progress[0].reason, 'inventory-unknown');
+  assert.equal(progress[0].pending, 'Task-244/Step-1/run-11');
 });
 
 test('root lifecycle CLI accepts only bounded fixed command arguments', () => {
@@ -444,7 +474,7 @@ test('root lifecycle CLI accepts only bounded fixed command arguments', () => {
 test('quiesced routing warning reports known absence of a worker without inventing a terminal Outcome', async () => {
   const output = []; const warnings = [];
   assert.equal(await reportRoutingResult(async () => ({ status: 'BLOCKED', code: 'ADMISSION_QUIESCED' }),
-    { write: value => output.push(value), writeError: value => warnings.push(value) }), 0);
+    { write: value => output.push(value), writeError: value => warnings.push(value) }), 1);
   assert.match(warnings[0], /Automatic admission is quiesced; no worker started/);
   assert.doesNotMatch(warnings[0], /terminal Outcome/);
   assert.equal(JSON.parse(output[0]).code, 'ADMISSION_QUIESCED');
@@ -455,7 +485,7 @@ test('real shared flock serializes quiesce against automatic reservation before 
   const module = new URL('../src/admission-control.mjs', import.meta.url).href;
   const attemptStore = new URL('../src/attempt-store.mjs', import.meta.url).href;
   const script = join(root, 'race.mjs'); const lock = join(root, 'publication-v2.lock');
-  await writeFile(script, `import { createAdmissionControl } from ${JSON.stringify(module)};
+  await writeFile(script, `import { createAdmissionControl, verifiedPendingLocation } from ${JSON.stringify(module)};
 import { createAttemptStore } from ${JSON.stringify(attemptStore)};
 import { writeFile, access } from 'node:fs/promises';
 import { setTimeout } from 'node:timers/promises';
@@ -495,4 +525,93 @@ if (process.argv[2] === 'reserve') {
   assert.deepEqual((await gate.status()).active, [99]);
   await exec('/usr/bin/flock', [lock, process.execPath, script, 'denied'], { env: childEnv });
   assert.equal((await createAttemptStore(join(root, 'publication-v2')).all()).length, 1);
+});
+
+
+test('lifecycle pending identities include configured peer repositories and explicit slots only', async t => {
+  const installation = { repositories: ['example-org/sample-project', 'example-org/peer-project'],
+    executionSlots: [{ id: 'primary' }, { id: 'slot-2' }] };
+  const store = memoryStore(), journal = memoryStore();
+  const root = await mkdtemp(join(tmpdir(), 'relay-drain-location-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const gate = createAdmissionControl({ root, consumerDigest: CONSUMER_DIGEST, store, journal,
+    protectedRoot: false, installation, supplementalInventory: async () => ({ active: [99], unknown: [100] }) });
+  await gate.initialize();
+  const add = async (runId, repository, executionSlot) => store.put(runId, {
+    envelope: { version: VERSION, route: 'auto', consumerDigest: CONSUMER_DIGEST, runId,
+      attemptId: `run-${runId}`, issueNumber: 244, step: 2, repository,
+      ...(executionSlot === undefined ? {} : { executionSlot }) },
+    controllerLifecycle: { version: 1, status: 'active' }
+  });
+  await add(11, installation.repositories[0], 'primary');
+  await add(12, installation.repositories[1], 'slot-2');
+  await add(13, installation.repositories[0]);
+  await add(14, installation.repositories[0], 'unconfigured-slot');
+  await add(15, 'foreign-org/private-repository', 'slot-2');
+  const state = await gate.status();
+  assert.deepEqual(state.active, [11, 12, 13, 14, 15, 99]);
+  assert.deepEqual(state.unknown, [100]);
+  assert.deepEqual(state.pending, [
+    { task: 244, step: 2, runId: 11, repository: installation.repositories[0], executionSlot: 'primary' },
+    { task: 244, step: 2, runId: 12, repository: installation.repositories[1], executionSlot: 'slot-2' },
+    { task: 244, step: 2, runId: 13, repository: installation.repositories[0] },
+    { task: 244, step: 2, runId: 14, repository: installation.repositories[0] }
+  ]);
+});
+
+test('drain output preserves verified repository and slot without projecting arbitrary location text', async () => {
+  const installation = { repositories: ['example-org/sample-project', 'example-org/peer-project'],
+    executionSlots: [{ id: 'primary' }, { id: 'slot-2' }] };
+  const pending = [
+    { task: 244, step: 2, runId: 11, repository: installation.repositories[0], executionSlot: 'primary' },
+    { task: 244, step: 3, runId: 12, repository: installation.repositories[1], executionSlot: 'slot-2' },
+    { task: 244, step: 4, runId: 13, repository: installation.repositories[0], executionSlot: 'private-slot-value' },
+    { task: 244, step: 5, runId: 14, repository: 'foreign/private-repository', executionSlot: 'primary' },
+    { task: 244, step: 6, runId: 15 }
+  ];
+  const progress = [];
+  await drainAdmission({ operationId, timeout: 5 }, { installation,
+    snapshot: async () => ({ active: [], unknown: [], pending, drained: true }),
+    reportProgress: value => progress.push(value) });
+  assert.equal(progress[0].pending,
+    'Task-244/Step-2/run-11[repository=example-org/sample-project;slot=primary],'
+    + 'Task-244/Step-3/run-12[repository=example-org/peer-project;slot=slot-2],'
+    + 'Task-244/Step-4/run-13[repository=example-org/sample-project],'
+    + 'Task-244/Step-5/run-14,Task-244/Step-6/run-15');
+  assert.doesNotMatch(JSON.stringify(progress), /private-slot-value|foreign|private-repository/);
+  for (const value of ['../../private', 'owner/private] injected=value', 'owner/peer\nprivate'])
+    assert.deepEqual(verifiedPendingLocation({ repository: value, executionSlot: 'primary' }, installation), {});
+});
+
+test('configured long drain identities respect the live transport byte limit', async () => {
+  const repository = 'o'.repeat(100) + '/' + 'r'.repeat(100);
+  const installation = { repository, executionSlots: [{ id: 's'.repeat(32) }] };
+  const pending = Array.from({ length: 20 }, (_, n) => ({ task: n + 1, step: n + 1, runId: n + 1,
+    repository, executionSlot: installation.executionSlots[0].id }));
+  const progress = [];
+  await drainAdmission({ operationId, timeout: 5 }, { installation,
+    snapshot: async () => ({ active: pending, unknown: [], pending, drained: true }),
+    reportProgress: value => progress.push(value) });
+  assert.equal(progress[0].active, 20);
+  assert.ok(progress[0].pending.length < 3500);
+  assert.ok(progress[0].pending.split(',').length < 20);
+});
+
+
+test('drain preserves the final native stop and cause when recorder fallback precedes its envelope', async () => {
+  const inventory = { active: [11], unknown: [22] };
+  const error = Object.assign(new Error('native drain refusal'), { code: 1,
+    stderr: 'RELAY_DIAGNOSTIC_UNAVAILABLE={"originalEvidence":"observed_not_retained"}\n'
+      + JSON.stringify({ code: 'ADMISSION_DRAIN_UNKNOWN', details: { inventory },
+        diagnosticStore: { status: 'unavailable', code: 'DIAGNOSTICS_STORE_FAILED' } }) + '\n' });
+  await assert.rejects(readDrainSnapshot(operationId, 1000, { execute: async () => { throw error; } }), value => {
+    assert.equal(value.code, 'ADMISSION_DRAIN_UNKNOWN');
+    assert.equal(value.cause, error); assert.deepEqual(value.details.inventory, inventory); return true;
+  });
+  for (const stderr of ['noise\n{"code":{"private":"untrusted"}}', 'noise\n{"code":"private value"}',
+    '{"code":"ADMISSION_DRAIN_UNKNOWN"}\nmalformed final envelope']) {
+    await assert.rejects(readDrainSnapshot(operationId, 1000, { execute: async () => {
+      throw Object.assign(new Error('bad helper envelope'), { code: 1, stderr });
+    } }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
+  }
 });

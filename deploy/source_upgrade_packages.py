@@ -58,8 +58,13 @@ def _context(stage, operation, values, source_root):
 
 
 def _run(argv, *, env, cwd):
-    return subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                          env=env, cwd=cwd, timeout=120, check=False)
+    result = subprocess.run(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            env=env, cwd=cwd, timeout=120, check=False)
+    if result.returncode:
+        from lifecycle import report_failure
+        report_failure(subprocess.CalledProcessError(result.returncode, argv, output=result.stdout,
+                                                     stderr=result.stderr), 'source-package-probe')
+    return result
 
 
 def _download(url):

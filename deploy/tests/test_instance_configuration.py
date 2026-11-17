@@ -266,6 +266,9 @@ def test_actual_first_preflight_task_binds_the_installed_repository(tmp_path, in
                              '--check', str(playbook)], cwd=tmp_path,
                             env={**os.environ, 'ANSIBLE_NOCOLOR': '1'}, capture_output=True, text=True)
     assert (result.returncode == 0) == (installed_repository == 'example/first'), result.stdout + result.stderr
+    if installed_repository != 'example/first':
+        assert 'RELAY_DEPLOYMENT_CAUSAL_EVIDENCE=' in result.stdout + result.stderr
+        assert 'RELAY_INSTANCE_REPOSITORY_COLLISION' in result.stdout + result.stderr
     assert json.loads((config_root / 'reviewer-mcp.json').read_text())['repository'] == installed_repository
 
 
@@ -349,3 +352,61 @@ def test_existing_authorized_activate_handles_manual_socket_without_new_config(t
         assert observed[5:] == (['enable ' + reviewer, 'start ' + reviewer] if installed == 'valid' else [])
     else:
         assert observed == ['daemon-reload']
+
+
+@pytest.mark.parametrize('failure', ['unit-collision', 'repository-collision', 'json', 'os'])
+def test_inline_identity_guard_preserves_safe_cause_before_generic_rejection(tmp_path, failure):
+    config_root = tmp_path / 'private-config-location'
+    config_root.mkdir()
+    configured = config_root / 'reviewer-mcp.json'
+    units = tmp_path / 'units'
+    units.mkdir()
+    private = 'synthetic-private-value'
+    arguments = ['/opt/fixture', str(config_root), 'example/first', 'fixture-reviewer']
+    if failure == 'unit-collision':
+        (units / 'fixture.service').write_text('ExecStart=/opt/foreign/private-command ' + private + '\n')
+        arguments.append('fixture.service')
+    elif failure == 'repository-collision':
+        configured.write_text(json.dumps({'repository': 'foreign/repository', 'password': private}))
+    elif failure == 'json':
+        configured.write_text('{"password":"' + private + '",\n')
+    else:
+        configured.mkdir()  # A reliable native EISDIR read failure even as root.
+    # Substitute only the filesystem root for the unchanged inline product
+    # command, avoiding the prepared host's unrelated systemd units.
+    source = (BACKEND / 'scripts/verify_instance_identity.py').read_text().replace(
+        "systemd_root=Path('/etc/systemd/system')", 'systemd_root=Path(' + repr(str(units)) + ')')
+    result = subprocess.run([sys.executable, '-c', source, *arguments], text=True,
+                            capture_output=True, timeout=10)
+    assert result.returncode == 1 and result.stdout == ''
+    evidence, rejected = result.stderr.splitlines()
+    assert rejected == 'RELAY_INSTANCE_IDENTITY_REJECTED'
+    prefix = 'RELAY_DEPLOYMENT_CAUSAL_EVIDENCE='
+    assert evidence.startswith(prefix)
+    record = json.loads(evidence[len(prefix):])
+    assert record['phase'] == 'host-preflight' and record['operation'] == 'verify-instance-identity'
+    assert len(result.stderr.encode()) < 2048
+    assert private not in result.stderr and str(config_root) not in result.stderr
+    assert '/opt/foreign' not in result.stderr and 'foreign/repository' not in result.stderr
+    cause, = record['causes']
+    assert cause['messageAvailability'] == cause['configAvailability'] == cause['pathAvailability'] == 'redacted'
+    if failure in ['unit-collision', 'repository-collision']:
+        assert cause['type'] == 'ValueError'
+        assert cause['reason'] == ('RELAY_INSTANCE_UNIT_COLLISION' if failure == 'unit-collision'
+                                   else 'RELAY_INSTANCE_REPOSITORY_COLLISION')
+    elif failure == 'json':
+        assert cause['type'] == 'JSONDecodeError'
+        assert (cause['jsonLine'], cause['jsonColumn'], cause['jsonPosition']) == (2, 1, len(configured.read_text()))
+    else:
+        import errno
+        assert cause['type'] == 'IsADirectoryError'
+        assert cause['errno'] == 'EISDIR' and cause['errnoNumber'] == errno.EISDIR
+
+
+def test_inline_identity_guard_valid_path_still_has_only_its_existing_receipt(tmp_path):
+    source = (BACKEND / 'scripts/verify_instance_identity.py').read_text().replace(
+        "systemd_root=Path('/etc/systemd/system')", 'systemd_root=Path(' + repr(str(tmp_path / 'units')) + ')')
+    result = subprocess.run([sys.executable, '-c', source, '/opt/fixture', str(tmp_path / 'config'),
+                             'example/first', 'fixture-reviewer'], text=True, capture_output=True, timeout=10)
+    assert result.returncode == 0 and result.stdout == 'RELAY_INSTANCE_IDENTITY_VALID\n'
+    assert result.stderr == ''
