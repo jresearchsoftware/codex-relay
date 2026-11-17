@@ -441,7 +441,7 @@ class OwnerPoolPreflightProcessTests(unittest.TestCase):
                     else:
                         self.assertNotEqual(result.returncode, 0)
                         self.assertEqual(result.stdout, '')
-                        self.assertEqual(result.stderr, expected + '\n')
+                        self.assertTrue(result.stderr.endswith(expected + '\n'), result.stderr)
                     self.assertNotIn('selected-source-private-input', result.stdout + result.stderr)
 
 
@@ -461,7 +461,8 @@ class OwnerProjectionPreflightProcessTests(unittest.TestCase):
                         env=owner.clean_environment(), text=True, capture_output=True, timeout=10)
                     self.assertNotEqual(result.returncode, 0)
                     self.assertEqual(result.stdout, '')
-                    self.assertEqual(result.stderr, 'WORKFLOW_REVIEW_REQUIRED\n')
+                    self.assertTrue(result.stderr.endswith('WORKFLOW_REVIEW_REQUIRED\n'), result.stderr)
+                    self.assertNotIn('synthetic private target diagnostic', result.stderr)
 
 
 if __name__ == '__main__':

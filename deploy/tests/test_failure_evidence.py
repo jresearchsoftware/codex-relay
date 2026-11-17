@@ -126,7 +126,7 @@ def test_fsync_failure_falls_back_to_journal_and_retains_the_primary_cause(tmp_p
 def test_known_credential_is_redacted_before_clipping_the_causal_message(monkeypatch):
     monkeypatch.setattr(os, 'geteuid', lambda: 0)
     monkeypatch.setattr(os, 'getuid', lambda: 0)
-    secret = 'synthetic-sensitive-value-across-boundary'
+    secret = 'synthetic-sensitive-value-across-boundary' + 'z' * 40000
     monkeypatch.setenv('FIXTURE_ACCESS_TOKEN', secret)
     real_stat = os.stat
     monkeypatch.setattr(os, 'stat', lambda path, *args, **kwargs: SimpleNamespace(st_mode=stat.S_IFSOCK, st_uid=0)
@@ -136,5 +136,5 @@ def test_known_credential_is_redacted_before_clipping_the_causal_message(monkeyp
         calls.append(kwargs['input'])
         return subprocess.CompletedProcess(argv, 0, '', '')
     monkeypatch.setattr(subprocess, 'run', logger)
-    report_failure(ValueError('x' * 65530 + secret), 'installer')
-    assert secret not in calls[0] and 'synthetic-' not in calls[0]
+    report_failure(ValueError('x' * 32700 + secret), 'installer')
+    assert secret not in calls[0] and 'synthetic-sensitive-value' not in calls[0]

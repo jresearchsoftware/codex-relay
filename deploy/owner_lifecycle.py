@@ -16,7 +16,7 @@ sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
-from lifecycle import execute, require, progress, report_failure
+from lifecycle import execute, require, progress, report_failure, failure_reporting_source
 import git_intent
 import repository_source
 
@@ -42,7 +42,7 @@ def target_source_arguments(install, source):
     return ('--target-source', str(source)) if PREDISPATCH_RETENTION_CAPABILITY in metadata.get('capabilities', []) else ()
 
 
-PROJECTION_PREFLIGHT_SCRIPT = '''import json, sys
+PROJECTION_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, sys
 from pathlib import Path
 sys.dont_write_bytecode = True
 source = Path(sys.argv[1])
@@ -58,7 +58,10 @@ try:
         config = loads(json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False), source)
     verify(config, sys.argv[2], source, Path(sys.argv[3]))
     print('WORKFLOW_PREFLIGHT=PASS')
-except Exception:
+except Exception as error:
+    import os
+    if os.geteuid() == 0 and os.getuid() == 0:
+        report_failure(error, 'workflow-preflight')
     print('WORKFLOW_REVIEW_REQUIRED', file=sys.stderr)
     sys.exit(1)
 '''
@@ -74,7 +77,7 @@ def projection_preflight(source, target, consumer, config):
             'WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target')
 
 
-POOL_PREFLIGHT_SCRIPT = '''import json, re, sys
+POOL_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, re, sys
 sys.dont_write_bytecode = True
 sys.path.insert(0, sys.argv[1])
 try:
@@ -85,6 +88,9 @@ try:
     preflight_pool(None, None, json.loads(raw), local=True)
     print('MANAGED_POOL_PREFLIGHT=PASS')
 except Exception as error:
+    import os
+    if os.geteuid() == 0 and os.getuid() == 0:
+        report_failure(error, 'managed-pool-preflight')
     code = str(error)
     print(code if re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', code) else
           'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN', file=sys.stderr)

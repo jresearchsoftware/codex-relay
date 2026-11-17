@@ -350,7 +350,7 @@ class SelectedTargetConfigTests(unittest.TestCase):
             (source / 'deploy/config.py').write_text('raise RuntimeError("native parser loader failed")\n')
             with self.assertRaisesRegex(ValueError, '^git-selected-config-invalid$') as caught:
                 owner.selected_config(source, b'{}')
-            self.assertIn('native parser loader failed', caught.exception.__cause__.stderr)
+            self.assertIn(b'native parser loader failed', caught.exception.__cause__.stderr)
             self.assertNotIn('native parser loader failed', str(caught.exception))
 
     def test_git_failure_retains_actionable_transport_stderr(self):

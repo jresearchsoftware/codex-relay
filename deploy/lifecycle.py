@@ -46,15 +46,18 @@ def report_failure(error, phase, *, private_log=None):
     causes, seen, current = [], set(), error
     while isinstance(current, BaseException) and id(current) not in seen and len(causes) < 4:
         seen.add(id(current))
-        row = {'type': type(current).__name__, 'message': redact(current)[:4096]}
+        message = redact(current)
+        row = {'type': type(current).__name__, 'message': message[:4096], 'messageTruncated': len(message) > 4096}
         if isinstance(current, OSError) and current.errno in errno.errorcode:
             row['errno'] = errno.errorcode[current.errno]
         if isinstance(current, subprocess.CalledProcessError):
             row['exit'] = current.returncode
             if current.stderr:
-                row['stderr'] = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr)[:8192]
+                stderr = redact(current.stderr.decode('utf-8', errors='replace') if isinstance(current.stderr, bytes) else current.stderr)
+                row['stderr'], row['stderrTruncated'] = stderr[:8192], len(stderr) > 8192
             if current.stdout:
-                row['stdout'] = redact(current.stdout.decode('utf-8', errors='replace') if isinstance(current.stdout, bytes) else current.stdout)[:8192]
+                stdout = redact(current.stdout.decode('utf-8', errors='replace') if isinstance(current.stdout, bytes) else current.stdout)
+                row['stdout'], row['stdoutTruncated'] = stdout[:8192], len(stdout) > 8192
         if isinstance(current, subprocess.TimeoutExpired):
             row['timeoutSeconds'] = current.timeout
         if hasattr(current, 'observation'):
@@ -65,8 +68,9 @@ def report_failure(error, phase, *, private_log=None):
                 row['observation'] = {'status': 'unavailable'}
         causes.append(row)
         current = current.__cause__ or current.__context__
+    stack = redact(''.join(traceback.format_exception(error)))
     record = {'version': 1, 'phase': phase, 'causes': causes,
-              'stack': redact(''.join(traceback.format_exception(error)))[:32768]}
+              'stack': stack[:32768], 'stackTruncated': len(stack) > 32768}
     if private_log is not None:
         record['protectedLog'] = str(private_log)
     payload = json.dumps(record, ensure_ascii=True, separators=(',', ':'))
