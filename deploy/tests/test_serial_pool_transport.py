@@ -207,7 +207,14 @@ def test_native_script_rejects_oversized_payload_without_echoing_it():
     result = subprocess.run([sys.executable, '-I', '-c', transport.OWNER_POOL_SCRIPT],
         input=TOKEN + 'x' * transport.OWNER_POOL_INPUT_BYTES, text=True, capture_output=True, timeout=10)
     assert result.returncode != 0 and result.stdout == ''
-    assert result.stderr == 'MANAGED_POOL_PREFLIGHT_UNPROVEN_INSPECT_BEFORE_RETRY\n'
+    lines = result.stderr.splitlines()
+    assert len(lines) == 2
+    assert lines[-1] == 'MANAGED_POOL_PREFLIGHT_UNPROVEN_INSPECT_BEFORE_RETRY'
+    evidence = [json.loads(line.removeprefix('RELAY_DEPLOYMENT_FAILURE_EVIDENCE='))
+                for line in lines[:-1] if line.startswith('RELAY_DEPLOYMENT_FAILURE_EVIDENCE=')]
+    assert len(evidence) == 1 and evidence[0]['phase'] == 'managed-pool-owner-transport'
+    assert evidence[0]['status'] in ['stored', 'submitted', 'unavailable']
+    assert TOKEN not in result.stdout + result.stderr and 'x' * 100 not in result.stderr
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason='execute the actual target root receipt boundary')

@@ -338,3 +338,48 @@ test('observed native errors remain durable after successful recovery without ch
   assert.match(state.causalEvidence.native.text, /native request temporarily unavailable/);
   assert.doesNotMatch(JSON.stringify(state), /private-fixture/);
 });
+
+test('final retirement keeps original runtime evidence primary and cleanup evidence separate', async t => {
+  const f = await fixture(t);
+  await assert.rejects(runGovernedCodexTask({ ...f.options,
+    spawnImpl: childFixture({ code: 7, stderr: 'original native child failure token=hidden-child\n' + JSON.stringify({
+      source: 'relay-codex-launcher', schemaVersion: 1, code: 'CHILD_STDERR', bytes: 55,
+      preview: '', childStarted: true, childExitCode: 7, containment: 'reaped' }) + '\n' })
+  }), { code: 'CODEX_NONZERO_EXIT' });
+  await assert.rejects(f.finalize({ failure: { code: 'CODEX_NONZERO_EXIT' }, cleanupSandbox: async () => {
+    throw Object.assign(new Error('later cleanup failure token=hidden-cleanup'), { code: 'EACCES', cleanupContainment: 'reaped' });
+  } }), { code: 'SANDBOX_CLEANUP_FAILED' });
+  const archived = JSON.parse(await readFile(join(f.primaryRoot, 'run-39-finalization.json'), 'utf8'));
+  assert.match(archived.causalEvidence.stderr.text, /original native child failure/);
+  assert.match(archived.lifecycle.secondaryEvidence.exception.text, /later cleanup failure/);
+  assert.doesNotMatch(JSON.stringify(archived), /hidden-child|hidden-cleanup/);
+  assert.equal(archived.lifecycle.failureDiagnostic.code, 'CODEX_NONZERO_EXIT');
+  assert.equal(archived.lifecycle.cleanup, 'failed');
+});
+
+test('a non-Error exception cannot break runtime failure finalization', async t => {
+  const f = await fixture(t);
+  await assert.rejects(runGovernedCodexTask({ ...f.options, buildArgs() { throw null; } }), { code: 'RUNTIME_UNEXPECTED_FAILURE' });
+  const state = await f.capsule.read();
+  assert.equal(state.persistence, 'stored'); assert.equal(state.failureDiagnostic.operation, 'build-arguments');
+});
+
+test('failure of both runtime recorders emits an independent safe evidence-gap notice', async t => {
+  const f = await fixture(t); const lines = [];
+  const write = f.capsule.write.bind(f.capsule);
+  await assert.rejects(runGovernedCodexTask({ ...f.options,
+    buildArgs() { throw Object.assign(new Error('private argument cause'), { code: 'EACCES' }); },
+    openFallback: async () => ({ ...f.capsule, write(value) {
+      if (value.causalEvidence) throw Object.assign(new Error('private fallback cause'), { code: 'EROFS' });
+      return write(value);
+    } }),
+    diagnosticStore: async () => { throw Object.assign(new Error('private primary cause'), { code: 'ENOSPC' }); },
+    writeDiagnosticFallback: text => lines.push(text)
+  }), { code: 'EACCES' });
+  assert.equal(lines.length, 1); assert.match(lines[0], /observed_not_retained/);
+  assert.match(lines[0], /EACCES/); assert.match(lines[0], /ENOSPC/); assert.match(lines[0], /EROFS/);
+  assert.doesNotMatch(lines[0], /private|argument cause|primary cause|fallback cause/);
+  const prior = await f.capsule.read();
+  assert.equal(prior.operation, 'build-arguments'); assert.equal(prior.causalEvidence, undefined);
+  assert.equal(prior.persistence, 'pending');
+});

@@ -29,7 +29,7 @@ def old_reviewer(namespace, expected):
     unit = namespace + '-reviewer.service'
     def pid():
         value = subprocess.check_output(['/bin/systemctl', 'show', unit, '--property=MainPID', '--value'],
-            text=True, timeout=15).strip()
+            text=True, stderr=subprocess.PIPE, timeout=15).strip()
         require(value.isdigit() and int(value) > 0, 'OLD_REVIEWER_RUNTIME_UNPROVEN')
         return value
     selected = pid()
@@ -122,7 +122,8 @@ def remote_inspect(target, key, config, operation, retained):
         input=json.dumps({'config': config, 'operation': operation, 'retained': retained}), timeout=180)
     if result.returncode:
         codes = re.findall(r'(?m)^(?:PARTIAL_INSTALL|BOUNDED_RECOVERY)_[A-Z_]{1,100}$', result.stderr)
-        raise ValueError(codes[-1] if codes else 'PARTIAL_INSTALL_PROOF_UNAVAILABLE')
+        raise ValueError(codes[-1] if codes else 'PARTIAL_INSTALL_PROOF_UNAVAILABLE') from subprocess.CalledProcessError(
+            result.returncode, 'partial-install-remote-inspect', output=result.stdout, stderr=result.stderr)
     require(len(result.stdout.encode()) <= bounded.LIMIT, 'PROOF_LIMIT')
     return bounded.decode(result.stdout)
 
@@ -130,10 +131,14 @@ def remote_inspect(target, key, config, operation, retained):
 def unchanged_tail(root, desired, controller):
     """This bounded frontier cannot install future unrelated template changes."""
     command = ['git', '-c', 'core.hooksPath=/dev/null', '-C', str(root)]
-    require(subprocess.run([*command, 'merge-base', '--is-ancestor', desired, controller],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, 'DESIRED_SOURCE_NOT_ANCESTOR')
+    observed = subprocess.run([*command, 'merge-base', '--is-ancestor', desired, controller],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if observed.returncode:
+        raise ValueError('PARTIAL_INSTALL_DESIRED_SOURCE_NOT_ANCESTOR') from subprocess.CalledProcessError(
+            observed.returncode, 'partial-install-ancestry', stderr=getattr(observed, 'stderr', None))
     changed = subprocess.check_output([*command, 'diff', '--name-only', desired, controller, '--',
-        'deploy/config.py', 'deploy/workflow_projection.py', 'deploy/workflows', 'deploy/ansible'], text=True).splitlines()
+        'deploy/config.py', 'deploy/workflow_projection.py', 'deploy/workflows', 'deploy/ansible'],
+        text=True, stderr=subprocess.PIPE).splitlines()
     allowed = {'deploy/ansible/site.yml', 'deploy/ansible/scripts/publish_git_consumer.py',
         'deploy/ansible/roles/relay_controller/tasks/runtime-entrypoints.yml',
         'deploy/ansible/relay-intent-apt-preflight.yml',
@@ -160,20 +165,30 @@ def accepted_controller(root, binding, controller):
         'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C',
         'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_TERMINAL_PROMPT': '0'}
     row = subprocess.check_output([*command, 'ls-remote', '--exit-code', remote, 'refs/heads/main'],
-        text=True, timeout=30, env=environment).split()
+        text=True, stderr=subprocess.PIPE, timeout=30, env=environment).split()
     require(len(row) == 2 and bounded.SHA.fullmatch(row[0]) and row[1] == 'refs/heads/main', 'ACCEPTED_MAIN_UNPROVEN')
-    if subprocess.run([*command, 'cat-file', '-e', row[0] + '^{commit}'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+    missing = subprocess.run([*command, 'cat-file', '-e', row[0] + '^{commit}'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if missing.returncode:
         subprocess.run([*command, 'fetch', '--no-tags', remote, row[0]],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=60, env=environment)
-    if subprocess.check_output([*command, 'rev-parse', '--is-shallow-repository'], text=True).strip() == 'true':
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=60, env=environment)
+        from lifecycle import report_failure
+        recovered = subprocess.CalledProcessError(missing.returncode, 'partial-install-object-probe',
+            stderr=getattr(missing, 'stderr', None))
+        recovered.observation = {'status': 'recovered', 'recovery': 'authenticated-object-fetch'}
+        report_failure(recovered, 'partial-install-object-recovered')
+    if subprocess.check_output([*command, 'rev-parse', '--is-shallow-repository'],
+            text=True, stderr=subprocess.PIPE).strip() == 'true':
         # The protected owner transport deliberately acquires a depth-one source.
         # Ancestry must come from authentic Git objects, not a failed shallow
         # merge-base or a caller assertion that the frozen target is an ancestor.
         subprocess.run([*command, 'fetch', '--no-tags', '--unshallow', remote, row[0]],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=120, env=environment)
-    require(subprocess.run([*command, 'merge-base', '--is-ancestor', controller, row[0]],
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0, 'CONTROLLER_NOT_ACCEPTED')
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True, timeout=120, env=environment)
+    ancestry = subprocess.run([*command, 'merge-base', '--is-ancestor', controller, row[0]],
+        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    if ancestry.returncode:
+        raise ValueError('PARTIAL_INSTALL_CONTROLLER_NOT_ACCEPTED') from subprocess.CalledProcessError(
+            ancestry.returncode, 'partial-install-controller-ancestry', stderr=getattr(ancestry, 'stderr', None))
     return {'policy': 'accepted-ancestor', 'revision': controller, 'acceptedMain': row[0]}
 
 
@@ -211,7 +226,10 @@ def admission(config, source, lease, operation, command, *, root=Path('/')):
              'RELAY_CONSUMER_CONFIG': str(p['config'] / 'consumer.json'),
              'RELAY_REPOSITORY': config['environment'].get('repository', config['consumer'].get('repository'))},
         stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
-    require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024, 'FINAL_ADMISSION_FAILED')
+    if result.returncode:
+        raise ValueError('PARTIAL_INSTALL_FINAL_ADMISSION_FAILED') from subprocess.CalledProcessError(
+            result.returncode, 'partial-install-final-admission', output=result.stdout, stderr=result.stderr)
+    require(len(result.stdout) <= 1024 * 1024, 'FINAL_ADMISSION_FAILED')
     value = bounded.decode(result.stdout)
     if starting:
         verify(lease, p['gate'].parent / 'publication-v2.lock', operation=operation,
@@ -255,7 +273,8 @@ def publish(preparation, arguments):
                 safe['timing'] = diagnostic['timing']
             if safe:
                 error.controller_diagnostic = safe
-        raise error
+        raise error from subprocess.CalledProcessError(result.returncode, 'partial-install-consumer-publication',
+            output=result.stdout, stderr=getattr(result, 'stderr', None))
     return report
 
 

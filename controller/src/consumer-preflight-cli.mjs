@@ -118,7 +118,7 @@ export function runConsumerPreflightProgram(command, args, { input = '', environ
       if (timedOut || oversized) return reject(Object.assign(new Error('CONSUMER_PREFLIGHT_OBSERVATION_LIMIT'), { code: 'CONSUMER_PREFLIGHT_OBSERVATION_LIMIT', native: native(code, signal) }));
       if (code !== 0) {
         const observed = errors.finish(), raw = observed.value;
-        let receipt; try { if (!observed.truncated) receipt = JSON.parse(raw); } catch { /* native bytes remain protected below */ }
+        let receipt; try { if (!observed.truncated) receipt = JSON.parse(raw.trim().split('\n').at(-1)); } catch { /* native bytes remain protected below */ }
         const category = /^[A-Z][A-Z0-9_]{0,79}$/.test(receipt?.code ?? '') ? receipt.code : 'CONSUMER_PREFLIGHT_OBSERVATION_FAILED';
         return reject(Object.assign(new Error(category), { code: category, native: native(code, signal) }));
       }

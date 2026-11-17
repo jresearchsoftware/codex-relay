@@ -70,9 +70,10 @@ jobs:
           const child = spawn('/usr/bin/sudo', ['-n', '/usr/local/sbin/@@NAMESPACE@@-owner-lifecycle', `${action}:${head}:${consumerHead}`],
             { stdio: ['ignore', 'pipe', 'inherit'] });
           child.stdout.on('data', chunk => { process.stdout.write(chunk); report.observe(chunk); });
+          child.stdout.on('error', error => { report.stopHelper(child, error, 'helper-output'); });
           await new Promise(resolve => {
-            child.on('error', () => { process.exitCode = 1; report.finish(1); resolve(); });
-            child.on('close', code => { process.exitCode = code ?? 1; report.finish(process.exitCode); resolve(); });
+            child.on('error', error => { report.transportFailed(error, 'helper-spawn'); process.exitCode = 1; report.finish(1); resolve(); });
+            child.on('close', code => { process.exitCode = report.transportFailure ? 1 : code ?? 1; report.finish(process.exitCode); resolve(); });
           });
           } catch (error) { report.finish(1); throw error; }
           finally { await report.write(); }

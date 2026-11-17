@@ -53,9 +53,15 @@ def original_record_digest(raw):
         'const r=JSON.parse(Buffer.concat(chunks));delete r.predispatchRecovery;'
         'process.stdout.write(createHash("sha256").update(JSON.stringify(r)).digest("hex"));')
     result = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program], input=raw,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
         env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
-    require(result.returncode == 0 and re.fullmatch(rb'[a-f0-9]{64}', result.stdout),
+    if result.returncode:
+        try:
+            require(False, 'PREDISPATCH_BRIDGE_ORIGINAL_UNPROVEN')
+        except Exception as error:
+            raise error from subprocess.CalledProcessError(result.returncode, 'original-record-digest',
+                output=result.stdout, stderr=result.stderr)
+    require(re.fullmatch(rb'[a-f0-9]{64}', result.stdout),
             'PREDISPATCH_BRIDGE_ORIGINAL_UNPROVEN')
     return result.stdout.decode()
 
@@ -214,7 +220,12 @@ def inspect(config, revision, expected_installed, *, root=Path('/'), owner_uid=0
     retained.protected(helper, root, owner_uid)
     result = runner([str(helper), 'status'], capture_output=True, text=True, timeout=60,
                     env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PYTHONDONTWRITEBYTECODE': '1'})
-    require(result.returncode == 0, 'ADMISSION_UNPROVEN')
+    if result.returncode:
+        try:
+            require(False, 'ADMISSION_UNPROVEN')
+        except Exception as error:
+            raise error from subprocess.CalledProcessError(result.returncode, 'install-recovery-admission',
+                output=result.stdout, stderr=getattr(result, 'stderr', None))
     status = retained._recovery_json(result.stdout)
     require(DIGEST.fullmatch(status.get('consumerDigest', '')), 'ADMISSION_UNPROVEN')
     after = current.lstat()

@@ -125,8 +125,16 @@ def managed_unit(config, name):
 
 def checked_systemctl(runner, *args):
     result = runner(['/bin/systemctl', *args], capture_output=True, text=True)
-    require(result.returncode == 0, 'SERVICE_TRANSITION_FAILED')
+    checked_result(result, 'SERVICE_TRANSITION_FAILED')
     return result.stdout
+
+
+def checked_result(result, code):
+    """Retain native failure evidence for the existing protected reporter."""
+    if result.returncode:
+        raise ValueError('REINSTALL_' + code) from subprocess.CalledProcessError(
+            result.returncode, getattr(result, 'args', None),
+            output=getattr(result, 'stdout', None), stderr=getattr(result, 'stderr', None))
 
 
 def unknown_unit_text(path, root, owner_uid, metadata=None):
@@ -248,7 +256,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
                 require(not present(root / base / (template + '.d')), 'UNIT_OVERRIDE_UNSUPPORTED')
             result = runner(['/bin/systemctl', 'list-units', template.replace('@.', '@*.'),
                              '--all', '--plain', '--no-legend', '--no-pager'], capture_output=True, text=True)
-            require(result.returncode == 0, 'UNIT_OBSERVATION_UNAVAILABLE')
+            checked_result(result, 'UNIT_OBSERVATION_UNAVAILABLE')
             for line in result.stdout.splitlines():
                 instance_name = line.split()[0]
                 require(managed_unit(config, instance_name) and instance_name not in unit_names(config), 'UNIT_IDENTITY_UNPROVEN')
@@ -258,7 +266,7 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         result = runner(['/bin/systemctl', 'show', name, '--no-pager',
                          '--property=LoadState,ActiveState,SubState,MainPID,ControlPID,FragmentPath,DropInPaths,ControlGroup'],
                         capture_output=True, text=True)
-        require(result.returncode == 0, 'UNIT_OBSERVATION_UNAVAILABLE')
+        checked_result(result, 'UNIT_OBSERVATION_UNAVAILABLE')
         fields = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
         if fields.get('LoadState') == 'not-found':
             require(not present(path), 'UNIT_IDENTITY_UNPROVEN')
@@ -1114,7 +1122,7 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
             else:
                 protected(paths['install'] / 'relay-admission', root, owner_uid)
                 result = runner([str(paths['install'] / 'relay-admission'), 'status'], capture_output=True, text=True)
-                require(result.returncode == 0, 'RECOVERY_ADMISSION_UNAVAILABLE')
+                checked_result(result, 'RECOVERY_ADMISSION_UNAVAILABLE')
                 status = _recovery_json(result.stdout)
             require(isinstance(status, dict) and status.get('phase') in ['open', 'quiesced', 'drained', 'recovery-required']
                     and status.get('active') == [] and status.get('unknown') == [], 'ADMISSION_NOT_CONTAINED')
@@ -1377,7 +1385,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
         program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
         program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", source], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "RELAY_REPOSITORY": value["config"]["environment"].get("repository", value["config"]["consumer"].get("repository")), "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
-        program += '        require(result.returncode == 0, "LIFECYCLE_ADMISSION_UNAVAILABLE")\n'
+        program += '        checked_result(result, "LIFECYCLE_ADMISSION_UNAVAILABLE")\n'
         program += '        return _recovery_json(result.stdout)\n'
         pool_arguments = ', operation_id=value["operation_id"], admission_probe=pool_admission_probe'
     else:
@@ -1409,7 +1417,7 @@ def remote_action(target, key, config, revision, report=None, *, action='decommi
         program += '        config_path = "/etc/" + value["config"]["environment"]["namespace"] + "/consumer.json"\n'
         program += '        lock_path = value["config"]["consumer"]["paths"]["claimRoot"] + "/publication-v2.lock"\n'
         program += '        result = subprocess.run(["/usr/bin/flock", "-w", "180", lock_path, "/usr/bin/node", "--input-type=module", "-e", ' + repr(admission_source) + '], capture_output=True, text=True, env={"RELAY_CONSUMER_CONFIG": config_path, "RELAY_REPOSITORY": value["config"]["environment"].get("repository", value["config"]["consumer"].get("repository")), "PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"})\n'
-        program += '        require(result.returncode == 0, "RECOVERY_ADMISSION_UNAVAILABLE")\n'
+        program += '        checked_result(result, "RECOVERY_ADMISSION_UNAVAILABLE")\n'
         program += '        return _recovery_json(result.stdout)\n'
         program += '    result = recover(value["config"], value["revision"], admission_probe=candidate_admission_probe)\n'
     else:

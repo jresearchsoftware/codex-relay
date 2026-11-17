@@ -4,7 +4,7 @@ import { createBoundedUtf8Capture } from './utf8-capture.mjs';
 import { OWNER_SMOKE_TIMEOUT_MS, validateOwnerSmokeRequest } from './owner-smoke.mjs';
 import { VERSION, validateEnvelope } from './execution-contract.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
-import { captureCausalDiagnostic, createExecutionDiagnostic, failureDiagnosticFromDetails, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from './diagnostics.mjs';
+import { captureCausalDiagnostic, createExecutionDiagnostic, emitDiagnosticUnavailable, failureDiagnosticFromDetails, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from './diagnostics.mjs';
 import { finalizeRuntimeArtifacts } from '../../runtime/src/runtime-finalization.mjs';
 import { DEFAULT_CODEX_RUNTIME_TIMEOUT_MS } from '../../runtime/src/codex-runtime.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
@@ -56,7 +56,7 @@ async function terminateProcessTree(child, nestedProcessGroupPids, isChildClosed
 
 function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, timeoutMs = DEFAULT_CODEX_RUNTIME_TIMEOUT_MS + 10 * 60 * 1000,
   reserveDiagnostic = reserveRuntimeDiagnostic, finalizeArtifacts = finalizeRuntimeArtifacts,
-  diagnosticStore = persistExecutionDiagnostic, readDiagnosticConfig = readDiagnosticsConfig, signal } = {}) {
+  diagnosticStore = persistExecutionDiagnostic, readDiagnosticConfig = readDiagnosticsConfig, writeDiagnosticFallback, signal } = {}) {
   return {
     async dispatch(envelope) {
       validate(envelope);
@@ -89,13 +89,14 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         const causalEvidence = captureCausalDiagnostic({ error, executionId: envelope.attemptId, phase: 'dispatcher', operation,
           stdout: stdout.finish(), stderr: stderr.finish(), exitCode: exit, signal: exitSignal,
           native: { auxiliaryErrors } });
-        let recorderFailure;
+        let recorderFailure; let fallbackFailure; let fallbackStored = false; let primaryStored = false;
         // Keep causal bytes independently durable before cleanup/finalization.
         try {
           const prior = await fallbackStore.read();
           await fallbackStore.write({ ...prior, causalEvidence: prior.causalEvidence ?? causalEvidence,
             ...(prior.causalEvidence ? { secondaryEvidence: causalEvidence } : {}) });
-        } catch (error) { recorderFailure = error; }
+          fallbackStored = true;
+        } catch (error) { recorderFailure = error; fallbackFailure = error; }
         try {
           const mode = (await readDiagnosticConfig()).mode;
           const diagnostic = createExecutionDiagnostic({ executionId, mode, phase: 'dispatcher',
@@ -106,6 +107,8 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
           if (reference?.status !== 'stored' || reference.executionId !== executionId || reference.mode !== mode) {
             throw Object.assign(new Error('Dispatch diagnostic storage is not proven'), { code: receipt?.storeCode ?? receipt?.code ?? 'DIAGNOSTICS_STORE_FAILED', native: receipt });
           }
+          primaryStored = true;
+          error.details = { ...error.details, diagnosticStore: reference };
         } catch (error) { recorderFailure = error; }
         if (recorderFailure) {
           try {
@@ -113,9 +116,13 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
             await fallbackStore.write({ ...prior, causalEvidence: prior.causalEvidence ?? causalEvidence,
               recorderFailure: captureCausalDiagnostic({ error: recorderFailure, executionId: envelope.attemptId,
                 phase: 'diagnostic-persistence', operation }, { compact: true }) });
-          } catch { /* The preceding capsule remains; report the evidence gap. */ }
+            fallbackStored = true;
+          } catch (failure) { fallbackFailure = failure; }
           error.details = { ...error.details, diagnosticWarning: 'DISPATCH_DIAGNOSTIC_PERSISTENCE_FAILED' };
         }
+        if (!primaryStored && !fallbackStored) emitDiagnosticUnavailable({ executionId: envelope.attemptId,
+          originalCode: error.code, storeCode: recorderFailure?.code, fallbackCode: fallbackFailure?.code,
+          operation }, writeDiagnosticFallback);
       };
       const onSignal = () => { cancelled = true; void reap().then(() => finishWait?.(null)); };
       try {
@@ -154,7 +161,9 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         let diagnostic; let workerCode; let parseError;
         try { value = JSON.parse(out.value); } catch (error) { parseError = error; }
         try {
-          const failure = JSON.parse(err.value);
+          // Independent evidence-gap notices precede the unchanged final safe
+          // worker envelope. They must not hide its causal/containment fields.
+          const failure = JSON.parse(err.value.trim().split('\n').at(-1));
           if (failure.version === VERSION && failure.status === 'blocked' && /^[A-Z][A-Z0-9_]{0,79}$/.test(failure.code ?? '')) {
             diagnostic = failure.diagnostic; workerCode = failure.code;
           }
@@ -208,7 +217,10 @@ function createDispatchAdapter({ validate, dispatchArgs, spawnImpl = nodeSpawn, 
         }
         if (pendingError) {
           const original = pendingError.details ?? {};
+          const finalArchive = lifecycle?.diagnosticStore?.status === 'stored'
+            && lifecycle.diagnosticStore.executionId === `${envelope.attemptId}-finalization`;
           pendingError.details = { ...original, ...lifecycle, executionId: envelope.attemptId, containment,
+            ...(!finalArchive && original.diagnosticStore?.status === 'stored' ? { diagnosticStore: original.diagnosticStore } : {}),
             codexUsage: normalizeCodexUsage(original.codexUsage ?? codexUsage),
             childState: original.childState ?? (child ? value?.child ?? 'unknown' : 'not_started'),
             primaryCause: original.primaryCause ?? lifecycle?.primaryCause,

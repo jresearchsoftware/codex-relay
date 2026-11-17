@@ -45,7 +45,7 @@ def recipe_digest(source_root):
 # preserving bounded diagnostic causes, instance preflight evidence and the
 # enriched consumer-transition diagnostic wire. Every Ansible script is part of
 # this fingerprint, including read-only helpers used before installation.
-RECIPE_SHA256 = '76702a3ee9167d6a957e366aa9d4b58125e2fae40e88c4c89d8df687f3af775e'
+RECIPE_SHA256 = 'd72fa93a415ef7f3b0ff187b8df63799d83d5f6a3b6d547e4ffe0c632325bb6a'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",
@@ -535,6 +535,9 @@ def _audit_catalogue(catalogue, *, root=Path('/'), execute=None, users=None, gro
     for index, probe in enumerate(catalogue['probes']):
         diagnostic.update(owner='tasks/execution-slot.yml:Private process namespace probe', field='nativeProbe', index=index)
         result = run(probe['argv'])
+        if result.returncode:
+            raise NotEligible('INSTALLED_NATIVE_PROBE_FAILED') from subprocess.CalledProcessError(
+                result.returncode, probe['argv'], output=result.stdout, stderr=getattr(result, 'stderr', None))
         output = result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout
         require(result.returncode == 0 and output == probe['stdout'], 'INSTALLED_NATIVE_PROBE_FAILED')
     for path, before, index in stamps:

@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+from lifecycle import report_failure
 import sys
 import tempfile
 
@@ -149,6 +150,7 @@ def promote(payload, *, root=Path('/'), owner_uid=0):
 
 def promote_remote(target, key, config, revision, previous, receipt, guard, pool_guard, *, current_binding=None):
     from ansible_transport import run_target
+    from lifecycle import failure_reporting_source, report_failure
 
     def held():
         return guard.poll() is None and (pool_guard is None or pool_guard.poll() is None)
@@ -161,14 +163,15 @@ def promote_remote(target, key, config, revision, previous, receipt, guard, pool
                'deploymentConfigSha256': hashlib.sha256(canonical).hexdigest()}
     if current_binding is not None:
         payload['currentBinding'] = current_binding
-    program = ('import hashlib,json,os,re,stat,sys,tempfile\nfrom pathlib import Path\n'
+    program = failure_reporting_source() + ('import hashlib,json,os,re,stat,sys,tempfile\nfrom pathlib import Path\n'
                + inspect.getsource(promote)
                + '\ntry:\n promote(json.load(sys.stdin))\n print("PROVENANCE_PROMOTED")\n'
-               'except Exception:\n print("PROVENANCE_BINDING_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
+               'except Exception as error:\n report_failure(error,"provenance-promote")\n print("PROVENANCE_BINDING_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],
                         input=json.dumps(payload), timeout=60)
     if result.returncode != 0 or result.stdout.strip() != 'PROVENANCE_PROMOTED' or not held():
-        raise ValueError('PROVENANCE_PROMOTION_UNPROVEN')
+        raise ValueError('PROVENANCE_PROMOTION_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, 'provenance-promote', output=result.stdout, stderr=result.stderr)
 
 
 def loaded_ready_target(payload, adoption, *, root=Path('/')):
@@ -233,17 +236,18 @@ def loaded_ready_target(payload, adoption, *, root=Path('/')):
         adoption['capture_inputs']({**payload, 'productionActive': active})
         ready = True
     except (OSError, ValueError, KeyError, TypeError, RuntimeError, ImportError,
-            StopIteration, subprocess.SubprocessError):
+            StopIteration, subprocess.SubprocessError) as error:
         # Missing/older capability or mismatched loaded input chooses the
         # existing reconcile path. The independent target binding still must
         # remain exact, even when this optional proof was unavailable.
-        pass
+        report_failure(error, 'provenance-loaded-fallback')
     require(binding() == before)
     return 'PROVENANCE_LOADED_READY' if ready else 'PROVENANCE_LOADED_UNAVAILABLE'
 
 
 def loaded_ready(target, key, config, revision, guard, pool_guard):
     from ansible_transport import run_target
+    from lifecycle import failure_reporting_source, report_failure
     from config import compile_inputs
 
     def held():
@@ -265,23 +269,25 @@ def loaded_ready(target, key, config, revision, guard, pool_guard):
     source = Path(__file__).with_name('process_adoption.py').read_text()
     # Execute the exact component implementation in a separate module namespace;
     # its managed-Apply __main__/admission path is deliberately not entered.
-    program = ('import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n'
+    program = failure_reporting_source() + ('import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n'
                'adoption={"__name__":"relay_provenance_loaded_inputs"}\n'
                + 'exec(' + repr(source) + ',adoption)\n'
                + inspect.getsource(loaded_ready_target)
                + '\ntry:\n print(loaded_ready_target(json.load(sys.stdin),adoption))\n'
-               'except Exception:\n print("PROVENANCE_LOADED_BINDING_CHANGED")\n')
+               'except Exception as error:\n report_failure(error,"provenance-loaded-proof")\n print("PROVENANCE_LOADED_BINDING_CHANGED")\n')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-B', '-c', program],
                         input=json.dumps(payload), timeout=180)
     if not held():
         raise ValueError('HOST_LOCK_LOST')
     if result.returncode != 0:
-        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN')
+        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, 'provenance-loaded-proof', output=result.stdout, stderr=result.stderr)
     observed = result.stdout.strip()
     if observed == 'PROVENANCE_LOADED_BINDING_CHANGED':
         raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
     if observed not in ['PROVENANCE_LOADED_READY', 'PROVENANCE_LOADED_UNAVAILABLE']:
-        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN')
+        raise ValueError('PROVENANCE_LOADED_PROOF_UNPROVEN') from subprocess.CalledProcessError(
+            result.returncode, 'provenance-loaded-proof', output=result.stdout, stderr=result.stderr)
     return observed == 'PROVENANCE_LOADED_READY'
 
 
@@ -442,6 +448,7 @@ def _native_dispatch_installed(action, payload, *, root=Path('/')):
         return function(payload)
     except (ValueError, OSError, RuntimeError, ImportError, KeyError, TypeError, StopIteration,
             subprocess.SubprocessError) as error:
+        report_failure(error, 'provenance-native-fallback')
         code = str(error)
         if code in ['PROVENANCE_TARGET_BINDING_CHANGED', 'SOURCE_UPGRADE_BINDING_CHANGED',
                     'SOURCE_UPGRADE_INSTALLED_BINDING_UNPROVEN', 'SOURCE_UPGRADE_CONFIG_CHANGED',
@@ -449,13 +456,14 @@ def _native_dispatch_installed(action, payload, *, root=Path('/')):
                     'SOURCE_UPGRADE_FILE_UNSAFE', 'SOURCE_UPGRADE_FILE_MOVED',
                     'SOURCE_UPGRADE_CURRENT_UNSAFE', 'SOURCE_UPGRADE_BINDING_INVALID',
                     'SOURCE_UPGRADE_RECEIPT_UNPROVEN', 'SOURCE_UPGRADE_PENDING_INSTALLATION']:
-            raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED') from None
+            raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED') from error
         return {'eligible': False}
 
 
 def native_ready(target, key, config, revision, guard, pool_guard):
     """Sufficient native same-product proof, or None for the ordinary full path."""
     from ansible_transport import run_target
+    from lifecycle import failure_reporting_source, report_failure
     from config import compile_inputs
     from installed_state import build_catalogue, NotEligible
     from source_upgrade import artifact_values
@@ -471,14 +479,15 @@ def native_ready(target, key, config, revision, guard, pool_guard):
     source = Path(__file__).resolve().parents[1]
     try:
         values = resolve_values({**compile_inputs(config), 'relay_deployment_profile': 'production'}, source)
-    except (NotEligible, ValueError, OSError, ImportError):
+    except (NotEligible, ValueError, OSError, ImportError) as error:
+        report_failure(error, 'provenance-native-fallback')
         return None
     payload = {'namespace': config['environment']['namespace'], 'revision': revision,
                'values': values, 'config': config}
-    program = ('import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n'
+    program = failure_reporting_source() + ('import hashlib,json,os,re,stat,subprocess,sys\nfrom pathlib import Path\n'
                + inspect.getsource(_native_dispatch_installed) + '\n' + inspect.getsource(_native_dispatch)
                + '\ntry:\n print(json.dumps(_native_dispatch(sys.argv[1],json.load(sys.stdin))))\n'
-               'except Exception:\n print(json.dumps({"bindingChanged":True}))\n')
+               'except Exception as error:\n report_failure(error,"provenance-native-proof")\n print(json.dumps({"bindingChanged":True}))\n')
 
     def invoke(action):
         held()
@@ -486,7 +495,8 @@ def native_ready(target, key, config, revision, guard, pool_guard):
                             input=json.dumps(payload), timeout=180)
         held()
         if result.returncode != 0:
-            raise ValueError('PROVENANCE_NATIVE_TRANSPORT_UNPROVEN')
+            raise ValueError('PROVENANCE_NATIVE_TRANSPORT_UNPROVEN') from subprocess.CalledProcessError(
+                result.returncode, 'provenance-native-proof', output=result.stdout, stderr=result.stderr)
         observed = json.loads(result.stdout)
         if observed.get('bindingChanged'):
             raise ValueError('PROVENANCE_TARGET_BINDING_CHANGED')
@@ -497,7 +507,8 @@ def native_ready(target, key, config, revision, guard, pool_guard):
         return None
     try:
         catalogue = build_catalogue(source, artifact_values(context['values'], context['manifest']))
-    except (NotEligible, ValueError, OSError, ImportError):
+    except (NotEligible, ValueError, OSError, ImportError) as error:
+        report_failure(error, 'provenance-native-fallback')
         return None
     payload.update(context=context, catalogue=catalogue)
     observed = invoke('prove')

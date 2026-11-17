@@ -9,15 +9,17 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
 import time
+import threading
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object
+from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object, InvalidConfig
 from git_source_locator import expected_locator, resume_receipt
 from lifecycle import progress, report_failure, public_log_reference
 
@@ -192,7 +194,8 @@ def release_guard(guard):
     try:
         guard.stdin.close()
         require(guard.wait(timeout=30) == 0, 'host-operation-guard-final-check;inspect-before-retry')
-    except Exception:
+    except Exception as error:
+        report_failure(error, 'guard-release')
         if not failing:
             raise
         print('RELAY_DEPLOYMENT_WARNING=host-operation-guard-final-check-unproven;primary-failure-preserved;inspect-before-retry',
@@ -202,7 +205,7 @@ def release_guard(guard):
 def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
     log.flush()
     offset = os.fstat(log.fileno()).st_size
-    process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT)
+    process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     started = time.monotonic()
     next_progress = started + 30
     # The existing private Ansible log remains the primary diagnostic source.
@@ -264,13 +267,31 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
         print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state={"completed" if process.returncode == 0 else "failed"};exit={process.returncode};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
         return process.returncode
     finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
+        primary = sys.exc_info()[1]
+        try:
+            if process.poll() is None or primary is not None:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=10)
+                # Parent exit alone does not stop an ignoring descendant in
+                # this invocation's own controller group. Remote effects remain
+                # uncertain and are reconciled through the original operation.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        except Exception as secondary:
+            report_failure(secondary, 'backend-cleanup', private_log=log.name if isinstance(log.name, str) else None)
+            if primary is None:
+                raise
+            print('RELAY_DEPLOYMENT_WARNING=backend-cleanup-unproven;primary-failure-preserved;inspect-before-retry',
+                  file=sys.stderr, flush=True)
 
 
 def arguments():
@@ -278,7 +299,11 @@ def arguments():
     # a supplied ephemeral token as part of an unknown-argument diagnostic.
     require(not any(value.split('=', 1)[0] == '--general-runner-registration-token'
                     for value in sys.argv[1:]), 'retired-general-runner-interface')
-    p = argparse.ArgumentParser(description=__doc__)
+    class DiagnosticParser(argparse.ArgumentParser):
+        def error(self, message):
+            report_failure(ValueError(message), 'deployment-arguments')
+            super().error(message)
+    p = DiagnosticParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--connection', choices=['ssh', 'local'],
                    help='Ansible connection override; preserves the exact deployment configuration binding')
@@ -1335,7 +1360,8 @@ def run(args):
                             restored_old = True
                             print('RELAY_INSTALL_PREFLIGHT=aborted;old-availability=verified;operation=' + lifecycle_operation,
                                   flush=True)
-                        except Exception:
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'install-preflight-abort', private_log=log_name)
                             print('RELAY_INSTALL_PREFLIGHT_ABORT=unproven;retain-original-operation;inspect-before-recovery',
                                   flush=True)
                     if preparation is not None:
@@ -1344,8 +1370,10 @@ def run(args):
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')
-                        except Exception:
-                            pass  # the last durable state remains closed
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'recovery-state-write', private_log=log_name)
+                            print('RELAY_DEPLOYMENT_WARNING=recovery-state-write-unproven;primary-failure-preserved',
+                                  file=sys.stderr, flush=True)  # the last durable state remains closed
                     raise
                 finally:
                     if guard is not None and owns_guard:
@@ -1411,12 +1439,41 @@ def run(args):
             os.close(lock)
 
 
-if __name__ == '__main__':
+def main():
+    previous = signal.getsignal(signal.SIGTERM)
+    installed_handler = (threading.current_thread() is threading.main_thread() and previous == signal.SIG_DFL)
+    if installed_handler:
+        def interrupted(_signum, _frame):
+            raise InterruptedError('deployment-interrupted')
+        signal.signal(signal.SIGTERM, interrupted)
     try:
         run(arguments())
-    except (ValueError, OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, RuntimeError) as error:
+        return 0
+    except (Exception, KeyboardInterrupt) as error:
         report_failure(error, 'deployment-entrypoint')
         # Avoid dumping subprocess output or a full consumer/environment input.
-        message = str(error) if isinstance(error, (ValueError, RuntimeError)) else type(error).__name__
+        candidate = str(error) if isinstance(error, (ValueError, RuntimeError)) else ''
+        field = (re.fullmatch(r'INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?:([:;]).*)?', candidate)
+                 if isinstance(error, InvalidConfig) else None)
+        if field:
+            # Keep the supported field/check identity; values and host paths
+            # after it stay behind the diagnostic reference printed above.
+            message = 'INVALID_DEPLOYMENT_CONFIG:' + field[1]
+            if field[2]:
+                message += field[2] + 'protected-details'
+            # Preserve source-owned inspection instructions independently of
+            # private paths/observations in the same legacy diagnostic string.
+            for action in ['inspect-file-type-and-access', 'diagnose-operation-before-retry']:
+                if re.search(r'(?:;|;next=)' + action + r'(?:;|$)', candidate):
+                    message += ';next=' + action
+        else:
+            message = candidate if re.fullmatch(r'(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?:;[A-Za-z0-9_./:;= -]{0,450})?', candidate) else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)
-        sys.exit(1)
+        return 1
+    finally:
+        if installed_handler:
+            signal.signal(signal.SIGTERM, previous)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

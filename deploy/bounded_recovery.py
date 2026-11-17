@@ -639,7 +639,13 @@ def fixed_probe(config, binding, source, lease, desired_digest, *, controller_re
         result = subprocess.run([*prefix, 'consumer-transition-preflight', '--desired-digest', desired_digest],
             capture_output=True, timeout=180,
             env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C', 'PYTHONDONTWRITEBYTECODE': '1'})
-        require(result.returncode == 0 and len(result.stdout) <= 1024 * 1024,
+        if result.returncode:
+            try:
+                require(False, 'CURRENT_CONTROLLER_PROOF_UNAVAILABLE')
+            except Exception as error:
+                raise error from subprocess.CalledProcessError(result.returncode, 'controller-transition-preflight',
+                    output=result.stdout, stderr=result.stderr)
+        require(len(result.stdout) <= 1024 * 1024,
                 'CURRENT_CONTROLLER_PROOF_UNAVAILABLE')
         return decode(result.stdout)
     return probe

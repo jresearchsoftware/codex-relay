@@ -59,7 +59,12 @@ def source_repository(config):
 def _git(root, *arguments):
     result = subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
         '-C', str(root), *arguments], text=True, capture_output=True, timeout=120)
-    require(result.returncode == 0, 'GIT_SOURCE_UNAVAILABLE')
+    if result.returncode:
+        try:
+            require(False, 'GIT_SOURCE_UNAVAILABLE')
+        except Exception as error:
+            raise error from subprocess.CalledProcessError(result.returncode, 'intent-git-source',
+                output=result.stdout, stderr=result.stderr)
     return result.stdout.strip()
 
 
@@ -518,14 +523,22 @@ def complete_fresh(target, key, config, revision, receipt, guard, pool_guard):
                'REVISION=re.compile(r"[0-9a-f]{40}");DIGEST=re.compile(r"[0-9a-f]{64}")\n')
     for helper in [require, unique_object, pair_digest, installation_state, finalize_fresh_manifest]:
         program += inspect.getsource(helper) + '\n'
+    from lifecycle import failure_reporting_source
+    program = failure_reporting_source() + program
     program += ('try:\n print(json.dumps(finalize_fresh_manifest(json.load(sys.stdin))))\n'
-                'except Exception:\n print("RELAY_INSTALL_FINAL_MANIFEST_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
+                'except Exception as error:\n report_failure(error,"final-manifest")\n print("RELAY_INSTALL_FINAL_MANIFEST_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
     canonical = (json.dumps(config, sort_keys=True, separators=(',', ':'), ensure_ascii=False) + '\n').encode()
     payload = {'namespace': config['environment']['namespace'], 'revision': revision, 'receipt': receipt,
                'deploymentConfigSha256': hashlib.sha256(canonical).hexdigest()}
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],
                         input=json.dumps(payload), timeout=60)
-    require(result.returncode == 0 and guard.poll() is None
+    if result.returncode:
+        try:
+            require(False, 'FINAL_MANIFEST_UNPROVEN')
+        except Exception as error:
+            raise error from subprocess.CalledProcessError(result.returncode, 'final-manifest',
+                output=result.stdout, stderr=result.stderr)
+    require(guard.poll() is None
             and (pool_guard is None or pool_guard.poll() is None), 'FINAL_MANIFEST_UNPROVEN')
     ready = installation_state(json.loads(result.stdout), receipt)
     require(ready['stage'] == 'ready' and ready['pairSha256'] == pair_digest(receipt), 'FINAL_MANIFEST_UNPROVEN')

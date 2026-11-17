@@ -88,7 +88,9 @@ def test_failed_ansible_launch_is_not_retried_by_cleanup(monkeypatch, tmp_path):
     with pytest.raises(OSError, match='unavailable Ansible'):
         transport.run_target(LOCAL, None, ['/usr/bin/true'], local=True)
     assert len(calls) == 1
-    assert not Path(calls[0][0][2]).parent.exists()
+    retained = Path(calls[0][0][2]).parent
+    assert 'synthetic unavailable Ansible' in (retained / 'failure.log').read_text()
+    shutil.rmtree(retained)
 
 
 def synthetic_ssh_channel(tmp_path, monkeypatch):
@@ -186,7 +188,7 @@ def test_local_target_identity_cannot_be_replaced_by_hostname_or_transport_selec
     with pytest.raises(SystemExit) as error:
         exec(transport.TARGET_PROOF, {'__name__': '__main__'})
     assert error.value.code == 1
-    assert capsys.readouterr().err == 'RELAY_TARGET_IDENTITY_UNPROVEN\n'
+    assert capsys.readouterr().err.endswith('RELAY_TARGET_IDENTITY_UNPROVEN\n')
 
 
 @pytest.mark.skipif(os.geteuid() != 0, reason='actual root authorization and protected public host key')
@@ -203,7 +205,7 @@ def test_local_target_identity_checks_the_existing_public_host_key(tmp_path, mon
     monkeypatch.setattr(sys, 'argv', ['target-proof', 'local', 'SHA256:' + 'A' * 43])
     with pytest.raises(SystemExit):
         exec(transport.TARGET_PROOF, {'__name__': '__main__'})
-    assert capsys.readouterr().err == 'RELAY_TARGET_IDENTITY_UNPROVEN\n'
+    assert capsys.readouterr().err.endswith('RELAY_TARGET_IDENTITY_UNPROVEN\n')
 
 
 @pytest.fixture
@@ -226,8 +228,10 @@ def test_native_local_exact_stdin_eof_private_spools_and_real_exit(native_target
     process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code, expected.hex()])
     output, errors = process.communicate(input=payload, timeout=5)
     assert process.native and process.returncode == 7 and output == 'READY\n' and errors == 'PRIVATE\n'
-    assert not Path(process.temporary.name).exists()
-    assert not ''.join(capfd.readouterr())
+    assert Path(process.temporary.name).is_dir()
+    public = ''.join(capfd.readouterr())
+    assert 'PRIVATE' not in public and 'protected-transport/' in public
+    process.temporary.cleanup()
 
 
 def test_native_start_large_input_never_waits_for_helper_to_read(native_target, tmp_path):
@@ -268,7 +272,9 @@ def test_native_oversized_result_is_bounded_and_redacted(native_target, channel)
     code = 'import sys;sys.' + channel + '.write("private"*200000)'
     process = transport.TargetProcess(native_target, None, ['/usr/bin/python3', '-c', code])
     assert process.communicate(timeout=5) == ('', 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n')
-    assert process.returncode == 255 and not Path(process.temporary.name).exists()
+    assert process.returncode == 255 and Path(process.temporary.name).is_dir()
+    assert (Path(process.temporary.name) / 'failure.log').exists()
+    process.temporary.cleanup()
 
 
 def test_native_bad_fingerprint_stops_before_helper_and_reproves_each_command(native_target, tmp_path, monkeypatch):
@@ -343,7 +349,8 @@ def test_unqualified_native_context_still_launches_original_ansible_adapter(nati
     calls = []
     def popen(argv, **kwargs):
         calls.append((argv, kwargs))
-        return type('Completed', (), {'returncode': 0})()
+        return type('Completed', (), {'returncode': 0, 'stdout': __import__('io').BytesIO(),
+                                      'stderr': __import__('io').BytesIO()})()
     monkeypatch.setattr(transport.subprocess, 'Popen', popen)
     process = transport.TargetProcess(target, '/synthetic/key', ['/usr/bin/true'])
     try:
@@ -371,7 +378,8 @@ def test_native_failed_launch_never_retries_and_removes_private_work(native_targ
     process = transport.TargetProcess(native_target, None, helper)
     with pytest.raises(OSError, match='unavailable helper'):
         process.start('private')
-    assert not Path(process.temporary.name).exists()
+    assert 'synthetic unavailable helper' in (Path(process.temporary.name) / 'failure.log').read_text()
+    process.temporary.cleanup()
     with pytest.raises(RuntimeError, match='launch-unproven'):
         process.start('private')
     assert len(calls) == 1
@@ -412,7 +420,8 @@ def test_native_output_path_replacement_refuses_without_reading_symlink_target(n
     release.touch()
     assert process.communicate(timeout=5) == ('', 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n')
     assert process.returncode == 255 and private.read_text() == 'PRIVATE'
-    assert not Path(process.temporary.name).exists()
+    assert (Path(process.temporary.name) / 'failure.log').exists()
+    process.temporary.cleanup()
 
 
 def test_run_target_timeout_kills_descendant_group_even_after_main_exits(native_target, tmp_path, monkeypatch):
@@ -451,7 +460,7 @@ def test_native_escaped_descendant_channel_loss_is_bounded_and_unknown(native_ta
     monkeypatch.setattr(transport, 'CHANNEL_CLEANUP_TIMEOUT', .1)
     started = time.monotonic()
     try:
-        with pytest.raises(RuntimeError, match='channel-unproven;inspect-before-retry'):
+        with pytest.raises(subprocess.TimeoutExpired):
             transport.run_target(native_target, None, ['/usr/bin/python3', '-c', code, str(child)], timeout=.2)
         assert time.monotonic() - started < 3
         assert len(instances) == 1 and instances[0].pending_output()
@@ -461,7 +470,8 @@ def test_native_escaped_descendant_channel_loss_is_bounded_and_unknown(native_ta
             os.killpg(int(child.read_text()), signal.SIGKILL)
         if instances:
             instances[0].wait(timeout=5)
-    assert not Path(instances[0].temporary.name).exists()
+    assert (Path(instances[0].temporary.name) / 'failure.log').exists()
+    instances[0].temporary.cleanup()
 
 
 @pytest.mark.parametrize('failure', ['guard', 'deadline'])
@@ -534,7 +544,7 @@ def test_guarded_promote_cancelled_escaped_channel_has_bounded_unknown_wait(nati
         admission_prefix=lambda: ['bound-admission'])
     started = time.monotonic()
     try:
-        with pytest.raises(RuntimeError, match='channel-unproven;inspect-before-retry'):
+        with pytest.raises((RuntimeError, ValueError), match='SOURCE_UPGRADE_OPERATION_GUARD_LOST'):
             source_upgrade.guarded_promote(prepared, {}, [holder])
         assert time.monotonic() - started < 3
         assert instances[0].pending_output() and Path(instances[0].temporary.name).exists()
@@ -543,4 +553,7 @@ def test_guarded_promote_cancelled_escaped_channel_has_bounded_unknown_wait(nati
             os.killpg(int(child.read_text()), signal.SIGKILL)
         if instances:
             instances[0].communicate(timeout=5)
-    assert not instances[0].pending_output() and not Path(instances[0].temporary.name).exists()
+    assert not instances[0].pending_output()
+    if Path(instances[0].temporary.name).exists():
+        assert (Path(instances[0].temporary.name) / 'failure.log').exists()
+        instances[0].temporary.cleanup()

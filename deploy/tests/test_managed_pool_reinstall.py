@@ -197,19 +197,27 @@ def test_generated_pool_wrapper_and_admission_adapter_parse_without_execution(mo
             compile(captured[-1], '<generated-read-only-test>', 'exec')
     # Execute only the actual generated callback with a recording subprocess
     # capability. It builds JS but cannot read files, SSH or run a service.
-    definition = next(node for node in ast.walk(ast.parse(captured[-1]))
-                      if isinstance(node, ast.FunctionDef) and node.name == 'pool_admission_probe')
+    generated = ast.parse(captured[-1])
+    definitions = [next(node for node in ast.walk(generated)
+                        if isinstance(node, ast.FunctionDef) and node.name == name)
+                   for name in ['checked_result', 'pool_admission_probe']]
     calls = []
+    exit_code = 0
     def record(command, **kwargs):
         calls.append(command)
-        return SimpleNamespace(returncode=0, stdout='{}')
+        return SimpleNamespace(returncode=exit_code, stdout='{}', stderr='private-original-admission-cause')
     scope = {'value': {'config': config}, 'Path': Path, 'json': json,
-             'subprocess': SimpleNamespace(run=record), 'require': reinstall.require,
+             'subprocess': SimpleNamespace(run=record, CalledProcessError=subprocess.CalledProcessError), 'require': reinstall.require,
              '_recovery_json': reinstall._recovery_json}
-    exec(compile(ast.Module(body=[definition], type_ignores=[]), '<actual-generated-callback>', 'exec'), scope)
+    exec(compile(ast.Module(body=definitions, type_ignores=[]), '<actual-generated-callback>', 'exec'), scope)
     scope['pool_admission_probe'](Path('/opt/retained-exact-release'), 'status', {'operationId': OPERATION})
     actual_js = calls[0][calls[0].index('-e') + 1]
     assert '__REINSTALL_SOURCE_BASE__' not in actual_js
     assert '/opt/retained-exact-release/reviewed-source/' in actual_js
     parsed = subprocess.run(['node', '--check', '--input-type=module'], input=actual_js, text=True, capture_output=True)
     assert parsed.returncode == 0, parsed.stderr
+    exit_code = 7
+    with pytest.raises(ValueError, match='^REINSTALL_LIFECYCLE_ADMISSION_UNAVAILABLE$') as stopped:
+        scope['pool_admission_probe'](Path('/opt/retained-exact-release'), 'status', {'operationId': OPERATION})
+    assert stopped.value.__cause__.returncode == 7
+    assert stopped.value.__cause__.stderr == 'private-original-admission-cause'

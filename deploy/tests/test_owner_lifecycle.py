@@ -1,5 +1,5 @@
 """Run the protected coordinator over synthetic source and trusted capabilities."""
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import io
 import json
 from pathlib import Path
@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
 sys.path.insert(0, str(Path(__file__).parent))
 import owner_lifecycle as owner
+import lifecycle_process as children
 import workflow_projection as projection
 from config import loads
 from test_lifecycle import Gate, HEAD, OLD, OPERATION
@@ -145,6 +146,20 @@ class OwnerLifecycleTests(unittest.TestCase):
                 wait=lambda **options: result.returncode, poll=lambda: result.returncode,
                 terminate=Mock())
         patched = patch.object(owner.subprocess, 'Popen', side_effect=spawn)
+        patched.start()
+        self.addCleanup(patched.stop)
+        def child(argv, **options):
+            proofs = options.pop('stdout_proofs', ())
+            for key in ['phase', 'dependency', 'forward', 'interval']:
+                options.pop(key, None)
+            options.update(stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+            result = owner.subprocess.run(argv, **options)
+            if result.returncode:
+                raise subprocess.CalledProcessError(result.returncode, argv,
+                    output=result.stdout, stderr=getattr(result, 'stderr', ''))
+            result.stdout_proofs = frozenset(set(result.stdout.splitlines()) & set(proofs))
+            return result
+        patched = patch.object(owner, 'run_child', side_effect=child)
         patched.start()
         self.addCleanup(patched.stop)
 
@@ -376,6 +391,119 @@ class OwnerLifecycleTests(unittest.TestCase):
                     self.run_owner()
                 self.assertEqual(self.gate.phase, 'recovery-required')
                 self.assertNotIn('resume', [call[0] for call in self.gate.calls])
+
+    def real_primitive(self, output, *, stderr='private-backend-evidence', exit_code=0):
+        """Keep synthetic admission, but drain one actual deployment child."""
+        adapter = owner.run_child.side_effect
+        self.child_results = []
+        self.child_calls = []
+        def child(argv, **options):
+            if len(argv) < 2 or not argv[1].endswith('/deploy/relay-deploy.py'):
+                return adapter(argv, **options)
+            self.child_calls.append(argv)
+            # The fixture's synthetic lock FD is not an inherited OS descriptor.
+            options.pop('pass_fds')
+            program = ('import sys;sys.stdout.write(' + repr(output) + ');'
+                       'sys.stderr.write(' + repr(stderr) + ');sys.exit(' + str(exit_code) + ')')
+            # Large output travels on stdin, rather than exceeding argv limits.
+            with patch.object(owner.subprocess, 'Popen', REAL_POPEN):
+                result = children.run([sys.executable, '-c', 'import sys;exec(sys.stdin.read())'],
+                                      input=program.encode(), **options)
+            self.child_results.append(result)
+            return result
+        return patch.object(owner, 'run_child', side_effect=child)
+
+    def long_apply_output(self, projection=None, verified=None, installed=None):
+        projection = (f'RELAY_WORKFLOW_PROJECTION=PASS;revision={HEAD};consumer={HEAD}'
+                      if projection is None else projection)
+        verified = f'RELAY_LIFECYCLE_VERIFIED={HEAD}' if verified is None else verified
+        installed = f'installed_revision={HEAD}' if installed is None else installed
+        return 'early-private-output\n' + 'x' * 200000 + '\n' + projection + '\n' + 'y' * 200000 + '\n' + installed + '\n' + verified + '\n'
+
+    def test_actual_long_successful_apply_keeps_middle_proof_and_reopens_only_after_installed_check(self):
+        output = self.long_apply_output()
+        with self.real_primitive(output), redirect_stdout(io.StringIO()) as public:
+            owner.run(f'apply:{OLD}:{HEAD}')
+        result, = self.child_results
+        self.assertGreater(result.capture_bytes['stdout'], children.CAPTURE_LIMIT)
+        self.assertNotIn('RELAY_WORKFLOW_PROJECTION=PASS', result.stdout)
+        self.assertIn(children.OMITTED.decode(), result.stdout)
+        self.assertLessEqual(len(result.stdout), children.CAPTURE_LIMIT + len(children.OMITTED))
+        self.assertEqual(result.stderr, 'private-backend-evidence')
+        self.assertEqual(len(result.stdout_proofs), 3)
+        self.assertEqual(len(self.child_calls), 1)
+        self.assertEqual(self.proof_calls, [HEAD])
+        self.assertEqual(self.gate.phase, 'open')
+        self.assertIn('RELAY_OWNER_LIFECYCLE_RESULT=OPEN', public.getvalue())
+        self.assertNotIn('private-', public.getvalue())
+        self.assertNotIn('RELAY_WORKFLOW_PROJECTION=PASS', public.getvalue())
+
+    def test_actual_child_invalid_same_operation_proofs_keep_admission_closed_and_original_evidence(self):
+        projection = f'RELAY_WORKFLOW_PROJECTION=PASS;revision={HEAD};consumer={HEAD}'
+        cases = [
+            {'projection': ''},
+            {'projection': projection.replace('PASS', 'FAIL')},
+            {'projection': projection.replace('revision=' + HEAD, 'revision=' + OLD)},
+            {'projection': projection.replace('consumer=' + HEAD, 'consumer=' + OLD)},
+            {'projection': 'prefix-' + projection},
+            {'projection': projection + '-suffix'},
+            {'verified': ''},
+            {'verified': f'RELAY_LIFECYCLE_VERIFIED={OLD}'},
+            {'installed': ''},
+            {'installed': f'installed_revision={OLD}'},
+        ]
+        for changed in cases:
+            with self.subTest(changed=changed):
+                self.gate = Gate()
+                self.remote_head = HEAD
+                output = self.long_apply_output(**changed)
+                with self.real_primitive(output), redirect_stdout(io.StringIO()) as public:
+                    with self.assertRaisesRegex(ValueError, '^lifecycle-same-operation-proof-missing$') as stopped:
+                        owner.run(f'apply:{OLD}:{HEAD}')
+                self.assertEqual(len(self.child_calls), 1)
+                self.assertEqual(self.proof_calls, [])
+                self.assertEqual(self.gate.phase, 'recovery-required')
+                self.assertNotIn('resume', [call[0] for call in self.gate.calls])
+                self.assertNotIn('RELAY_OWNER_LIFECYCLE_RESULT=OPEN', public.getvalue())
+                self.assertEqual(stopped.exception.stderr, 'private-backend-evidence')
+                self.assertTrue(stopped.exception.stdout.startswith('early-private-output'))
+                self.assertEqual(stopped.exception.capture_bytes['stdout'], len(output.encode()))
+                self.assertEqual(stopped.exception.observation['childExit'], 0)
+                self.assertTrue(stopped.exception.observation['missingStdoutProofs'])
+
+    def test_actual_nonzero_child_with_all_proofs_still_keeps_admission_closed(self):
+        with self.real_primitive(self.long_apply_output(), exit_code=7), redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, '^lifecycle-public-primitive-failed$') as stopped:
+                owner.run(f'apply:{OLD}:{HEAD}')
+        self.assertEqual(len(self.child_calls), 1)
+        self.assertEqual(self.gate.phase, 'recovery-required')
+        self.assertNotIn('resume', [call[0] for call in self.gate.calls])
+        self.assertEqual(self.proof_calls, [])
+        self.assertEqual(stopped.exception.__cause__.returncode, 7)
+        self.assertEqual(stopped.exception.__cause__.stderr, 'private-backend-evidence')
+
+    def test_actual_missing_proof_reaches_existing_private_causal_reporter(self):
+        output = self.long_apply_output(projection='')
+        with self.real_primitive(output, stderr='password=fixture-private-secret'), redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(ValueError, '^lifecycle-same-operation-proof-missing$') as stopped:
+                owner.run(f'apply:{OLD}:{HEAD}')
+        log = self.root / 'causal.log'
+        log.touch(mode=0o600)
+        # The coordinator fixture models root; this readback exercises the
+        # reporter's actual unprivileged private-log route, without root proof.
+        with patch.object(owner.os, 'geteuid', return_value=owner.os.getuid()), redirect_stderr(io.StringIO()):
+            receipt = owner.report_failure(stopped.exception, 'owner-lifecycle', private_log=log)
+        self.assertEqual(receipt['status'], 'stored')
+        record = json.loads(log.read_text().split('RELAY_DEPLOYMENT_CAUSAL_EVIDENCE=', 1)[1])
+        cause = record['causes'][0]
+        self.assertEqual(cause['message'], 'lifecycle-same-operation-proof-missing')
+        self.assertEqual(cause['observation']['childExit'], 0)
+        self.assertEqual(cause['observation']['missingStdoutProofs'],
+            [f'RELAY_WORKFLOW_PROJECTION=PASS;revision={HEAD};consumer={HEAD}'])
+        self.assertEqual(cause['stdoutBytes'], len(output.encode()))
+        self.assertTrue(cause['stdoutTruncated'])
+        self.assertEqual(cause['stderrAvailability'], 'redacted')
+        self.assertNotIn('fixture-private-secret', log.read_text())
 
 
 class PublicMainTests(unittest.TestCase):

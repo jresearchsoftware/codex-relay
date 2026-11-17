@@ -27,8 +27,12 @@ def _node(source, consumer_path, code, payload=None, repository=None):
     result = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', code],
         input=None if payload is None else json.dumps(payload), text=True,
         env=environment, cwd=source,
-        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=60)
-    require(result.returncode == 0, 'SERIAL_TRANSITION_ORIGINAL_READER_UNPROVEN')
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+    try:
+        require(result.returncode == 0, 'SERIAL_TRANSITION_ORIGINAL_READER_UNPROVEN')
+    except Exception as error:
+        raise error from subprocess.CalledProcessError(result.returncode,
+            getattr(result, 'args', None), output=result.stdout, stderr=getattr(result, 'stderr', None))
     try:
         value = json.loads(result.stdout)
     except (ValueError, TypeError):

@@ -58,6 +58,74 @@ async fn helper_stderr(
     Ok(())
 }
 
+// Start all three pipe operations together. A helper may write diagnostics or
+// reject its request before consuming stdin, including a request larger than a
+// pipe's capacity. Keep draining excess output so it cannot mask exit evidence.
+async fn helper_io(
+    mut child: tokio::process::Child,
+    args: &Value,
+) -> Result<(Vec<u8>, std::process::ExitStatus), &'static str> {
+    let mut stdin = child.stdin.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
+    let mut stdout = child.stdout.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
+    let stderr = child.stderr.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
+    let request = serde_json::to_vec(args)
+        .map_err(|error| crate::diagnostics::failure("INVALID_MANUAL_OUTCOME", error))?;
+    let input =
+        async move {
+            stdin.write_all(&request).await.map_err(|error| {
+                crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error)
+            })?;
+            stdin.shutdown().await.map_err(|error| {
+                crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error)
+            })
+        };
+    let output = async move {
+        let mut bytes = Vec::new();
+        let mut chunk = [0; 4096];
+        loop {
+            let count = stdout.read(&mut chunk).await.map_err(|error| {
+                crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error)
+            })?;
+            if count == 0 {
+                break;
+            }
+            let retained = count.min((MAX_RECEIPT + 1) - bytes.len());
+            let was_oversized = bytes.len() > MAX_RECEIPT;
+            bytes.extend_from_slice(&chunk[..retained]);
+            if !was_oversized && bytes.len() > MAX_RECEIPT {
+                crate::diagnostics::record("WRITER_RECEIPT_TOO_LARGE", "writer-helper-stdout", "Writer helper receipt exceeded the bounded capture; excess output is drained and omitted");
+            }
+        }
+        if bytes.len() > MAX_RECEIPT {
+            Err("WRITER_RECEIPT_TOO_LARGE")
+        } else {
+            Ok(bytes)
+        }
+    };
+    let status = async {
+        let status = child
+            .wait()
+            .await
+            .map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
+        if !status.success() {
+            crate::diagnostics::record(
+                "WRITER_RECEIPT_UNAVAILABLE",
+                "writer-helper-exit",
+                &format!(
+                    "task={} run_id={} status={status}",
+                    args["task"], args["run_id"]
+                ),
+            );
+        }
+        Ok::<_, &'static str>(status)
+    };
+    let (input, output, diagnostic, status) =
+        tokio::join!(input, output, helper_stderr(stderr, args), status);
+    input?;
+    diagnostic?;
+    Ok((output?, status?))
+}
+
 pub(crate) fn tool(repositories: &BTreeSet<String>) -> Value {
     json!({"name":"submit_manual_outcome",
         "description":"Submit the result of an already admitted manual Codex attempt directly to trusted Writer. Writer validates binding and publishes or recovers one canonical Writer Bot Outcome. This is a claim submission, not independent acceptance; it never starts Codex, merges, or closes an Issue.",
@@ -168,7 +236,7 @@ pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
         return task_authority::error("MANUAL_OUTCOME_CAPABILITY_DISABLED");
     }
     let operation = async {
-        let mut child = tokio::process::Command::new(&app.policy.manual_outcome_client_path)
+        let child = tokio::process::Command::new(&app.policy.manual_outcome_client_path)
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .current_dir("/")
@@ -178,47 +246,7 @@ pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
             .kill_on_drop(true)
             .spawn()
             .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
-        let mut stdin = child.stdin.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
-        let bytes = serde_json::to_vec(args)
-            .map_err(|error| crate::diagnostics::failure("INVALID_MANUAL_OUTCOME", error))?;
-        stdin
-            .write_all(&bytes)
-            .await
-            .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
-        stdin
-            .shutdown()
-            .await
-            .map_err(|error| crate::diagnostics::failure("WRITER_CAPABILITY_UNAVAILABLE", error))?;
-        drop(stdin);
-        let mut bytes = Vec::new();
-        let mut stdout = child
-            .stdout
-            .take()
-            .ok_or("WRITER_CAPABILITY_UNAVAILABLE")?
-            .take((MAX_RECEIPT + 1) as u64);
-        let stderr = child.stderr.take().ok_or("WRITER_CAPABILITY_UNAVAILABLE")?;
-        let (output, diagnostic, status) = tokio::join!(
-            stdout.read_to_end(&mut bytes),
-            helper_stderr(stderr, args),
-            child.wait()
-        );
-        output.map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
-        diagnostic?;
-        if bytes.len() > MAX_RECEIPT {
-            return Err("WRITER_RECEIPT_TOO_LARGE");
-        }
-        let status = status
-            .map_err(|error| crate::diagnostics::failure("WRITER_RECEIPT_UNAVAILABLE", error))?;
-        if !status.success() {
-            crate::diagnostics::record(
-                "WRITER_RECEIPT_UNAVAILABLE",
-                "writer-helper-exit",
-                &format!(
-                    "task={} run_id={} status={status}",
-                    args["task"], args["run_id"]
-                ),
-            );
-        }
+        let (bytes, status) = helper_io(child, args).await?;
         // A nonzero helper exit can still carry a bounded public error code.
         let result = receipt(args, &app.policy.writer_actor, &bytes).map_err(|code| {
             crate::diagnostics::record(
@@ -253,6 +281,62 @@ pub(crate) async fn submit(app: &RepositoryTarget<'_>, args: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn helper_diagnostics_before_reading_a_large_request_do_not_deadlock() {
+        use tracing::instrument::WithSubscriber;
+        let child = tokio::process::Command::new("python3")
+            .args(["-c", "import sys; sys.stderr.write('native helper startup; token=private-helper-value; ' + 'x' * 131072); sys.stderr.flush(); sys.stdin.buffer.read(); print('{\"error_code\":\"WRITER_REJECTED\"}'); sys.exit(7)"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .kill_on_drop(true).spawn().unwrap();
+        let mut args = input();
+        args["result"]["summary"] = json!("x".repeat(50_000));
+        valid_input(
+            &BTreeSet::from(["example-org/sample-project".into()]),
+            &args,
+        )
+        .unwrap();
+        let (subscriber, journal) = crate::diagnostics::capture();
+        let (bytes, status) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            helper_io(child, &args).with_subscriber(subscriber),
+        )
+        .await
+        .expect("helper pipe deadlock")
+        .unwrap();
+        assert_eq!(status.code(), Some(7));
+        assert_eq!(
+            receipt(&args, "writer[bot]", &bytes).unwrap()["content"][0]["text"],
+            "WRITER_REJECTED"
+        );
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(journal.contains("native helper startup"), "{journal}");
+        assert!(journal.contains("writer-helper-exit"), "{journal}");
+        assert!(journal.contains("stderr_truncated=true"), "{journal}");
+        assert!(!journal.contains("private-helper-value"), "{journal}");
+    }
+
+    #[tokio::test]
+    async fn oversized_helper_stdout_preserves_rejection_and_exit_evidence() {
+        use tracing::instrument::WithSubscriber;
+        let child = tokio::process::Command::new("python3")
+            .args(["-c", "import sys; sys.stdin.buffer.read(); sys.stderr.write('original helper failure'); sys.stdout.write('x' * 131072); sys.exit(9)"])
+            .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .kill_on_drop(true).spawn().unwrap();
+        let (subscriber, journal) = crate::diagnostics::capture();
+        let args = input();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            helper_io(child, &args).with_subscriber(subscriber),
+        )
+        .await
+        .expect("helper stdout deadlock");
+        assert_eq!(result.unwrap_err(), "WRITER_RECEIPT_TOO_LARGE");
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(journal.contains("WRITER_RECEIPT_TOO_LARGE"), "{journal}");
+        assert!(journal.contains("original helper failure"), "{journal}");
+        assert!(journal.contains("exit status: 9"), "{journal}");
+    }
 
     #[tokio::test]
     async fn helper_stderr_is_retained_on_cancellation_and_stays_out_of_public_error() {

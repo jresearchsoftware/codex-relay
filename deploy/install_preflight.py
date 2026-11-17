@@ -224,7 +224,7 @@ def observe_predispatch_service_intent(values, *, service_probe=None):
             process = (service_probe(unit) if service_probe else subprocess.run(
                 ['/bin/systemctl', 'show', unit,
                  '--property=MainPID,ExecMainStartTimestampMonotonic,ActiveState,SubState,UnitFileState,LoadState,NeedDaemonReload'],
-                text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30))
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30))
             require(type(process.returncode) is int and isinstance(process.stdout, str),
                     'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
             properties = dict(line.split('=', 1) for line in process.stdout.splitlines() if '=' in line)
@@ -246,8 +246,11 @@ def observe_predispatch_service_intent(values, *, service_probe=None):
             result[name] = {'active': active == 'active',
                             'enabled': enabled if enabled in ['enabled', 'enabled-runtime', 'disabled'] else 'disabled',
                             'load': load}
-        except (OSError, subprocess.SubprocessError, KeyError, TypeError, ValueError):
-            require(False, 'PREDISPATCH_BRIDGE_ABORT_ACTIVITY_UNPROVEN')
+        except (OSError, subprocess.SubprocessError, KeyError, TypeError, ValueError) as error:
+            if 'process' in locals() and process.returncode:
+                raise error from subprocess.CalledProcessError(process.returncode, 'systemd-service-activity',
+                    output=process.stdout, stderr=getattr(process, 'stderr', None))
+            raise
     if result.get('manualOutcome') == {'active': False, 'enabled': 'disabled', 'load': 'not-found'}:
         del result['manualOutcome']
     return result
@@ -335,9 +338,12 @@ def verify_predispatch_bridge_abort(snapshot, request, values, *, operation, tar
                'const value=JSON.parse(raw);process.stdout.write(createHash("sha256").update(JSON.stringify(value)).digest("hex"));')
     try:
         checked = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program], input=raw,
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
             env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
-        require(checked.returncode == 0 and checked.stdout.decode() == original['recordDigest'],
+        if checked.returncode:
+            raise subprocess.CalledProcessError(checked.returncode, 'predispatch-original-digest',
+                output=checked.stdout, stderr=checked.stderr)
+        require(checked.stdout.decode() == original['recordDigest'],
                 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
     except (OSError, UnicodeError, subprocess.SubprocessError):
         require(False, 'PREDISPATCH_BRIDGE_ABORT_ORIGINAL_CHANGED')
@@ -495,9 +501,12 @@ def remote(request, *, root=Path('/'), owner_uid=0, service_probe=None):
     try:
         checked = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program,
             str(root / validator.relative_to('/')), str(root / Path(consumer_path).relative_to('/'))],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=30,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30,
             env={'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'})
-        require(checked.returncode == 0 and len(checked.stdout) <= 4096
+        if checked.returncode:
+            raise subprocess.CalledProcessError(checked.returncode, 'abort-consumer-proof',
+                output=checked.stdout, stderr=checked.stderr)
+        require(len(checked.stdout) <= 4096
                 and json.loads(checked.stdout).get('digest') == old['consumerDigest']
                 and read(consumer_path, **options) == consumer_before, 'ABORT_CONSUMER_UNPROVEN')
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -837,7 +846,9 @@ try {
             try:
                 holder.stdin.close()
                 require(holder.wait(timeout=30) == 0, 'WRITER_LOCK_LOST_INSPECT_BEFORE_RETRY')
-            except Exception:
+            except Exception as secondary:
+                from lifecycle import report_failure
+                report_failure(secondary, 'writer-lock-release')
                 if not failing:
                     raise
                 print('RELAY_DEPLOYMENT_WARNING=writer-lock-release-unproven;primary-failure-preserved;inspect-before-retry',

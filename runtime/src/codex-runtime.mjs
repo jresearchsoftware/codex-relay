@@ -11,7 +11,7 @@ import { reserveRuntimeDiagnostic, openRuntimeDiagnostic } from '../../controlle
 import { captureSandboxIdentity } from './sandbox-cleanup.mjs';
 import { CODEX_RESULT_SCHEMA } from "./codex-result-schema.mjs";
 import { WriterBlockedError } from "./contracts.mjs";
-import { captureCausalDiagnostic, createExecutionDiagnostic, diagnosticEnvironmentSnapshot, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from "../../controller/src/diagnostics.mjs";
+import { captureCausalDiagnostic, createExecutionDiagnostic, diagnosticEnvironmentSnapshot, emitDiagnosticUnavailable, failureDiagnosticFromDetails, MAX_DEBUG_DIAGNOSTIC_BYTES, MAX_NORMAL_DIAGNOSTIC_BYTES, persistExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreReference } from "../../controller/src/diagnostics.mjs";
 import { createBoundedUtf8Capture } from "../../controller/src/utf8-capture.mjs";
 import { normalizeCodexUsage } from "../../controller/src/codex-usage.mjs";
 import { createCodexJsonlParser } from './codex-jsonl.mjs';
@@ -326,6 +326,7 @@ export async function runGovernedCodexTask({
   openFallback = openRuntimeDiagnostic,
   createDiagnostic = createExecutionDiagnostic,
   readDiagnosticConfig = readDiagnosticsConfig,
+  writeDiagnosticFallback,
   resultSchema = CODEX_RESULT_SCHEMA,
   signal
 }) {
@@ -547,7 +548,7 @@ export async function runGovernedCodexTask({
     pendingError = error instanceof WriterBlockedError ? error : new WriterBlockedError(
       /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'RUNTIME_UNEXPECTED_FAILURE',
       'Governed runtime failed; inspect the protected diagnostic reference');
-    pendingError.runtimeCause = error.runtimeCause ?? error;
+    pendingError.runtimeCause = error?.runtimeCause ?? error;
     throw pendingError;
   } finally {
     let finalizationError;
@@ -624,7 +625,12 @@ export async function runGovernedCodexTask({
       // If this also fails, the pre-operation capsule remains the durable trace.
       try { await checkpoint({ persistence: 'failed', cleanup: 'retained', retention: 'retained', diagnosticStore: store,
         ...(pendingError ? {} : { stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence', operation: 'persist-diagnostic', primaryCause: code }) }); }
-      catch { evidence.fallbackWriteFailed = true; }
+      catch (fallbackError) {
+        evidence.fallbackWriteFailed = true;
+        emitDiagnosticUnavailable({ executionId, originalCode: pendingError?.code ?? 'RUNTIME_DIAGNOSTICS_FAILED',
+          storeCode: store.storeCode, fallbackCode: safeCode(fallbackError, 'DIAGNOSTIC_FALLBACK_FAILED'),
+          operation: 'persist-diagnostic' }, writeDiagnosticFallback);
+      }
     }
     const failure = pendingError ?? finalizationError;
     if (failure) {

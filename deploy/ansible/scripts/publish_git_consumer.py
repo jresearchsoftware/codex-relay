@@ -11,6 +11,7 @@ import stat
 import subprocess
 import time
 import uuid
+import sys
 
 
 class ConsumerPublicationError(ValueError):
@@ -175,6 +176,7 @@ def _execute(argv, env, *, timeout=None):
         timeout = 180 if action != 'consumer-digest' else 60
     diagnostic = {'action': action, 'failure': 'execution_failed'}
     output = {'stdout': bytearray(), 'stderr': bytearray()}
+    cause = None
     try:
         with subprocess.Popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, start_new_session=True) as child:
@@ -197,14 +199,19 @@ def _execute(argv, env, *, timeout=None):
                                 # continue draining both pipes without unbounded storage.
                                 output[name].extend(chunk[:max(0, limit + 1 - len(output[name]))])
                 child.wait(timeout=max(0, deadline - time.monotonic()))
-            except BaseException:
+            except BaseException as primary:
                 # The original-reader subprocess must not survive cancellation
                 # of its CLI parent or retain a lease/pipe after timeout.
                 try:
-                    os.killpg(child.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                child.wait()
+                    try:
+                        os.killpg(child.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    child.wait()
+                except BaseException as secondary:
+                    # Preserve the timeout/read failure when containment itself
+                    # fails; its note remains on the protected causal record.
+                    primary.add_note('Child containment failed: ' + type(secondary).__name__)
                 raise
         stderr = bytes(output['stderr'])
         timing, errors = _controller_trace(stderr)
@@ -216,7 +223,9 @@ def _execute(argv, env, *, timeout=None):
                 code = _controller_error_code(errors)
                 if code is not None:
                     diagnostic['code'] = code
-            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic)
+            raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from subprocess.CalledProcessError(
+                child.returncode, 'fixed-consumer-publication-controller',
+                output=bytes(output['stdout']), stderr=stderr)
         diagnostic['failure'] = 'invalid_stdout'
         if len(output['stdout']) > 4096:
             diagnostic['failure'] = 'output_too_large'
@@ -229,14 +238,16 @@ def _execute(argv, env, *, timeout=None):
         return value
     except ConsumerPublicationError:
         raise
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
+        error.output, error.stderr = bytes(output['stdout']), bytes(output['stderr'])
+        cause = error
         diagnostic['failure'] = 'timeout'
         timing, _ = _controller_trace(bytes(output['stderr']))
         if timing is not None:
             diagnostic['timing'] = timing
-    except (OSError, subprocess.SubprocessError, ValueError):
-        pass
-    raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from None
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        cause = error
+    raise ConsumerPublicationError('CONSUMER_PUBLICATION_CONTROLLER_FAILED', diagnostic) from cause
 
 
 def publish(source, config_root, desired, claim_root, repository, operation, revision, *,
@@ -404,7 +415,30 @@ def main():
     args = vars(parser.parse_args())
     try:
         print(json.dumps(publish(**args)))
-    except (ConsumerPublicationError, OSError, ValueError) as error:
+    except Exception as error:
+        try:
+            # Both Ansible and same-operation recovery invoke this script from
+            # the protected complete reviewed source tree, never a loose copy.
+            import importlib.util
+            spec = importlib.util.spec_from_file_location('relay_publication_failure_reporter',
+                Path(__file__).resolve().parents[2] / 'lifecycle.py')
+            reporter = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(reporter)
+            reporter.report_failure(error, 'consumer-publication')
+        except Exception as recorder:
+            # Reporter acquisition cannot replace the original publication
+            # classification or contaminate the sole stdout JSON envelope.
+            summary = 'RELAY_DEPLOYMENT_FAILURE_EVIDENCE=' + json.dumps({
+                'phase': 'consumer-publication', 'status': 'unavailable',
+                'reason': 'HOST_REPORTER_UNAVAILABLE', 'recorderFailure': {'type': type(recorder).__name__}}) + '\n'
+            try:
+                sys.stderr.write(summary)
+                sys.stderr.flush()
+            except Exception:
+                try:
+                    os.write(2, summary.encode('ascii'))
+                except OSError:
+                    pass
         code = str(error) if isinstance(error, ConsumerPublicationError) else 'CONSUMER_PUBLICATION_FAILED'
         result = {'error_code': code}
         if isinstance(error, ConsumerPublicationError) and error.controller_diagnostic is not None:

@@ -193,6 +193,8 @@ attempt artifacts in place. Cleanup failure may have removed some entries; its
 retained pointer means inspect the remaining artifacts, not that every original
 byte survived. The pre-cleanup capsule is already durable, and cleanup errors
 record operation, syscall, bounded path context and store status independently.
+The final archive keeps the original runtime causal evidence primary and the
+later cleanup observation in its separate lifecycle `secondaryEvidence` field.
 An ordinary successful run removes the sandbox and releases its fallback slot.
 A contained failed or resource-retaining run first archives its complete safe final
 capsule through the existing diagnostic store, then releases diagnostic capacity

@@ -6,17 +6,20 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import ssl
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 
 sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
 from lifecycle import execute, require, progress, report_failure, failure_reporting_source
+from lifecycle_process import run as run_child, retain_failure
 import git_intent
 import repository_source
 
@@ -69,12 +72,15 @@ except Exception as error:
 
 def projection_preflight(source, target, consumer, config):
     """Validate with the frozen target's code, never the installed renderer."""
-    result = subprocess.run(['/usr/bin/python3', '-I', '-c', PROJECTION_PREFLIGHT_SCRIPT,
+    try:
+        result = run_child(['/usr/bin/python3', '-I', '-c', PROJECTION_PREFLIGHT_SCRIPT,
                              str(source), target, str(consumer)],
-        input=json.dumps(config), env=clean_environment(), text=True,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=180)
-    require(result.returncode == 0 and result.stdout == 'WORKFLOW_PREFLIGHT=PASS\n',
-            'WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target')
+            input=json.dumps(config), env=clean_environment(), text=True, timeout=180,
+            phase='owner-preflight', dependency='workflow-projection')
+    except subprocess.CalledProcessError as error:
+        raise ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target') from error
+    if result.stdout != 'WORKFLOW_PREFLIGHT=PASS\n':
+        raise retain_failure(ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target'), result)
 
 
 POOL_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, re, sys
@@ -106,15 +112,16 @@ def pool_preflight(source, config):
     # The inner public primitive reacquires this same physical-pool lock. Keep
     # this read-only proof bounded rather than handing a new lock across APIs.
     with acquire('/var/lib/codex-relay-pool-' + name + '-deployment.lock'):
-        result = subprocess.run(['/usr/bin/python3', '-I', '-c', POOL_PREFLIGHT_SCRIPT,
+        try:
+            result = run_child(['/usr/bin/python3', '-I', '-c', POOL_PREFLIGHT_SCRIPT,
                                  str(source / 'deploy')],
-            input=json.dumps(config), env=clean_environment(), text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=180)
-    if result.returncode:
-        codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', result.stderr, re.MULTILINE)
-        raise ValueError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN')
-    require(result.stdout == 'MANAGED_POOL_PREFLIGHT=PASS\n',
-            'MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN')
+                input=json.dumps(config), env=clean_environment(), text=True, timeout=180,
+                phase='owner-preflight', dependency='managed-pool')
+        except subprocess.CalledProcessError as error:
+            codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', error.stderr, re.MULTILINE)
+            raise ValueError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN') from error
+    if result.stdout != 'MANAGED_POOL_PREFLIGHT=PASS\n':
+        raise retain_failure(ValueError('MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN'), result)
 
 
 def public_main(repository):
@@ -145,11 +152,57 @@ def clean_environment():
             'GIT_TERMINAL_PROMPT': '0', 'PYTHONDONTWRITEBYTECODE': '1'}
 
 
+def child_progress(line):
+    """Forward bounded public progress only; backend text remains causal evidence."""
+    from lifecycle import drain_progress
+    if drain_progress(line):
+        return
+    backend = {'ansible-playbook', 'apt-package-metadata', 'release-artifacts',
+        'codex-package-and-runtime', 'reviewer-build-and-runtime', 'production-runner-package',
+        'general-runner-package', 'controller-entrypoints', 'reviewer-activation', 'reviewer-listener',
+        'service-health', 'runtime-verification'}
+    dependencies = {'backend': backend, 'backend-running': backend,
+        'source-promotion': {'protected-source-cutover'}, 'staging': {'protected-operation-stage'},
+        'preflight': {'host-prerequisites'}, 'lock': {'writer-publication-lock'},
+        'target-operation': {'source-preparation', 'source-verification', 'host-prerequisites'},
+        'owner-apply': {'public-deployment-primitive'}, 'owner-admission': {'admission-gate'},
+        'owner-preflight': {'workflow-projection', 'managed-pool'}, 'owner-staging': {'source-git'}}
+    observed = re.fullmatch(r'RELAY_DEPLOYMENT_PROGRESS=([a-z-]+);dependency=([a-z-]+)(?:;state=(?:started|waiting|running|acquiring|acquired|completed|child-completed|failed))?(?:;(?:elapsed_seconds=[0-9]{1,10}|exit=-?[0-9]{1,10})){0,2}', line)
+    warnings = {
+        'RELAY_DEPLOYMENT_WARNING=host-operation-guard-final-check-unproven;primary-failure-preserved;inspect-before-retry',
+        'RELAY_DEPLOYMENT_WARNING=writer-lock-release-unproven;primary-failure-preserved;inspect-before-retry',
+        'RELAY_DEPLOYMENT_WARNING=predispatch-recovery-state-unproven;primary-failure-preserved',
+        'RELAY_DEPLOYMENT_WARNING=recovery-state-write-unproven;primary-failure-preserved',
+        'RELAY_LIFECYCLE_WARNING=recovery-state-write-unproven;admission-remains-closed;inspect-retained-operation',
+        'RELAY_LIFECYCLE_WARNING=source-promotion-cleanup-unproven;inspect-before-retry',
+        'RELAY_LIFECYCLE_WARNING=remote-drain-progress-unproven;inspect-protected-transport-evidence',
+        'RELAY_LIFECYCLE_WARNING=child-cleanup-unproven;inspect-before-retry',
+        'RELAY_ANSIBLE_WARNING=cleanup-unproven;primary-failure-preserved;inspect-before-retry'}
+    if (observed and observed[2] in dependencies.get(observed[1], set())
+            or re.fullmatch(r'RELAY_LIFECYCLE_PROGRESS=(?:PREFLIGHT|STAGING|LOCK|QUIESCE|DRAIN|QUIESCED|APPLY|ACTIVATE/VERIFY|VERIFY_INSTALLED|RESUME|RECOVERY_REQUIRED|OPEN);target=[0-9a-f]{40}', line)
+            or re.fullmatch(r'RELAY_DEPLOYMENT_LOG=protected-log/relay-[0-9a-f]{12}-[a-z-]{1,40}-[A-Za-z0-9_-]{6,32}\.log;access=protected;phase=[a-z-]{1,40}', line)
+            or re.fullmatch(r'RELAY_ANSIBLE_FAILURE=phase=(?:ansible-controller-start|native-target-start|native-target|native-target-receipt|target-operation|ansible-target-receipt|target-operation-cleanup|target-operation-interrupted);evidence=protected-transport/relay-ansible-operation-[A-Za-z0-9_-]{6,32};effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry', line)
+            or line in warnings):
+        print(line, flush=True)
+
+
+def public_primitive(argv, **options):
+    return run_child(argv, phase='owner-apply', dependency='public-deployment-primitive',
+                     forward=child_progress, **options)
+
+
 def git(root, *arguments, environment=None):
-    return subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+    argv = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'core.attributesfile=/dev/null',
-        '-C', str(root), *arguments], env=clean_environment() if environment is None else environment, text=True,
-        stderr=subprocess.PIPE, timeout=120).strip()
+        '-C', str(root), *arguments]
+    options = {'env': clean_environment() if environment is None else environment, 'text': True, 'timeout': 120}
+    if arguments and arguments[0] == 'ls-tree':
+        # This is semantic validation input, not a diagnostic transcript. Retain
+        # the original complete tree reader: truncating it at the child evidence
+        # limit would reject supported larger source trees or omit a path check.
+        # Any failure still reaches the bounded protected reporter.
+        return subprocess.run(argv, capture_output=True, check=True, **options).stdout.strip()
+    return run_child(argv, **options, phase='owner-staging', dependency='source-git').stdout.strip()
 
 
 def acquire_source(directory, repository, head, *, read_token=None):
@@ -265,8 +318,8 @@ console.log('GIT_CONSUMER_READBACK=PASS');'''
     if proof.returncode:
         raise ValueError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
             proof.returncode, 'fixed-consumer-readback', output=proof.stdout, stderr=getattr(proof, 'stderr', ''))
-    require(proof.returncode == 0 and proof.stdout == 'GIT_CONSUMER_READBACK=PASS\n',
-            'git-consumer-readback-mismatch')
+    if proof.stdout != 'GIT_CONSUMER_READBACK=PASS\n':
+        raise retain_failure(ValueError('git-consumer-readback-mismatch'), proof)
 
 
 def selected_config(source, raw):
@@ -289,10 +342,15 @@ print(json.dumps({'config': c, 'values': compile_inputs(c)}))
     if result.returncode:
         raise ValueError('git-selected-config-invalid') from subprocess.CalledProcessError(
             result.returncode, 'fixed-selected-config-parser', output=result.stdout, stderr=getattr(result, 'stderr', ''))
-    require(result.returncode == 0 and len(result.stdout) <= 524288, 'git-selected-config-invalid')
-    parsed = json.loads(result.stdout)
-    require(isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
-            and isinstance(parsed.get('values'), dict), 'git-selected-config-invalid')
+    if len(result.stdout) > 524288:
+        raise retain_failure(ValueError('git-selected-config-invalid'), result)
+    try:
+        parsed = json.loads(result.stdout)
+    except (ValueError, UnicodeError) as error:
+        raise retain_failure(ValueError('git-selected-config-invalid'), result) from error
+    if not (isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
+            and isinstance(parsed.get('values'), dict)):
+        raise retain_failure(ValueError('git-selected-config-invalid'), result)
     return parsed['config'], parsed['values']
 
 
@@ -406,8 +464,8 @@ def run_git(request, token, *, installed_source=None):
         def gate(*arguments):
             if arguments[0] in ['quiesce', 'recovery-target', 'phase', 'resume']:
                 arguments += target_source_arguments(install, source)
-            result = subprocess.run([gate_path, *arguments], env=clean_environment(),
-                text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
+            result = run_child([gate_path, *arguments], env=clean_environment(),
+                phase='owner-admission', dependency='admission-gate', forward=child_progress, timeout=1860)
             return json.loads(result.stdout)
 
         if action == 'stop':
@@ -437,7 +495,7 @@ def run_git(request, token, *, installed_source=None):
                         '--consumer-root', str(consumer), '--phase', 'post-check', '--connection', 'local',
                         '--resolved-revision', installed, '--local-lifecycle',
                         '--lifecycle-operation', state['operationId'], '--lifecycle-lock-fd', str(lock_fd)]
-                    subprocess.run(argv, env=clean_environment(), pass_fds=(lock_fd,), check=True)
+                    public_primitive(argv, env=clean_environment(), pass_fds=(lock_fd,))
                     git_result(install, installed, previous_pair, desired)
                     return True
 
@@ -465,7 +523,7 @@ def run_git(request, token, *, installed_source=None):
             if retained is not None:
                 argv += ['--continue-install-recovery']
                 target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
-        subprocess.run(argv, env=clean_environment(), check=True)
+        public_primitive(argv, env=clean_environment())
         progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)
         require(gate('status')['phase'] == 'open', 'git-apply-admission-not-open')
@@ -493,8 +551,8 @@ def run(request):
     def gate(*arguments):
         if arguments[0] in ['quiesce', 'recovery-target', 'phase', 'resume']:
             arguments += target_source_arguments(values['relay_install_root'], source)
-        result = subprocess.run([gate_path, *arguments], env=clean_environment(),
-                                text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
+        result = run_child([gate_path, *arguments], env=clean_environment(),
+            phase='owner-admission', dependency='admission-gate', forward=child_progress, timeout=1860)
         return json.loads(result.stdout)
 
     progress('LOCK', installed)
@@ -533,6 +591,11 @@ def run(request):
             if action == 'apply':
                 pool_preflight(source, config)
 
+            required_proofs = frozenset([
+                f'RELAY_LIFECYCLE_VERIFIED={target}',
+                f'installed_revision={target}',
+                f'RELAY_WORKFLOW_PROJECTION=PASS;revision={target};consumer={consumer_head}'])
+
             def apply():
                 nonlocal operation
                 current = gate('status')
@@ -544,26 +607,17 @@ def run(request):
                     '--lifecycle-lock-fd', str(lock_fd)]
                 if phase == 'upgrade':
                     argv.append('--authorize-upgrade')
-                process = subprocess.Popen(argv, env=clean_environment(), pass_fds=(lock_fd,),
-                                           text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-                evidence = []
                 try:
-                    for line in process.stdout:
-                        print(line, end='', flush=True)
-                        evidence.append(line)
-                    require(process.wait() == 0, 'lifecycle-public-primitive-failed')
-                finally:
-                    process.stdout.close()
-                    if process.poll() is None:
-                        process.terminate()
-                        process.wait(timeout=30)
-                return ''.join(evidence)
+                    return public_primitive(argv, env=clean_environment(), pass_fds=(lock_fd,),
+                                            stdout_proofs=required_proofs)
+                except subprocess.CalledProcessError as error:
+                    raise ValueError('lifecycle-public-primitive-failed') from error
 
             def verify_result(evidence, revision):
-                require(f'RELAY_LIFECYCLE_VERIFIED={revision}' in evidence
-                        and f'installed_revision={revision}' in evidence
-                        and f'RELAY_WORKFLOW_PROJECTION=PASS;revision={revision};consumer={consumer_head}' in evidence,
-                        'lifecycle-same-operation-proof-missing')
+                if evidence.stdout_proofs != required_proofs:
+                    error = retain_failure(ValueError('lifecycle-same-operation-proof-missing'), evidence)
+                    error.observation['missingStdoutProofs'] = sorted(required_proofs - evidence.stdout_proofs)
+                    raise error
                 return installed_proof(config, revision)
 
             execute(gate, target, apply, verify_result, operation=operation,
@@ -573,6 +627,12 @@ def run(request):
 
 def main(arguments=None, token_stream=None):
     arguments = sys.argv[1:] if arguments is None else arguments
+    previous_termination = None
+    if threading.current_thread() is threading.main_thread() and signal.getsignal(signal.SIGTERM) == signal.SIG_DFL:
+        previous_termination = signal.SIG_DFL
+        def interrupted(_signum, _frame):
+            raise InterruptedError('owner-lifecycle-interrupted')
+        signal.signal(signal.SIGTERM, interrupted)
     try:
         require(len(arguments) == 1 or (len(arguments) == 3 and arguments[0].startswith('git:recover:')
                 and arguments[1] == '--installed-source' and Path(arguments[2]).is_absolute()), 'argument-contract')
@@ -585,8 +645,7 @@ def main(arguments=None, token_stream=None):
         else:
             run(arguments[0])
         return 0
-    except (ValueError, OSError, subprocess.SubprocessError, KeyError, TypeError,
-            http.client.HTTPException) as error:
+    except Exception as error:
         report_failure(error, 'owner-lifecycle')
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
@@ -596,6 +655,9 @@ def main(arguments=None, token_stream=None):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)
         return 1
+    finally:
+        if previous_termination is not None:
+            signal.signal(signal.SIGTERM, previous_termination)
 
 
 if __name__ == '__main__':

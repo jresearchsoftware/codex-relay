@@ -284,7 +284,7 @@ test("controller failure evidence stores a bounded redacted private stack and re
     mode: "debug",
     env: { PATH: "/usr/bin:/bin", GITHUB_TOKEN: "github-secret-fixture" },
     secrets: { githubToken: "github-secret-fixture" },
-    diagnosticStore: async value => { stored = value; }
+    diagnosticStore: async value => { stored = value; return { status: 'stored', executionId: value.executionId, mode: value.mode }; }
   });
   assert.deepEqual(reference, { status: "stored", code: "UNEXPECTED_CONTROLLER_FAILURE", executionId: "controller-fixture-1", mode: "debug" });
   assert.equal(stored.classification, "UNEXPECTED_CONTROLLER_FAILURE");

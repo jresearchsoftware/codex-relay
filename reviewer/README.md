@@ -269,7 +269,13 @@ existing systemd journal; standalone process output is the corresponding surface
 whose actual host retention must be established before claiming durable evidence.
 MCP output keeps its existing safe codes and bounded public
 diagnostics, and no raw host cause enters a review, authority record or Outcome.
-Logging changes no reservation, retry budget or uncertain-publication classification.
+Helper stdin, stdout and stderr are processed concurrently, including diagnostics
+emitted before the request is read; oversized stdout is drained with a bounded
+capture and an explicit size warning. Startup and task panics use the same bounded,
+redacted host cause record, retaining their panic location and normal failure
+propagation. Retained review-body storage failures return the existing safe error
+instead of panicking. Logging changes no reservation, retry budget or
+uncertain-publication classification.
 
 The auxiliary Check Run has a proportionate recovery policy. Bounded complete
 paginated `filter=all` readback verifies the exact operation `external_id`, SHA,

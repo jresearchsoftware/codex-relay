@@ -388,3 +388,35 @@ def test_drain_forwards_bounded_native_repository_and_slot_locations(suffix, cap
 def test_drain_location_grammar_rejects_unbounded_or_arbitrary_fields(suffix, capsys):
     assert not drain_progress(LINE.replace('/run-123', '/run-123' + suffix))
     assert capsys.readouterr().out == ''
+
+
+def test_deployment_unexpected_exception_retains_cause_without_public_path(monkeypatch, capsys):
+    spec = importlib.util.spec_from_file_location('deployment_unexpected', ROOT / 'deploy/relay-deploy.py')
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, 'arguments', lambda: object())
+    def fail(_args):
+        raise AssertionError('private unexpected native cause /private/host/path')
+    monkeypatch.setattr(cli, 'run', fail)
+    captured = []
+    monkeypatch.setattr(cli, 'report_failure', lambda error, phase: captured.append((error, phase)))
+    assert cli.main() == 1
+    assert isinstance(captured[0][0], AssertionError) and captured[0][1] == 'deployment-entrypoint'
+    public = capsys.readouterr().err
+    assert 'BLOCKED=AssertionError' in public and 'private' not in public
+
+
+@pytest.mark.parametrize('code', ['inventory-blocked:private-observation', 'workflow-file-unavailable:/private/host/path;inspect-file-type-and-access', 'environment.repository'])
+def test_deployment_domain_failure_keeps_safe_check_identity_and_protects_details(monkeypatch, capsys, code):
+    spec = importlib.util.spec_from_file_location('deployment_domain', ROOT / 'deploy/relay-deploy.py')
+    cli = importlib.util.module_from_spec(spec); spec.loader.exec_module(cli)
+    monkeypatch.setattr(cli, 'arguments', lambda: object())
+    def fail(_args):
+        raise cli.InvalidConfig('INVALID_DEPLOYMENT_CONFIG:' + code)
+    monkeypatch.setattr(cli, 'run', fail)
+    captured = []
+    monkeypatch.setattr(cli, 'report_failure', lambda error, phase: captured.append(error))
+    assert cli.main() == 1
+    text = capsys.readouterr().err
+    assert 'INVALID_DEPLOYMENT_CONFIG:' + code.split(':', 1)[0] in text
+    assert 'private-observation' not in text and '/private/' not in text
+    assert code in str(captured[0])
