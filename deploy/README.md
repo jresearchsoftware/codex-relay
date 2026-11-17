@@ -1420,8 +1420,13 @@ local drain reports trustworthy active/unknown counts and up to 20 verified
 pending Task/Step/run identities when the inventory changes, then at bounded
 intervals with elapsed wait time. Remaining work comes from protected admission
 inventory; elapsed time never means the drain succeeded. Unknown inventory still
-refuses Apply. The private SSH/Ansible helper adapter retains its buffered receipt
-behavior; it does not provide the native local stream's live drain observations.
+refuses Apply. The SSH/Ansible adapter reports the same observations while its
+original no-log helper is still running. It polls a bounded, operation-local
+private progress channel through the existing target transport; original stdout,
+stderr and the final receipt remain private. The channel is removed on normal
+completion, creates no lifecycle authority and never launches the helper again.
+A progress-channel or cleanup failure reports a visible warning while retaining
+the original operation result and private evidence.
 
 Backend progress names the observed package, artifact, activation or verification
 dependency without copying task output or configuration into Actions. Long waits

@@ -22,6 +22,85 @@ BACKEND = Path(__file__).resolve().parent / 'ansible'
 STRICT_SSH = '-o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes'
 RESULT_LIMIT = 1048576
 CHANNEL_CLEANUP_TIMEOUT = 10
+PROGRESS_ROOT = Path('/run')
+
+# The ordinary no-log Ansible command keeps its private stdout/stderr receipt.
+# A root-private, operation-local rendezvous supplies only the latest validated
+# drain observation while that same command runs. This follows the guard
+# transport's ephemeral channel pattern; it is never lifecycle authority.
+DRAIN_PROGRESS_WRAPPER = r'''import json, os, pathlib, re, subprocess, sys
+directory = pathlib.Path(sys.argv[1])
+process = None
+owned = False
+pattern = sys.argv[2]
+try:
+    if directory.parent != pathlib.Path('/run') or not re.fullmatch('relay-ansible-progress-[a-f0-9]{32}', directory.name):
+        raise ValueError()
+    raw = sys.stdin.buffer.read(65537)
+    if len(raw) > 65536: raise ValueError()
+    request = json.loads(raw)
+    if set(request) != {'argv', 'input'} or not isinstance(request['argv'], list) or not 1 <= len(request['argv']) <= 32 or not all(isinstance(v, str) and len(v) <= 4096 for v in request['argv']) or not isinstance(request['input'], str):
+        raise ValueError()
+    os.mkdir(directory, 0o700)
+    owned = True
+    process = subprocess.Popen(request['argv'], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    process.stdin.write(request['input'].encode('utf-8'))
+    process.stdin.close()
+    pending = b''
+    while True:
+        chunk = process.stderr.read1(65536)
+        if not chunk: break
+        sys.stderr.buffer.write(chunk)
+        sys.stderr.buffer.flush()
+        pending += chunk
+        while b'\n' in pending:
+            line, pending = pending.split(b'\n', 1)
+            if len(line) <= 4096 and re.fullmatch(pattern, line.decode('ascii', errors='replace')):
+                try:
+                    temporary = directory / 'next'
+                    fd = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(fd, 'wb') as stream: stream.write(line + b'\n')
+                    os.replace(temporary, directory / 'progress')
+                except OSError:
+                    print('ANSIBLE_PROGRESS_CHANNEL_UNPROVEN', file=sys.stderr, flush=True)
+        if len(pending) > 4096: pending = b'oversized:'
+    sys.exit(process.wait())
+finally:
+    if process is not None:
+        process.stderr.close()
+        if process.poll() is None:
+            process.terminate()
+            try: process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+    if owned:
+        try:
+            for name in ['next', 'progress']: (directory / name).unlink(missing_ok=True)
+            directory.rmdir()
+        except OSError:
+            print('ANSIBLE_PROGRESS_CHANNEL_CLEANUP_UNPROVEN', file=sys.stderr, flush=True)
+'''
+
+DRAIN_PROGRESS_READ = r'''import os, pathlib, re, stat, sys
+directory = pathlib.Path(sys.argv[1])
+try:
+    if directory.parent != pathlib.Path('/run') or not re.fullmatch('relay-ansible-progress-[a-f0-9]{32}', directory.name): raise ValueError()
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o700: raise ValueError()
+    fd = os.open(directory / 'progress', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600 or info.st_size > 4096: raise ValueError()
+        raw = stream.read(4097)
+        if len(raw) > 4096: raise ValueError()
+    sys.stdout.buffer.write(raw)
+except FileNotFoundError:
+    pass
+except Exception:
+    print('ANSIBLE_PROGRESS_CHANNEL_UNPROVEN', file=sys.stderr)
+    sys.exit(1)
+'''
 
 
 def connection_vars(target, key=None, *, local=False):
@@ -81,6 +160,9 @@ class TargetProcess:
         self.native = False
         self.cancelled = False
         self.progress = progress
+        self.remote_progress = None
+        self.last_progress = None
+        self.progress_warning = False
 
     def start(self, value=None):
         if self.process is not None:
@@ -114,8 +196,14 @@ class TargetProcess:
             'ansible.builtin.copy': {'dest': str(self.result_path), 'mode': '0600',
                 'content': "{{ {'rc': relay_target_receipt.rc | default(255), 'stdout': relay_target_receipt.stdout | default(''), 'stderr': relay_target_receipt.stderr | default('')} | to_json }}"},
             'no_log': True, 'diff': False}]}]
+        payload = {'argv': self.argv, 'input': value or ''}
+        if self.progress is True:
+            from lifecycle import DRAIN_PROGRESS_PATTERN
+            self.remote_progress = PROGRESS_ROOT / ('relay-ansible-progress-' + uuid.uuid4().hex)
+            payload = {'argv': ['/usr/bin/python3', '-I', '-c', DRAIN_PROGRESS_WRAPPER,
+                               str(self.remote_progress), DRAIN_PROGRESS_PATTERN], 'input': json.dumps(payload)}
         for name, content in [('inventory.json', inventory), ('operation.json', playbook),
-                              ('request.json', {'argv': self.argv, 'input': value or ''})]:
+                              ('request.json', payload)]:
             path = work / name
             path.write_text(json.dumps(content), encoding='utf-8')
             path.chmod(0o600)
@@ -195,6 +283,28 @@ class TargetProcess:
     def pending_output(self):
         return self.native and any(reader.is_alive() for reader in getattr(self, 'readers', []))
 
+    def warn_progress(self):
+        if not self.progress_warning:
+            print('RELAY_LIFECYCLE_WARNING=remote-drain-progress-unproven;inspect-protected-transport-evidence', flush=True)
+            self.progress_warning = True
+
+    def forward_progress(self, line):
+        from lifecycle import drain_progress
+        if line == self.last_progress:
+            return True
+        if drain_progress(line):
+            self.last_progress = line
+            return True
+        return False
+
+    def observe_remote_progress(self, timeout):
+        result = run_target(self.target, self.key, ['/usr/bin/python3', '-I', '-c', DRAIN_PROGRESS_READ,
+                            str(self.remote_progress)], timeout=timeout, local=self.local)
+        if result.returncode:
+            self.warn_progress()
+        elif result.stdout and not self.forward_progress(result.stdout.rstrip('\n')):
+            self.warn_progress()
+
     def collect_native(self):
         try:
             output = []
@@ -242,7 +352,27 @@ class TargetProcess:
         self.start(input)
         deadline = time.monotonic() + timeout if timeout is not None else None
         try:
-            self.process.wait(timeout=timeout)
+            if self.remote_progress is not None:
+                next_progress = time.monotonic() + 1
+                while self.process.poll() is None:
+                    remaining = max(0, deadline - time.monotonic()) if deadline is not None else 15
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired('relay-target-operation', timeout)
+                    if time.monotonic() >= next_progress:
+                        try:
+                            self.observe_remote_progress(min(15, remaining))
+                        except (OSError, subprocess.SubprocessError, RuntimeError):
+                            self.warn_progress()
+                        next_progress = time.monotonic() + 5
+                    remaining = max(0, deadline - time.monotonic()) if deadline is not None else 1
+                    if remaining <= 0:
+                        raise subprocess.TimeoutExpired('relay-target-operation', timeout)
+                    try:
+                        self.process.wait(timeout=min(1, remaining))
+                    except subprocess.TimeoutExpired:
+                        pass
+            else:
+                self.process.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             if self.native:
                 raise subprocess.TimeoutExpired('relay-target-operation', timeout) from None
@@ -263,6 +393,14 @@ class TargetProcess:
                     or self.process.returncode != 0 and result['rc'] == 0):
                 raise ValueError()
             self.result = result
+            if self.remote_progress is not None:
+                from lifecycle import DRAIN_PROGRESS_PATTERN
+                import re
+                lines = re.findall('(?m)^' + DRAIN_PROGRESS_PATTERN + '$', result['stderr'])
+                if lines:
+                    self.forward_progress(lines[-1])
+                if re.search(r'(?m)^ANSIBLE_PROGRESS_CHANNEL_(?:UNPROVEN|CLEANUP_UNPROVEN)$', result['stderr']):
+                    self.warn_progress()
         except (OSError, ValueError, TypeError):
             self.result = {'rc': 255, 'stdout': '', 'stderr': 'ANSIBLE_TARGET_OPERATION_UNPROVEN\n'}
         finally:

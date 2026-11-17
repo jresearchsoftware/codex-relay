@@ -17,19 +17,24 @@ def progress(phase, target):
     print(f'RELAY_LIFECYCLE_PROGRESS={phase};target={target}', flush=True)
 
 
+DRAIN_PROGRESS_PATTERN = (
+    r'ADMISSION_DRAIN_PROGRESS phase=drain active=[0-9]{1,10} unknown=[0-9]{1,10}'
+    r' elapsedSeconds=[0-9]{1,10}'
+    r'(?: pending=(?:Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}'
+    r'(?:,Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}){0,19}|none))?'
+    r' reason=(?:waiting-for-controllers|drained|inventory-unknown|lock-or-inventory-unavailable)')
+
+
 def drain_progress(line):
     """Forward only the admission CLI's bounded, nonsecret progress grammar.
 
     stdout remains the single JSON capability result. Arbitrary stderr, task
     descriptions, configuration and backend output stay in their private channel.
     """
-    if len(line) <= 4096 and re.fullmatch(
-            r'ADMISSION_DRAIN_PROGRESS phase=drain active=[0-9]{1,10} unknown=[0-9]{1,10}'
-            r' elapsedSeconds=[0-9]{1,10}'
-            r'(?: pending=(?:Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}'
-            r'(?:,Task-[1-9][0-9]{0,15}/Step-[1-9][0-9]{0,15}/run-[1-9][0-9]{0,19}){0,19}|none))?'
-            r' reason=(?:waiting-for-controllers|drained|inventory-unknown|lock-or-inventory-unavailable)', line):
+    if len(line) <= 4096 and re.fullmatch(DRAIN_PROGRESS_PATTERN, line):
         print(line, flush=True)
+        return True
+    return False
 
 
 def execute(gate, target, apply, verify, *, operation=None, timeout=1800,
