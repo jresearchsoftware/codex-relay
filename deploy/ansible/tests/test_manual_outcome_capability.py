@@ -64,7 +64,7 @@ def test_rendered_socket_uses_the_matching_factory_service_and_reviewer_only_gro
     assert service["Service"]["ExecStart"] == f"/opt/{namespace}/relay-manual-outcome-writer"
     assert service["Service"]["NoNewPrivileges"] == "true"
     assert service["Service"]["StandardInput"] == service["Service"]["StandardOutput"] == "socket"
-    assert service["Service"]["StandardError"] == "null"
+    assert service["Service"]["StandardError"] == "journal"
     assert service["Service"]["UMask"] == "0077"
     assert service["Service"]["RuntimeMaxSec"] == service["Service"]["TimeoutStartSec"] == "60"
     assert service["Service"]["ReadWritePaths"] == f"/var/lib/{namespace}/writer-claims"

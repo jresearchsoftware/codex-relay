@@ -7,10 +7,27 @@ export const DIAGNOSTICS_CONFIG_PATH = "{{ relay_config_root }}/diagnostics.json
 const ALLOWED_MODES = new Set(["normal", "debug"]);
 const CONFIG_MODE = 0o644;
 
-function fail(code, message) {
-  const error = new Error(message);
+function fail(code, message, cause, operation, secondaryEvidence = []) {
+  const error = new Error(message, { cause });
   error.code = code;
+  error.operation = operation;
+  error.secondaryEvidence = secondaryEvidence;
   throw error;
+}
+
+function safeCause(error, operation) {
+  return { resource: "diagnostics-configuration", operation,
+    ...(typeof error?.name === "string" && /^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name) ? { name: error.name } : {}),
+    ...(typeof error?.code === "string" && /^E[A-Z0-9_]{1,31}$/.test(error.code) ? { code: error.code } : {}),
+    ...(typeof error?.syscall === "string" && /^(?:open|read|write|fsync|close|chmod|rename|unlink|lstat)$/.test(error.syscall) ? { syscall: error.syscall } : {}),
+    ...(Number.isInteger(error?.errno) && Math.abs(error.errno) <= 65535 ? { errno: error.errno } : {}) };
+}
+
+export function safeControlFailure(error) {
+  return { status: "blocked", code: /^DIAGNOSTICS_[A-Z_]{1,80}$/.test(error?.code ?? "") ? error.code : "DIAGNOSTICS_CONTROL_FAILED",
+    message: /^DIAGNOSTICS_[A-Z_]{1,80}$/.test(error?.code ?? "") ? error.message : "Diagnostics control failed",
+    ...(error?.cause ? { causalEvidence: safeCause(error.cause, error.operation) } : {}),
+    ...(error?.secondaryEvidence?.length ? { secondaryEvidence: error.secondaryEvidence.slice(0, 2) } : {}) };
 }
 
 function assertMode(mode) {
@@ -21,14 +38,17 @@ function assertMode(mode) {
 function readConfig(configPath) {
   let entry;
   try { entry = lstatSync(configPath); }
-  catch (error) { fail(error.code === "ENOENT" ? "DIAGNOSTICS_CONFIG_MISSING" : "DIAGNOSTICS_CONFIG_UNREADABLE", "Diagnostics configuration is unavailable"); }
+  catch (error) { fail(error.code === "ENOENT" ? "DIAGNOSTICS_CONFIG_MISSING" : "DIAGNOSTICS_CONFIG_UNREADABLE", "Diagnostics configuration is unavailable", error, "config-stat"); }
   if (!entry.isFile() || entry.isSymbolicLink()) fail("DIAGNOSTICS_CONFIG_UNSAFE", "Diagnostics configuration must be a regular file");
   if (configPath === DIAGNOSTICS_CONFIG_PATH && typeof process.getuid === "function" && process.getuid() === 0 && (entry.uid !== 0 || entry.gid !== 0)) {
     fail("DIAGNOSTICS_CONFIG_OWNER_INVALID", "Diagnostics configuration must remain root-owned");
   }
   let value;
-  try { value = JSON.parse(readFileSync(configPath, "utf8")); }
-  catch { fail("DIAGNOSTICS_CONFIG_INVALID", "Diagnostics configuration is not valid JSON"); }
+  let raw;
+  try { raw = readFileSync(configPath, "utf8"); }
+  catch (error) { fail("DIAGNOSTICS_CONFIG_UNREADABLE", "Diagnostics configuration is unavailable", error, "config-read"); }
+  try { value = JSON.parse(raw); }
+  catch (error) { fail("DIAGNOSTICS_CONFIG_INVALID", "Diagnostics configuration is not valid JSON", error, "config-parse"); }
   if (!value || value.schemaVersion !== "1.0") fail("DIAGNOSTICS_CONFIG_INVALID", "Diagnostics configuration schema is invalid");
   assertMode(value.mode);
   if (!Number.isInteger(value.retentionCount) || value.retentionCount < 1 || value.retentionCount > 32) {
@@ -47,21 +67,34 @@ export function setEffectiveMode(mode, configPath = DIAGNOSTICS_CONFIG_PATH) {
   const directory = dirname(configPath);
   const temporary = join(directory, `.diagnostics.json.tmp-${process.pid}`);
   let descriptor;
+  let ownedTemporary = false;
+  let operation = "config-open";
   try {
     descriptor = openSync(temporary, "wx", 0o600);
+    ownedTemporary = true;
     const output = `${JSON.stringify({ ...value, mode }, null, 2)}\n`;
+    operation = "config-write";
     writeSync(descriptor, output, null, "utf8");
+    operation = "config-sync";
     fsyncSync(descriptor);
+    operation = "config-close";
     closeSync(descriptor);
     descriptor = undefined;
+    operation = "config-mode";
     chmodSync(temporary, entry.mode & 0o7777 || CONFIG_MODE);
+    operation = "config-rename";
     renameSync(temporary, configPath);
+    ownedTemporary = false;
+    operation = "config-mode";
     chmodSync(configPath, entry.mode & 0o7777 || CONFIG_MODE);
   } catch (error) {
-    if (descriptor !== undefined) closeSync(descriptor);
-    try { unlinkSync(temporary); } catch { /* best-effort cleanup of our bounded temp file */ }
-    if (error?.code === "EEXIST") fail("DIAGNOSTICS_CONTROL_BUSY", "Diagnostics configuration update is already in progress");
-    fail("DIAGNOSTICS_CONFIG_WRITE_FAILED", "Diagnostics configuration update failed");
+    const secondaryEvidence = [];
+    if (descriptor !== undefined) try { closeSync(descriptor); }
+    catch (secondary) { secondaryEvidence.push(safeCause(secondary, "cleanup-close")); }
+    if (ownedTemporary) try { unlinkSync(temporary); }
+    catch (secondary) { secondaryEvidence.push(safeCause(secondary, "cleanup-unlink")); }
+    if (error?.code === "EEXIST") fail("DIAGNOSTICS_CONTROL_BUSY", "Diagnostics configuration update is already in progress", error, operation, secondaryEvidence);
+    fail("DIAGNOSTICS_CONFIG_WRITE_FAILED", "Diagnostics configuration update failed", error, operation, secondaryEvidence);
   }
   return mode;
 }
@@ -79,5 +112,5 @@ function isMainModule() {
 
 if (isMainModule()) {
   try { process.stdout.write(`${JSON.stringify(main())}\n`); }
-  catch (error) { process.stderr.write(`${JSON.stringify({ status: "blocked", code: error.code ?? "DIAGNOSTICS_CONTROL_FAILED", message: error.message })}\n`); process.exitCode = 1; }
+  catch (error) { process.stderr.write(`${JSON.stringify(safeControlFailure(error))}\n`); process.exitCode = 1; }
 }

@@ -9,7 +9,9 @@ Slice=system.slice
 ExecStart={{ relay_install_root }}/relay-manual-outcome-writer
 StandardInput=socket
 StandardOutput=socket
-StandardError=null
+# Keep pre-configuration and early helper failures in the protected host
+# journal. stdout remains exclusively the bounded socket response.
+StandardError=journal
 TimeoutStartSec=60
 RuntimeMaxSec=60
 UMask=0077

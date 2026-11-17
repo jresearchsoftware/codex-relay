@@ -16,7 +16,7 @@ sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
-from lifecycle import execute, require
+from lifecycle import execute, require, progress
 import git_intent
 import repository_source
 
@@ -347,6 +347,7 @@ def run_git(request, token, *, installed_source=None):
     match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
+    progress('PREFLIGHT', installed)
     require(installed_source is None or action == 'recover', 'recovery-bootstrap-route-only')
     install, binding, previous_manifest = (git_anchor(installed) if installed_source is None
                                           else git_anchor(installed, installed_source))
@@ -362,6 +363,7 @@ def run_git(request, token, *, installed_source=None):
     protected_parents(stage / 'entry')
     with tempfile.TemporaryDirectory(prefix='git-owner-lifecycle-', dir=stage) as temporary:
         work = Path(temporary)
+        progress('STAGING', target)
         source = acquire_source(work / 'product', binding['productRepository'], target)
         git_target_capability(source)
         # Parse literal Git data using the selected accepted product's schema.
@@ -397,9 +399,12 @@ def run_git(request, token, *, installed_source=None):
             return json.loads(result.stdout)
 
         if action == 'stop':
+            progress('LOCK', target)
             with acquire('/var/lib/' + install.name + '-deployment.lock'):
                 git_anchor(installed)
                 execute(gate, installed, None, None, stop=True)
+                git_anchor(installed)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=QUIESCED;requested={target};config={config_sha};installed={installed};installed_config=unknown', flush=True)
             return
         if action == 'resume':
             previous_pair = previous_manifest.get('gitConfigReceipt', {})
@@ -408,6 +413,7 @@ def run_git(request, token, *, installed_source=None):
                 'product_repository', 'product_repository_id'])
                 and previous_pair.get('product_sha') == installed, 'resume-git-apply-required')
             print('RELAY_GIT_RESUME_QUALIFIED_PAIR=' + json.dumps(previous_pair, sort_keys=True), flush=True)
+            progress('LOCK', target)
             with acquire('/var/lib/' + install.name + '-deployment.lock') as lock_fd:
                 git_anchor(installed)
                 state = gate('status')
@@ -425,6 +431,7 @@ def run_git(request, token, *, installed_source=None):
 
                 execute(gate, installed, verify_resume, lambda evidence, head: bool(evidence),
                         operation=state['operationId'], already_quiesced=True)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={target};config={config_sha};installed={installed};installed_config={previous_pair["config_sha"]}', flush=True)
             return
         # The ordinary installer owns the single host lock and lifecycle gate.
         argv = ['/usr/bin/python3', str(source / 'deploy/relay-deploy.py'),
@@ -447,11 +454,14 @@ def run_git(request, token, *, installed_source=None):
                 argv += ['--continue-install-recovery']
                 target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
         subprocess.run(argv, env=clean_environment(), check=True)
+        progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)
+        require(gate('status')['phase'] == 'open', 'git-apply-admission-not-open')
         if verified_receipt != receipt:
             print('RELAY_GIT_RECOVERY_CONTROLLER=' + receipt['product_sha']
                   + ';dispatch-config=' + config_sha, flush=True)
         print('RELAY_GIT_APPLY_VERIFIED=' + target + ';config=' + verified_receipt['config_sha'], flush=True)
+        print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={receipt["product_sha"]};config={config_sha};installed={target};installed_config={verified_receipt["config_sha"]}', flush=True)
 
 
 def run(request):
@@ -459,6 +469,7 @@ def run(request):
     match = re.fullmatch(r'(apply|stop|resume):([0-9a-f]{40}):([0-9a-f]{40})', request)
     require(match is not None, 'argument-contract')
     action, installed, consumer_head = match.groups()
+    progress('PREFLIGHT', installed)
     config, _, _ = installed_config(ROOT, installed)
     values = compile_inputs(config)
     repository = deployment_repository(config)
@@ -474,6 +485,7 @@ def run(request):
                                 text=True, stdout=subprocess.PIPE, check=True, timeout=1860)
         return json.loads(result.stdout)
 
+    progress('LOCK', installed)
     with acquire('/var/lib/' + values['relay_namespace'] + '-deployment.lock') as lock_fd:
         # Revalidate the protected installation under the mutex before any state
         # change. Bind public main ONCE. Later movement cannot retarget this call.
@@ -487,6 +499,7 @@ def run(request):
         print(f'RELAY_LIFECYCLE_SELECTED={target};installed={installed};consumer={consumer_head}', flush=True)
         if action == 'stop':
             execute(gate, target, None, None, stop=True)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=QUIESCED;requested={target};config={consumer_head};installed={installed};installed_config=unknown', flush=True)
             return
         state = gate('status') if action == 'resume' else None
         if state:
@@ -496,6 +509,7 @@ def run(request):
         with tempfile.TemporaryDirectory(prefix='owner-lifecycle-',
                                          dir=values['relay_production_local_apply_stage_root']) as temporary:
             work = Path(temporary)
+            progress('STAGING', target)
             source = acquire_source(work / 'product', source_repository, target)
             consumer = source if repository == source_repository and target == consumer_head else acquire_source(
                 work / 'consumer', repository, consumer_head)
@@ -542,6 +556,7 @@ def run(request):
 
             execute(gate, target, apply, verify_result, operation=operation,
                     already_quiesced=state is not None)
+            print(f'RELAY_OWNER_LIFECYCLE_RESULT=OPEN;requested={target};config={consumer_head};installed={target};installed_config=unknown', flush=True)
 
 
 def main(arguments=None, token_stream=None):

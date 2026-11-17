@@ -651,6 +651,18 @@ class PreparedProtocolTests(unittest.TestCase):
     def prepared(self):
         return preflight.PreparedInstall(None, None, {'relay_release_root': '/opt/fixture/releases'}, {'revision': TARGET}, OP)
 
+    def test_source_upgrade_and_admission_failures_retain_the_named_cause(self):
+        prepared = self.prepared()
+        for code in ['SOURCE_UPGRADE_CODEX_REFERENCE_CHANGED', 'ADMISSION_UNKNOWN_EXECUTION']:
+            result = subprocess.CompletedProcess([], 40, '', code + '\n')
+            with patch('ansible_transport.run_target', return_value=result):
+                with self.assertRaisesRegex(RuntimeError, '^' + code + '$'):
+                    prepared.execute(['fixed-helper'])
+        result = subprocess.CompletedProcess([], 40, '', 'SOURCE_UPGRADE_PRIVATE private-config-value\n')
+        with patch('ansible_transport.run_target', return_value=result):
+            with self.assertRaisesRegex(RuntimeError, '^INSTALL_PREFLIGHT_PREREQUISITE_UNPROVEN$'):
+                prepared.execute(['fixed-helper'])
+
     def test_safe_host_stdout_preserves_only_the_bounded_error_contract(self):
         prepared = self.prepared()
         report = {'version': 1, 'status': 'FAIL', 'error_code': 'HOST_TLS_ISSUANCE_STAGE_REQUIRED',

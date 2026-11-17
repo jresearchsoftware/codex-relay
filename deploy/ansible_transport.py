@@ -70,7 +70,7 @@ def prove_native_local(target):
 
 class TargetProcess:
     """Popen-shaped adapter so existing guard/failure loops retain their semantics."""
-    def __init__(self, target, key, argv, *, local=False):
+    def __init__(self, target, key, argv, *, local=False, progress=False):
         if local and target is None:
             target = {'user': 'root', 'host': 'localhost', 'connection': 'local'}
         self.target, self.key, self.argv, self.local = target, key, argv, local
@@ -80,6 +80,7 @@ class TargetProcess:
         self.started = False
         self.native = False
         self.cancelled = False
+        self.progress = progress
 
     def start(self, value=None):
         if self.process is not None:
@@ -146,8 +147,9 @@ class TargetProcess:
                                       for stream in self.output_streams]
             self.reader_errors = []
             self.readers = []
-            for pipe, stream in zip([self.process.stdout, self.process.stderr], self.output_streams):
-                reader = threading.Thread(target=self.read_channel, args=(pipe, stream), daemon=True)
+            for index, (pipe, stream) in enumerate(zip([self.process.stdout, self.process.stderr], self.output_streams)):
+                reader = threading.Thread(target=self.read_channel,
+                    args=(pipe, stream, self.progress and index == 1), daemon=True)
                 self.readers.append(reader)
                 reader.start()
         except BaseException:
@@ -162,13 +164,24 @@ class TargetProcess:
             if streams:
                 streams[0].close()
 
-    def read_channel(self, pipe, stream):
+    def read_channel(self, pipe, stream, emit_progress=False):
         stored = 0
+        pending = b''
         try:
             while True:
-                chunk = pipe.read(65536)
+                chunk = pipe.read1(65536)
                 if not chunk:
                     break
+                if emit_progress:
+                    # A partial/oversized line never becomes public evidence.
+                    from lifecycle import drain_progress
+                    pending += chunk
+                    while b'\n' in pending:
+                        line, pending = pending.split(b'\n', 1)
+                        if len(line) <= 4096:
+                            drain_progress(line.decode('ascii', errors='replace'))
+                    if len(pending) > 4096:
+                        pending = b'oversized:'
                 if stored <= RESULT_LIMIT:
                     bounded = chunk[:RESULT_LIMIT + 1 - stored]
                     stream.write(bounded)
@@ -290,10 +303,28 @@ class TargetProcess:
         return self.returncode
 
 
-def run_target(target, key, argv, *, input=None, timeout=None, local=False):
-    process = TargetProcess(target, key, argv, local=local)
+def run_target(target, key, argv, *, input=None, timeout=None, local=False, progress=False):
+    process = TargetProcess(target, key, argv, local=local, progress=progress)
+    dependency = progress if progress in ['source-preparation', 'source-verification', 'host-prerequisites'] else None
+    started = time.monotonic()
     try:
-        output, errors = process.communicate(input=input, timeout=timeout)
+        if dependency:
+            print(f'RELAY_DEPLOYMENT_PROGRESS=target-operation;dependency={dependency};state=started', flush=True)
+            deadline = started + timeout if timeout is not None else None
+            while True:
+                remaining = max(0, deadline - time.monotonic()) if deadline is not None else 30
+                try:
+                    output, errors = process.communicate(input=input, timeout=min(30, remaining))
+                    break
+                except subprocess.TimeoutExpired:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise
+                    # This is an observation of the same child, never another
+                    # launch or an inference that elapsed work has succeeded.
+                    print(f'RELAY_DEPLOYMENT_PROGRESS=target-operation;dependency={dependency};state=waiting;elapsed_seconds={int(time.monotonic()-started)}', flush=True)
+            print(f'RELAY_DEPLOYMENT_PROGRESS=target-operation;dependency={dependency};state=child-completed;exit={process.returncode}', flush=True)
+        else:
+            output, errors = process.communicate(input=input, timeout=timeout)
         return subprocess.CompletedProcess(argv, process.returncode, output, errors)
     finally:
         if process.poll() is None:

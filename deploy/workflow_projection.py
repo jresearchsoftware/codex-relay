@@ -119,6 +119,7 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
         'OWNER_RECOVERY_GUARD': '',
+        'LIFECYCLE_OBSERVER': _read(source_root / 'deploy/workflows/lifecycle-observer.js.in').decode('utf-8').rstrip().replace('\n', '\n          '),
         'RECOVERY_RUNS_ON_YAML': json.dumps(general_runs_on),
         'RECOVERY_SLOT_INPUT': '',
         'RECOVERY_SLOT_ENV': '',

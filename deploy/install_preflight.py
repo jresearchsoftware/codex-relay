@@ -579,13 +579,17 @@ class PreparedInstall:
 
     def execute(self, argv, *, payload=None, timeout=180):
         from ansible_transport import run_target
+        dependency = ('source-verification' if argv[-1] == 'verify' else 'source-preparation') if any(
+            value.endswith('/deploy/source_upgrade.py') for value in argv) else (
+            'host-prerequisites' if any(value.endswith('/deploy/host_preflight.py') for value in argv) else None)
         result = run_target(self.target, self.key, argv,
                             input=json.dumps(payload) if payload is not None else None,
-                            timeout=timeout, local=self.local)
+                            timeout=timeout, local=self.local,
+                            **({'progress': True} if 'drain' in argv else {'progress': dependency} if dependency else {}))
         if result.returncode:
             # Only a bounded code crosses the private transport, never its raw
             # input, command output, config, credential or filesystem details.
-            codes = re.findall(r'\b(?:INSTALL_PREFLIGHT|PREDISPATCH_BRIDGE|PREDISPATCH|BOUNDED_RECOVERY|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK)_[A-Z_]{1,100}\b', result.stderr)
+            codes = re.findall(r'(?m)^(?:INSTALL_PREFLIGHT|PREDISPATCH_BRIDGE|PREDISPATCH|BOUNDED_RECOVERY|HOST|CONSUMER_PREFLIGHT|INTENT_STAGE|INTENT_PACKAGE|INTENT_RUNNER|RUNNER_ACTIVE|WRITER_LOCK|SOURCE_UPGRADE|ADMISSION)_[A-Z_]{1,100}$', result.stderr)
             error = RuntimeError(codes[-1] if codes else 'INSTALL_PREFLIGHT_PREREQUISITE_UNPROVEN')
             error.next_action = ('Correct the named prerequisite using the existing installed version or its owner-supported '
                                  'credential/package procedure; retain the old entrypoint and retry the same frozen Git pair.')
@@ -614,6 +618,7 @@ class PreparedInstall:
             'target': self.identity['revision'], 'stage': self.stage, 'reinstall': self.reinstall, **extra})
 
     def create(self):
+        print('RELAY_DEPLOYMENT_PROGRESS=staging;dependency=protected-operation-stage;state=started', flush=True)
         return self.action('create')
 
     def consumer(self, *, final=False):
@@ -733,6 +738,7 @@ try {
         require(isinstance(self.desired_digest, str) and re.fullmatch('[0-9a-f]{64}', self.desired_digest), 'DESIRED_DIGEST_INVALID')
 
     def host(self, *, final=False):
+        print('RELAY_DEPLOYMENT_PROGRESS=preflight;dependency=host-prerequisites;state=started', flush=True)
         receipt = self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/host_preflight.py', '--input'],
                                payload={'values': self.values, 'sourceRoot': self.source})
         require(receipt.get('status') == 'PASS', 'HOST_UNPROVEN')
@@ -795,9 +801,11 @@ try {
     def lock_writer(self):
         from ansible_transport import hold_target
         require(self.holder is None and self.initial is not None, 'LOCK_SEQUENCE_INVALID')
+        print('RELAY_DEPLOYMENT_PROGRESS=lock;dependency=writer-publication-lock;state=acquiring', flush=True)
         self.holder = hold_target(self.target, self.key, ['/usr/bin/python3', '-I',
             self.source + '/deploy/writer_lock_lease.py', '--hold', self.initial['lockPath'], self.lease_path,
             self.operation, self.identity['revision'], self.initial['baselineDigest']], 'WRITER_LOCK_READY')
+        print('RELAY_DEPLOYMENT_PROGRESS=lock;dependency=writer-publication-lock;state=acquired', flush=True)
 
     def drain_staged(self):
         """Drain with the sealed candidate reader, taking the Writer lock per poll.
@@ -821,8 +829,15 @@ try {
     def release_writer(self):
         if self.holder is not None:
             holder, self.holder = self.holder, None
-            holder.stdin.close()
-            require(holder.wait(timeout=30) == 0, 'WRITER_LOCK_LOST_INSPECT_BEFORE_RETRY')
+            failing = sys.exc_info()[0] is not None
+            try:
+                holder.stdin.close()
+                require(holder.wait(timeout=30) == 0, 'WRITER_LOCK_LOST_INSPECT_BEFORE_RETRY')
+            except Exception:
+                if not failing:
+                    raise
+                print('RELAY_DEPLOYMENT_WARNING=writer-lock-release-unproven;primary-failure-preserved;inspect-before-retry',
+                      file=sys.stderr, flush=True)
 
     def final(self, *, fresh=False):
         if not fresh:

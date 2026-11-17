@@ -40,6 +40,13 @@ def require(value, code='SOURCE_UPGRADE_UNPROVEN'):
         raise RuntimeError(code)
 
 
+def failure_code(error):
+    """Keep the failed prerequisite identity without copying private diagnostics."""
+    code = str(error)
+    return (code if re.fullmatch(r'(?:SOURCE_UPGRADE|INSTALL_PREFLIGHT|INTENT_STAGE|HOST|ADMISSION)_[A-Z_]{1,100}', code)
+            else 'SOURCE_UPGRADE_UNPROVEN')
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode()
 
@@ -261,15 +268,22 @@ def guarded_promote(preparation, config, holders):
                 'SOURCE_UPGRADE_OPERATION_GUARD_LOST')
     try:
         alive()
+        print('RELAY_DEPLOYMENT_PROGRESS=source-promotion;dependency=protected-source-cutover;state=started', flush=True)
         process.start(json.dumps(payload))
         deadline = time.monotonic() + 180
+        next_progress = time.monotonic() + 30
         while process.poll() is None:
             alive()
             require(time.monotonic() < deadline, 'SOURCE_UPGRADE_OPERATION_TIMEOUT')
+            if time.monotonic() >= next_progress:
+                print(f'RELAY_DEPLOYMENT_PROGRESS=source-promotion;dependency=protected-source-cutover;state=waiting;elapsed_seconds={int(180-(deadline-time.monotonic()))}', flush=True)
+                next_progress = time.monotonic() + 30
             time.sleep(0.05)
         alive()
-        output, _errors = process.communicate(timeout=10)
-        require(process.returncode == 0, 'SOURCE_UPGRADE_PROMOTION_UNPROVEN')
+        output, errors = process.communicate(timeout=10)
+        if process.returncode:
+            codes = re.findall(r'(?m)^(?:SOURCE_UPGRADE|INSTALL_PREFLIGHT|INTENT_STAGE|HOST|ADMISSION)_[A-Z_]{1,100}$', errors)
+            raise RuntimeError(codes[-1] if codes else 'SOURCE_UPGRADE_PROMOTION_UNPROVEN')
         return json.loads(output)
     finally:
         if process.poll() is None:
@@ -697,8 +711,8 @@ if __name__ == '__main__':
         raw = sys.stdin.buffer.read(MAX_INPUT + 1)
         require(len(raw) <= MAX_INPUT)
         print(json.dumps(remote(sys.argv[1], json.loads(raw))))
-    except Exception:
+    except Exception as error:
         # The private journal contains proof, environment and paths. Never
         # include it, the request, or child diagnostics in the public failure.
-        print('SOURCE_UPGRADE_UNPROVEN', file=sys.stderr)
+        print(failure_code(error), file=sys.stderr)
         raise SystemExit(40)

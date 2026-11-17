@@ -117,7 +117,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--phase') + 1], 'install')
         self.assertEqual(argv[argv.index('--resolved-revision') + 1], OLD)
         self.assertNotIn('--expected-installed-head', argv)
-        self.assertFalse(self.gate.calls)
+        self.assertEqual(self.gate.calls, [('status',)])
         self.assertEqual(self.parser_inputs, [(self.source, self.raw)])
         self.assertEqual(self.readbacks[0][2], self.receipt)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + OLD, output)
@@ -145,7 +145,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(argv[argv.index('--install-recovery-target') + 1], OLD)
         self.assertEqual(argv[argv.index('--resolved-revision') + 1], HEAD)
         self.assertEqual(observed, [(raw, 0o600)])
-        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(self.gate.calls, [('status',)])
         self.assertEqual(len(self.readbacks), 1)
 
     def test_unavailable_maintenance_stops_recover_and_apply_never_infers_recovery(self):
@@ -174,7 +174,16 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.readbacks[0][1:3], (frozen_product, original))
         self.assertIn('RELAY_GIT_RECOVERY_CONTROLLER=' + HEAD, output)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + frozen_product, output)
-        self.assertEqual(self.gate.calls, [])
+        self.assertEqual(self.gate.calls, [('status',)])
+
+    def test_successful_backend_and_installed_pair_do_not_imply_open_admission(self):
+        self.gate = Gate(phase='recovery-required')
+        with self.assertRaisesRegex(ValueError, '^git-apply-admission-not-open$'):
+            self.invoke()
+        self.assertEqual(len(self.primitive), 1)
+        self.assertEqual(len(self.readbacks), 1)
+        self.assertEqual(self.gate.calls, [('status',)])
+        self.assertEqual(self.gate.phase, 'recovery-required')
 
     def test_wrong_source_namespace_owner_or_install_root_stop_before_primitive(self):
         for modify in [lambda: self.desired['environment'].update(namespace='foreign'),

@@ -1,0 +1,44 @@
+// Summary values come only from validated protected-helper receipts. A child
+// exit or a changing current symlink alone never proves installed convergence.
+const exactRevision = value => /^[0-9a-f]{40}$/.test(value ?? '') ? value : 'unknown';
+const report = {
+  requested: 'unknown', config: exactRevision(process.env.GITHUB_SHA),
+  installed: 'unknown', installedConfig: 'unknown', outcome: 'unknown', terminal: null,
+  pending: '', oversized: false,
+  observe(chunk) {
+    this.pending += chunk.toString('utf8');
+    while (this.pending.includes('\n')) {
+      const end = this.pending.indexOf('\n');
+      const line = this.pending.slice(0, end); this.pending = this.pending.slice(end + 1);
+      if (!this.oversized && line.length <= 8192) {
+        if (line.startsWith('RELAY_GIT_PAIR=')) {
+          try {
+            const pair = JSON.parse(line.slice('RELAY_GIT_PAIR='.length));
+            if (pair.config_sha === this.config && exactRevision(pair.product_sha) !== 'unknown') this.requested = pair.product_sha;
+          } catch { /* An invalid receipt supplies no identity. */ }
+        }
+        const selected = /^RELAY_LIFECYCLE_SELECTED=([0-9a-f]{40});installed=[0-9a-f]{40};consumer=([0-9a-f]{40})$/.exec(line);
+        if (selected && selected[2] === this.config) this.requested = selected[1];
+        const terminal = /^RELAY_OWNER_LIFECYCLE_RESULT=(OPEN|QUIESCED);requested=([0-9a-f]{40});config=([0-9a-f]{40});installed=([0-9a-f]{40});installed_config=([0-9a-f]{40}|unknown)$/.exec(line);
+        if (terminal && terminal[3] === this.config) this.terminal = terminal;
+      }
+      this.oversized = false;
+    }
+    if (this.pending.length > 8192) { this.pending = ''; this.oversized = true; }
+  },
+  finish(code) {
+    this.outcome = code === 0 ? 'unknown (helper verification receipt unavailable)' : 'failed; installed result unknown';
+    if (code === 0 && this.terminal) {
+      this.outcome = this.terminal[1]; this.requested = this.terminal[2];
+      this.installed = this.terminal[4]; this.installedConfig = this.terminal[5];
+    }
+  },
+  async write() {
+    const summary = process.env.GITHUB_STEP_SUMMARY;
+    if (!summary) return;
+    const action = ['apply', 'stop', 'resume', 'recover'].includes(process.env.RELAY_LIFECYCLE_ACTION) ? process.env.RELAY_LIFECYCLE_ACTION : 'unknown';
+    const content = `Owner Relay lifecycle: ${action}\n\n| Evidence | Revision or result |\n| --- | --- |\n| Requested product | ${this.requested} |\n| Requested configuration/workflow | ${this.config} |\n| Verified installed product | ${this.installed} |\n| Verified installed configuration | ${this.installedConfig} |\n| Lifecycle outcome | ${this.outcome} |\n`;
+    try { await appendFile(summary, content, 'utf8'); }
+    catch { console.error('RELAY_LIFECYCLE_WARNING=job-summary-unavailable'); }
+  },
+};
