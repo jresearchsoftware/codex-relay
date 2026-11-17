@@ -535,6 +535,9 @@ def _audit_catalogue(catalogue, *, root=Path('/'), execute=None, users=None, gro
     for index, probe in enumerate(catalogue['probes']):
         diagnostic.update(owner='tasks/execution-slot.yml:Private process namespace probe', field='nativeProbe', index=index)
         result = run(probe['argv'])
+        if result.returncode:
+            raise NotEligible('INSTALLED_NATIVE_PROBE_FAILED') from subprocess.CalledProcessError(
+                result.returncode, probe['argv'], output=result.stdout, stderr=getattr(result, 'stderr', None))
         output = result.stdout.decode() if isinstance(result.stdout, bytes) else result.stdout
         require(result.returncode == 0 and output == probe['stdout'], 'INSTALLED_NATIVE_PROBE_FAILED')
     for path, before, index in stamps:

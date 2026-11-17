@@ -34,10 +34,14 @@ def installation_authorization(config, api_factory=GitHub):
                 'TARGET_APP_KEY_UNPROTECTED')
         signature = subprocess.run(['openssl', 'dgst', '-sha256', '-sign', '/proc/self/fd/' + str(descriptor)],
             pass_fds=(descriptor,), input=message, stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL, check=False)
+            stderr=subprocess.PIPE, check=False)
     finally:
         os.close(descriptor)
-    require(signature.returncode == 0, 'OWNER_APP_SIGNING_FAILED')
+    try:
+        require(signature.returncode == 0, 'OWNER_APP_SIGNING_FAILED')
+    except Exception as error:
+        raise error from subprocess.CalledProcessError(signature.returncode,
+            getattr(signature, 'args', None), stderr=getattr(signature, 'stderr', None))
     organization = deployment_repository(config).split('/')[0]
     api = api_factory(message.decode() + '.' + encode(signature.stdout), organization)
     identity = api.request('GET', '/app')
