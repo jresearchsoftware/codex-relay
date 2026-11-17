@@ -98,3 +98,28 @@ Primary native run/check annotations are not available from this credential-free
 worker before Writer publication. This result makes no absence-of-warning claim
 for those surfaces. The protected exact-head reviewers must inspect the native
 publication/check/warning records along with this source and its fixture limits.
+
+
+## Local validation disposition
+
+The complete Node suite passed 1,317 cases with seven skips before the final
+ready-command first-cause regression was added. The subsequent 1,325-case run
+found two slot-release regressions caused by adding an evidence key to protected
+admission state. The correction keeps the original cause in the existing host
+store without adding an admission-state key; the final affected admission,
+ready-command and host-diagnostic set passed all 39 cases. The full exact-head
+rerun remains a native-CI handoff obligation; this report does not claim that the
+last complete Node invocation was green.
+
+The final complete deployment invocation reported 2,339 passed, 1,010 skipped,
+467 passing subtests and the same 36 baseline-reproduced failures described
+above. The final numeric-metadata/recipe closure subset passed 162 cases with
+24 skips; credential/metadata regressions passed 13 cases. Rust passed all 184
+tests and formatting. Three-consumer qualification, the candidate scanner,
+product regeneration and native VibeVM 1.0.11 self-adoption qualification passed.
+
+Actual local tools were Node 22.23.3, Python 3.11.2, Rust/Cargo 1.90.0, Git 2.39.5
+and OpenSSL 3.0.22. These local results do not claim the separately pinned native
+CI toolchain or installed-host qualification. Subagents supplied implementation
+work and checks; actual model/effort telemetry was unavailable, and they did not
+supply native independent acceptance.

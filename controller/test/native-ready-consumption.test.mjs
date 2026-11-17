@@ -92,7 +92,8 @@ test('the original ready DELETE cause is recorded before a later Outcome failure
   await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'OUTCOME_PUBLICATION_FAILED' });
   assert.equal(recorded[0].error, original);
   assert.equal(recorded[0].operation, 'ready-command-consumption');
-  assert.equal((await f.store.get(99)).readyConsumptionEvidence.executionId, 'ready-cause-1');
+  assert.equal(recorded[0].runId, 99);
+  assert.equal(Object.hasOwn(await f.store.get(99), 'readyConsumptionEvidence'), false);
   await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'READY_CONSUMPTION_UNCERTAIN' });
   assert.equal(deletes, 1);
   assert.equal(recorded.filter(value => value.error === original).length, 1);

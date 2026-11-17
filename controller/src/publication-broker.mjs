@@ -115,7 +115,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     if (cause) {
       // A later journal/Outcome failure must not erase the original DELETE or
       // revalidation error. This evidence write authorizes no native retry.
-      r.readyConsumptionEvidence = await recordFailure({ error: cause, operation: 'ready-command-consumption',
+      await recordFailure({ error: cause, operation: 'ready-command-consumption',
         phase: 'authority', runId: e.runId, workerStarted: false, secrets: { knownSecrets: diagnosticSecrets } });
     }
     const later = transitions.length ? transitions.filter(event => event.id > e.readyEventId).map(event => event.id)
@@ -485,17 +485,17 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     async dispatch(request) {
       try {
         const result = await dispatch(request);
-        if (result?.status === 'BLOCKED') {
+        if (result?.status === 'BLOCKED' && request?.operation === 'admit') {
           const error = Object.assign(new Error(result.envelope?.admissionBlock?.code ?? 'ADMISSION_BLOCKED'), {
             code: result.envelope?.admissionBlock?.code ?? 'ADMISSION_BLOCKED' });
           const diagnosticStore = result.envelope?.admissionBlock?.diagnosticStore ?? await recordFailure({ error, operation: request?.operation, phase: 'authority',
-            runId: request?.runId, workerStarted: request?.operation === 'admit' ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+            runId: request?.runId, workerStarted: result.envelope?.admissionBlock ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
           return { ...result, diagnosticStore };
         }
         return result;
       } catch (error) {
         const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
-          runId: request?.runId, workerStarted: request?.operation === 'admit' ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+          runId: request?.runId, workerStarted: request?.operation === 'admit' && ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code) ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
         if (diagnosticStore) error.details = { ...error.details, diagnosticStore };
         throw error;
       }
