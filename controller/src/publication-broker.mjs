@@ -112,6 +112,12 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   }
   async function readyConsumptionFailure(r, code, { cause, transitions = [] } = {}) {
     const e = r.envelope;
+    if (cause) {
+      // A later journal/Outcome failure must not erase the original DELETE or
+      // revalidation error. This evidence write authorizes no native retry.
+      r.readyConsumptionEvidence = await recordFailure({ error: cause, operation: 'ready-command-consumption',
+        phase: 'authority', runId: e.runId, workerStarted: false, secrets: { knownSecrets: diagnosticSecrets } });
+    }
     const later = transitions.length ? transitions.filter(event => event.id > e.readyEventId).map(event => event.id)
       : r.readyConsumption?.laterEvents ?? [];
     const originalCode = r.readyConsumption?.code ?? code;
