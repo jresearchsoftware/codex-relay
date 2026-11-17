@@ -312,3 +312,14 @@ def test_zero_exit_malformed_proof_retains_original_channels(monkeypatch, kind):
     assert stopped.value.stdout == result.stdout and stopped.value.stderr == result.stderr
     assert stopped.value.capture_bytes == {'stdout': len(result.stdout), 'stderr': len(result.stderr)}
     assert stopped.value.observation['childExit'] == 0
+
+
+def test_source_tree_semantic_reader_does_not_apply_diagnostic_capture_limit(monkeypatch):
+    listing = '100644 blob ' + 'a' * 40 + '\tpath\n'
+    expected = listing * 6000
+    assert len(expected) > children.CAPTURE_LIMIT
+    def read(argv, **options):
+        assert 'ls-tree' in argv and options['check'] and options['capture_output']
+        return subprocess.CompletedProcess(argv, 0, expected, '')
+    monkeypatch.setattr(owner.subprocess, 'run', read)
+    assert owner.git('/synthetic-source', 'ls-tree', '-r', 'a' * 40) == expected.strip()

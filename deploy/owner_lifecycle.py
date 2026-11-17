@@ -192,10 +192,17 @@ def public_primitive(argv, **options):
 
 
 def git(root, *arguments, environment=None):
-    return run_child(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+    argv = ['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'core.attributesfile=/dev/null',
-        '-C', str(root), *arguments], env=clean_environment() if environment is None else environment, text=True,
-        timeout=120, phase='owner-staging', dependency='source-git').stdout.strip()
+        '-C', str(root), *arguments]
+    options = {'env': clean_environment() if environment is None else environment, 'text': True, 'timeout': 120}
+    if arguments and arguments[0] == 'ls-tree':
+        # This is semantic validation input, not a diagnostic transcript. Retain
+        # the original complete tree reader: truncating it at the child evidence
+        # limit would reject supported larger source trees or omit a path check.
+        # Any failure still reaches the bounded protected reporter.
+        return subprocess.run(argv, capture_output=True, check=True, **options).stdout.strip()
+    return run_child(argv, **options, phase='owner-staging', dependency='source-git').stdout.strip()
 
 
 def acquire_source(directory, repository, head, *, read_token=None):
