@@ -86,6 +86,8 @@ for (const phase of ['before-launch', 'contained-child', 'unacknowledged-child']
         return f.broker.invoke(request);
       } }),
       createDispatcher: ({ signal }) => createOnDemandDispatchAdapter({ signal, timeoutMs: 5000,
+        diagnosticStore: async value => ({ status: 'stored', executionId: value.executionId, mode: value.mode }),
+        readDiagnosticConfig: async () => ({ mode: 'normal' }),
         reserveDiagnostic: async () => ({ write: async () => {} }),
         finalizeArtifacts: async value => { finalized = value;
           return { cleanup: 'complete', persistence: 'not_required', retention: 'none' }; },

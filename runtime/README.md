@@ -120,17 +120,22 @@ mandatory for all Task executions.
 The dispatcher reserves a protected, bounded diagnostic capsule before launching
 the governed runtime. The runtime records each operation before crossing it,
 including preflight, launcher spawn, result parsing and diagnostic persistence.
-It records child observations separately from the outer dispatcher's exit. An
-unexpected exception is normalized without publishing its message, stack or raw
-path. Bounded, redacted OS fields and path context can be stored in the primary
-protected diagnostic bundle; Writer receives only safe codes, lifecycle states
-and references.
+It records child observations separately from the outer dispatcher's exit.
+Failures retain the original exception and bounded cause chain, native HTTP/OS
+fields, stack and available process output in protected causal evidence. Each
+observation identifies its attempt, phase and operation, distinguishes unavailable
+data from observed empty output, and reports clipping. Filesystem preflight,
+process/stream errors, JSON/result parsing, dispatch, diagnostic persistence and
+cleanup preserve their causes before finalization can remove artifacts. Writer
+receives only safe codes, lifecycle states and references; exception text,
+native response bodies and process output do not enter the public result.
 
 Normal primary diagnostics also retain, independently of diagnostic capture clipping, the last four observed top-level Codex
-JSONL `error` and `turn.failed` messages, each redacted and bounded to 4096 UTF-8
-bytes, with message clipping, omitted-event count and stdout-capture truncation
-explicit. Agent/tool output and other event fields are excluded. These private
-observations survive sandbox cleanup without enabling general stdout capture;
+JSONL `error` and `turn.failed` messages and their bounded native error fields,
+each redacted and bounded to 4096 UTF-8 bytes, with message clipping,
+omitted-event count and stdout-capture truncation explicit. Native errors without
+a message also remain observable. Agent/tool event fields are excluded. These private
+observations survive sandbox cleanup alongside bounded causal output capture;
 they do not establish that an incidental stderr message caused the child exit,
 or that every observed `error` was fatal. Public Outcomes and diagnostic
 snapshots omit this text. A truncated diagnostic capture alone cannot establish the final event; the streaming parser separately observes the complete bounded event stream.
@@ -138,7 +143,11 @@ snapshots omit this text. A truncated diagnostic capture alone cannot establish 
 The capsule lives under the configured runner-owned `attemptRoot`, outside the
 mutable checkout and Codex sandbox. File and directory fsync establish a durable
 frontier before runtime mutation or cleanup. Primary capture/store failure leaves
-its own failure code in this independent capsule. If an update itself fails, the
+its own cause independently of the original failure in this protected capsule.
+Original causal evidence is bounded to 6 KiB, a later boundary to 4 KiB and
+recorder failure to 2 KiB within the existing 16 KiB capsule limit; the primary
+causal record is bounded to 64 KiB. Known credentials and credential patterns
+are redacted before clipping. If an update itself fails, the
 preceding operation remains inspectable and destructive cleanup is prohibited.
 The initial reservation must succeed before a child can start; a full or
 unavailable fallback store blocks admission rather than launching without it.

@@ -61,7 +61,7 @@ test('governed runtime keeps semantic result and late diagnostic errors after ca
     env: { PATH: '/usr/bin:/bin' }, buildArgs: () => [],
     readDiagnosticConfig: async () => ({ mode: 'debug' }),
     fallbackStore: async () => ({ reference: { status: 'stored', executionId: 'stream-fixture', slot: 0 }, write: async () => undefined }),
-    diagnosticStore: async value => { diagnostic = value; },
+    diagnosticStore: async value => { diagnostic = value; return { status: 'stored', executionId: value.executionId, mode: value.mode }; },
     spawnImpl() {
       const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
       setImmediate(() => {

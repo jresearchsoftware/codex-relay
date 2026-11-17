@@ -2,7 +2,7 @@ import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, unlink, rmdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { safeFailureDiagnosticReference, safeRuntimeLifecycle, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';
+import { safeFailureDiagnosticReference, safeRuntimeLifecycle, safeDiagnosticStoreReference, safeFallbackReference, normalizeCausalDiagnostic } from './diagnostics.mjs';
 
 export const RUNTIME_FALLBACK_LIMIT = 8;
 export const RUNTIME_FALLBACK_BYTES = 16 * 1024;
@@ -46,7 +46,8 @@ export function normalizeRuntimeCapsule(value, executionId) {
   if (!validId(executionId) || !value || typeof value !== 'object' || Array.isArray(value)
       || (value.executionId !== undefined && value.executionId !== executionId)) fail('DIAGNOSTIC_FALLBACK_INVALID');
   const safe = safeFailureDiagnosticReference(value) ?? {};
-  // A capsule is independent minimum evidence, never an output/stack channel.
+  // Public references remain minimal; the protected capsule separately retains
+  // bounded original causal evidence when the primary serializer/store fails.
   delete safe.preview; delete safe.bytes; delete safe.truncated;
   const boundary = field => typeof value[field] === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(value[field]) ? { [field]: value[field] } : {};
   const failure = safeFailureDiagnosticReference(value.failureDiagnostic);
@@ -54,7 +55,10 @@ export function normalizeRuntimeCapsule(value, executionId) {
   const controllerFailure = safeFailureDiagnosticReference(value.controllerFailure);
   if (controllerFailure) { delete controllerFailure.preview; delete controllerFailure.bytes; delete controllerFailure.truncated; }
   const integer = item => (typeof item === 'string' && /^[0-9]{1,32}$/.test(item)) || (Number.isSafeInteger(item) && item >= 0);
-  return { schemaVersion: '1.0', executionId, ...safe, ...safeRuntimeLifecycle(value),
+  const causalEvidence = normalizeCausalDiagnostic(value.causalEvidence, { compact: true, maxBytes: 6144 });
+  const recorderFailure = normalizeCausalDiagnostic(value.recorderFailure, { compact: true, maxBytes: 2048 });
+  const secondaryEvidence = normalizeCausalDiagnostic(value.secondaryEvidence, { compact: true, maxBytes: 4096 });
+  const result = { schemaVersion: '1.0', executionId, ...safe, ...safeRuntimeLifecycle(value),
     ...(value.released === true ? { released: true } : {}),
     ...boundary('lastSuccessfulBoundary'),
     ...(typeof value.sandboxCreated === 'boolean' ? { sandboxCreated: value.sandboxCreated } : {}),
@@ -65,7 +69,18 @@ export function normalizeRuntimeCapsule(value, executionId) {
     ...(safeDiagnosticStoreReference(value.terminalDiagnostic) ? { terminalDiagnostic: safeDiagnosticStoreReference(value.terminalDiagnostic) } : {}),
     ...(safeFallbackReference(value.fallbackReference) ? { fallbackReference: safeFallbackReference(value.fallbackReference) } : {}),
     ...(failure ? { failureDiagnostic: failure } : {}),
-    ...(controllerFailure ? { controllerFailure } : {}) };
+    ...(controllerFailure ? { controllerFailure } : {}),
+    ...(causalEvidence ? { causalEvidence } : {}),
+    ...(secondaryEvidence ? { secondaryEvidence } : {}),
+    ...(recorderFailure ? { recorderFailure } : {}) };
+  if (Buffer.byteLength(JSON.stringify(result)) >= RUNTIME_FALLBACK_BYTES) {
+    // Reserve space for the complete existing lifecycle/reference schema even
+    // when every identifier and both older failure references reach its bound.
+    if (causalEvidence) result.causalEvidence = normalizeCausalDiagnostic(causalEvidence, { compact: true, maxBytes: 4096 });
+    if (secondaryEvidence) result.secondaryEvidence = normalizeCausalDiagnostic(secondaryEvidence, { compact: true, maxBytes: 2048 });
+    if (recorderFailure) result.recorderFailure = normalizeCausalDiagnostic(recorderFailure, { compact: true, maxBytes: 1024 });
+  }
+  return result;
 }
 
 async function prepareRoot(root, create) {

@@ -36,7 +36,7 @@ for (const example of [
   const diagnosticStore = async value => {
     if (example.storeFails) throw Object.assign(new Error(privateText), { code: 'ENOSPC' });
     primary.push(value);
-    return { status: 'stored', executionId: value.executionId };
+    return { status: 'stored', executionId: value.executionId, mode: value.mode };
   };
   const launcher = {
     ...buildChildDiagnostic({ code: 'PROCESS_IO_ERROR', childStarted: !example.notStarted, exitCode: example.exit,
@@ -46,6 +46,7 @@ for (const example of [
     childExitCode: example.exit, signal: example.signal, primaryCause: example.notStarted ? 'EACCES' : null
   };
   const dispatcher = createOnDemandDispatchAdapter({
+    diagnosticStore, readDiagnosticConfig: async () => ({ mode: 'normal' }),
     reserveDiagnostic: async ({ executionId }) => capsule = await reserveRuntimeDiagnostic({ executionId, root: join(f.root, 'fallback') }),
     spawnImpl: () => {
       const child = processFixture();

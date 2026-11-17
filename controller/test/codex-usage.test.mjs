@@ -75,6 +75,8 @@ test('usage crosses the bounded dispatcher wire and survives a later cleanup fai
       ? { version: 2, status: 'blocked', code: 'CODEX_RESULT_MISSING', diagnostic: { containment: 'reaped', codexUsage: usage, observed: { child: 'started' } } }
       : { version: 2, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' }, codexUsage: usage };
     const adapter = createOnDemandDispatchAdapter({
+      diagnosticStore: async value => ({ status: 'stored', executionId: value.executionId, mode: value.mode }),
+      readDiagnosticConfig: async () => ({ mode: 'normal' }),
       reserveDiagnostic: async () => ({ async write() {} }),
       finalizeArtifacts: async () => {
         if (status === 'cleanup-failed') throw Object.assign(new Error('cleanup failed'), { code: 'SANDBOX_CLEANUP_FAILED' });

@@ -58,3 +58,25 @@ test('cleanup crosses only the fixed runtime UID boundary with bounded sanitized
   });
   await assert.rejects(cleanupCodexSandbox({ cwd, sandboxIdentity: { device: '../escape', inode: '1' }, spawnImpl() { assert.fail('invalid identity started helper'); } }), { code: 'SANDBOX_CLEANUP_IDENTITY_INVALID' });
 });
+
+test('cleanup helper malformed receipt and stderr keep protected original evidence without changing public error fields', async () => {
+  await assert.rejects(cleanupCodexSandbox({ cwd: '/fixture/work/run-39', sandboxIdentity: { device: '1', inode: '2' },
+    spawnImpl() {
+      const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough();
+      setImmediate(() => {
+        child.stdout.end('{native malformed receipt'); child.stderr.end('sudo policy rejected operation token=private-fixture');
+        child.emit('close', 1, 'SIGTERM');
+      });
+      return child;
+    }
+  }), error => {
+    assert.equal(error.code, 'SANDBOX_CLEANUP_FAILED');
+    assert.match(error.causalEvidence.stdout.text, /native malformed receipt/);
+    assert.match(error.causalEvidence.stderr.text, /sudo policy rejected operation/);
+    assert.match(error.causalEvidence.exception.text, /SyntaxError/);
+    assert.equal(error.causalEvidence.process.exitCode, 1); assert.equal(error.causalEvidence.process.signal, 'SIGTERM');
+    assert.doesNotMatch(JSON.stringify(error.causalEvidence), /private-fixture/);
+    assert.equal(error.path, undefined); assert.equal(error.syscall, undefined);
+    return true;
+  });
+});

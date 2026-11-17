@@ -41,16 +41,25 @@ function replaceExact(text, value, replacement) {
   return text.split(value).join(replacement);
 }
 
-export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], preserveNewlines = false } = {}) {
+export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], preserveNewlines = false, inputTruncated = false } = {}) {
   let text = String(value ?? "");
+  if (inputTruncated) for (const secret of [codexAccessToken, githubToken, ...knownSecrets]) {
+    if (typeof secret !== 'string' || !secret) continue;
+    for (let length = Math.min(secret.length - 1, text.length); length > 0; length--) {
+      if (text.endsWith(secret.slice(0, length))) { text = text.slice(0, -length) + '[REDACTED_PARTIAL_SECRET]'; break; }
+    }
+  }
   text = replaceExact(text, codexAccessToken, "[REDACTED_CODEX_ACCESS_TOKEN]");
   text = replaceExact(text, githubToken, "[REDACTED_GITHUB_TOKEN]");
   for (const secret of knownSecrets) text = replaceExact(text, secret, "[REDACTED_SECRET]");
-  text = text.replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?-----END [^-]*PRIVATE KEY-----/gi, "[REDACTED_PRIVATE_KEY]");
+  text = text.replace(/("(?:authorization|cookie|password|passwd|secret|token|api[_-]?key|access[_-]?token|private[_-]?key)"\s*:\s*)"(?:\\.|[^"\\])*"/gi, '$1"[REDACTED_SECRET]"');
+  text = text.replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/gi, "[REDACTED_PRIVATE_KEY]");
   text = text.replace(/\b(authorization\s*:\s*basic)\s+[^\s,;]+/gi, "$1 [REDACTED_BASIC_AUTH]");
   text = text.replace(/\b(?:authorization\s*:\s*bearer|bearer)\s+[^\s,;]+/gi, match => `${match.slice(0, match.toLowerCase().indexOf("bearer") + 6)} [REDACTED_BEARER]`);
   text = text.replace(/\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+/g, "[REDACTED_GITHUB_TOKEN]");
-  text = text.replace(/\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)\b\s*[:=]\s*[^\s,;]+/gi, match => `${match.split(/[:=]/, 1)[0]}=[REDACTED_SECRET]`);
+  text = text.replace(/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{12,}/g, "[REDACTED_API_KEY]");
+  text = text.replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[REDACTED_CREDENTIAL]@');
+  text = text.replace(/\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)\b\s*[:=]\s*[^\s,;"'\\}]+/gi, match => `${match.split(/[:=]/, 1)[0]}=[REDACTED_SECRET]`);
   return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, character => preserveNewlines && ["\n", "\r"].includes(character) ? character : " ");
 }
 
@@ -69,6 +78,100 @@ export function boundedDiagnosticText(value, maxBytes, secrets = {}) {
     if (text === "") text = new TextDecoder("utf-8").decode(prefix);
   }
   return { text, bytes, truncated: bytes > maxBytes };
+}
+
+// Protected causal evidence is deliberately separate from all public reference
+// projections below. It records observations, not an inference that stderr (or
+// a native error event) caused an exit. The compact form fits the independent
+// fallback capsule even when the primary serializer/store fails.
+export const MAX_CAUSAL_DIAGNOSTIC_BYTES = 64 * 1024;
+export const MAX_COMPACT_CAUSAL_DIAGNOSTIC_BYTES = 8 * 1024;
+
+function privateNativeValue(value, secrets, depth = 0, seen = new Set()) {
+  if (value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value))) return value;
+  if (typeof value === 'string') return boundedDiagnosticText(value, 8192, secrets);
+  if (!value || typeof value !== 'object' || seen.has(value) || depth >= 4) return '[UNAVAILABLE_OR_BOUNDED]';
+  seen.add(value);
+  if (Array.isArray(value)) return value.slice(0, 8).map(item => privateNativeValue(item, secrets, depth + 1, seen));
+  const entries = Object.entries(value).slice(0, 16).map(([key, item]) => [
+    boundedDiagnosticText(key, 80, secrets).text,
+    /authorization|cookie|password|passwd|secret|token|api[_-]?key|private[_-]?key/i.test(key)
+      ? '[REDACTED_SECRET]' : privateNativeValue(item, secrets, depth + 1, seen)
+  ]);
+  return Object.fromEntries(entries);
+}
+
+function exceptionObservation(error, secrets) {
+  if (error === undefined || error === null) return undefined;
+  const chain = []; const seen = new Set(); let current = error;
+  while (current !== undefined && current !== null && !seen.has(current) && chain.length < 16) {
+    seen.add(current);
+    if (typeof current !== 'object') { chain.push({ message: boundedDiagnosticText(String(current), 8192, secrets).text }); break; }
+    const item = {};
+    for (const field of ['name', 'code', 'errno', 'syscall', 'path', 'dest', 'status', 'statusCode', 'type', 'requestId', 'exitCode', 'signal', 'message']) {
+      if (current[field] !== undefined) item[field] = privateNativeValue(current[field], secrets);
+    }
+    // HTTP/SDK errors commonly keep their native body under these properties.
+    for (const field of ['error', 'response', 'body', 'data', 'native', 'observation', 'causalEvidence', 'stdout', 'stderr']) if (current[field] !== undefined) item[field] = privateNativeValue(current[field], secrets);
+    if (current.details?.failureDiagnostic) item.failureDiagnostic = privateNativeValue(current.details.failureDiagnostic, secrets);
+    if (current.stack !== undefined) item.stack = privateNativeValue(current.stack, secrets);
+    chain.push(item);
+    current = current.runtimeCause !== current ? current.runtimeCause ?? current.cause : current.cause;
+  }
+  // The deepest observed original cause comes first so compact fallback
+  // clipping cannot preferentially retain wrapper stacks and hide its cause.
+  return JSON.stringify({ causeChainTruncated: (current !== undefined && current !== null) || chain.length > 4,
+    chain: chain.reverse().slice(0, 4) });
+}
+
+function observedPrivateText(value, limit, secrets) {
+  if (value === undefined || value === null) return { available: false, reason: 'not_observed' };
+  const prior = typeof value === 'object' ? value : undefined;
+  if (prior?.available === false) return { available: false, reason: 'not_observed' };
+  const text = typeof prior?.text === 'string' ? prior.text : typeof prior?.value === 'string' ? prior.value : String(value);
+  const bounded = boundedDiagnosticText(text, limit, { ...secrets, inputTruncated: prior?.truncated === true });
+  return { available: prior?.available !== false, ...bounded,
+    bytes: Math.max(bounded.bytes, Number.isSafeInteger(prior?.bytes) ? prior.bytes : Number.isSafeInteger(prior?.total) ? prior.total : 0),
+    truncated: bounded.truncated || prior?.truncated === true };
+}
+
+export function normalizeCausalDiagnostic(value, { compact = false, secrets = {}, maxBytes } = {}) {
+  if (!value || typeof value !== 'object') return undefined;
+  const defaultCap = compact ? MAX_COMPACT_CAUSAL_DIAGNOSTIC_BYTES : MAX_CAUSAL_DIAGNOSTIC_BYTES;
+  const cap = Number.isInteger(maxBytes) && maxBytes >= 1024 ? Math.min(maxBytes, defaultCap) : defaultCap;
+  let scale = 1; let result;
+  do {
+    const text = (field, limit) => observedPrivateText(value[field], Math.max(32, Math.floor(limit * scale)), secrets);
+    result = { schemaVersion: '1.0',
+      ...(typeof value.executionId === 'string' && SAFE_DIAGNOSTIC_ID.test(value.executionId) ? { executionId: value.executionId } : {}),
+      ...Object.fromEntries(['phase', 'operation'].filter(key => typeof value[key] === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(value[key])).map(key => [key, value[key]])),
+      exception: text('exception', compact ? 2304 : 24 * 1024),
+      native: text('native', compact ? 768 : 8 * 1024),
+      stdout: text('stdout', compact ? 768 : 8 * 1024),
+      stderr: text('stderr', compact ? 1536 : 8 * 1024),
+      process: {
+        exitCode: Number.isInteger(value.process?.exitCode) ? value.process.exitCode : null,
+        signal: SAFE_SIGNAL.test(value.process?.signal ?? '') ? value.process.signal : null,
+        observed: value.process?.observed === true
+      } };
+    scale /= 2;
+  } while (Buffer.byteLength(JSON.stringify(result)) > cap);
+  return result;
+}
+
+export function captureCausalDiagnostic({ error, executionId, phase, operation, stdout, stderr, exitCode, signal, native, secrets = {} } = {}, options = {}) {
+  let source = error; const seen = new Set();
+  while (source && typeof source === 'object' && !seen.has(source) && seen.size < 16) {
+    seen.add(source);
+    stdout ??= source.stdout; stderr ??= source.stderr;
+    exitCode ??= source.exitCode ?? (Number.isInteger(source.code) ? source.code : undefined);
+    signal ??= source.signal;
+    source = source.runtimeCause !== source ? source.runtimeCause ?? source.cause : source.cause;
+  }
+  return normalizeCausalDiagnostic({ executionId, phase, operation,
+    exception: exceptionObservation(error, secrets),
+    native: native === undefined ? undefined : JSON.stringify(privateNativeValue(native, secrets)),
+    stdout, stderr, process: { exitCode, signal, observed: exitCode !== undefined || signal !== undefined } }, { ...options, secrets });
 }
 
 export function diagnosticEnvironmentSnapshot(env = {}) {
@@ -268,14 +371,14 @@ export async function readDiagnosticsConfig({ readFileImpl = readFile } = {}) {
   }
 }
 
-function safePath(value) { return typeof value === "string" && value.length <= 1024 ? value : "[UNAVAILABLE]"; }
+function safePath(value, secrets) { return typeof value === "string" ? boundedDiagnosticText(value, 1024, secrets).text : "[UNAVAILABLE]"; }
 
 // Native failure details are JSONL stdout, independently of incidental stderr.
 // Retain only observed top-level error messages, never agent/tool output. This
 // is protected diagnostic evidence, not a replacement for the child exit code.
 function codexErrorDiagnostics(stdout, stdoutTruncated, secrets, streamed) {
   if (streamed && Array.isArray(streamed.events)) return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true,
-    omittedEvents: streamed.omittedEvents ?? 0, events: streamed.events.slice(-4).map(event => ({ type: event.type, message: typeof event.message === 'object' && typeof event.message?.text === 'string'
+    omittedEvents: streamed.omittedEvents ?? 0, events: streamed.events.slice(-4).map(event => ({ type: event.type, ...(event.native ? { native: observedPrivateText(event.native, 4096, secrets) } : {}), message: typeof event.message === 'object' && typeof event.message?.text === 'string'
       ? { ...boundedDiagnosticText(event.message.text, 4096, secrets), bytes: event.message.bytes, truncated: event.message.truncated === true }
       : boundedDiagnosticText(event.message, 4096, secrets) })) };
   const events = [];
@@ -295,7 +398,7 @@ function codexErrorDiagnostics(stdout, stdoutTruncated, secrets, streamed) {
   return { source: 'codex-jsonl', stdoutTruncated: stdoutTruncated === true, omittedEvents, events };
 }
 
-export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stdoutTruncated = false, codexErrorEvents, stderr, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, secrets = {} }) {
+export function createExecutionDiagnostic({ executionId = randomUUID(), mode, startedAt, endedAt, phase, phases = [], lifecycle = {}, pid, ppid, cwd, executable, argv, env, checkout, filesystem, input, schema, stdout, stdoutTruncated = false, codexErrorEvents, stderr, stderrTruncated = false, launcherDiagnostic, exitCode, signal, classification, runtimeFailure, error, causalEvidence, secrets = {} }) {
   const limit = mode === "debug" ? MAX_DEBUG_DIAGNOSTIC_BYTES : MAX_NORMAL_DIAGNOSTIC_BYTES;
   const output = {
     schemaVersion: "1.0",
@@ -307,16 +410,20 @@ export function createExecutionDiagnostic({ executionId = randomUUID(), mode, st
     phases,
     lifecycle,
     process: { pid: Number.isInteger(pid) ? pid : null, ppid: Number.isInteger(ppid) ? ppid : null, exitCode: Number.isInteger(exitCode) ? exitCode : null, signal: signal ?? null },
-    command: { cwd: safePath(cwd), executable: safePath(executable), argv: Array.isArray(argv) ? argv.map(item => safePath(item)) : [] },
+    command: { cwd: safePath(cwd, secrets), executable: safePath(executable, secrets), argv: Array.isArray(argv) ? argv.map(item => safePath(item, secrets)) : [] },
     environment: env ?? {},
-    checkout: safePath(checkout),
+    checkout: safePath(checkout, secrets),
     filesystem: filesystem ?? {},
     input: input ?? {},
     schema: schema ?? {},
     classification: classification ?? null,
     launcherDiagnostic: launcherDiagnostic ?? null,
-    stderr: boundedDiagnosticText(stderr, limit, secrets),
+    stderr: { ...boundedDiagnosticText(stderr, limit, { ...secrets, inputTruncated: stderrTruncated }), ...(stderrTruncated ? { truncated: true } : {}) },
     codexErrors: codexErrorDiagnostics(stdout, stdoutTruncated, secrets, codexErrorEvents),
+    causalEvidence: normalizeCausalDiagnostic(causalEvidence, { secrets }) ?? captureCausalDiagnostic({
+      error: error ?? runtimeFailure, executionId, phase, operation: runtimeFailure?.operation ?? lifecycle.operation,
+      stdout: stdout === undefined ? undefined : { text: stdout, truncated: stdoutTruncated }, stderr: stderr === undefined ? undefined : { text: stderr, truncated: stderrTruncated },
+      exitCode, signal, native: launcherDiagnostic, secrets }),
   };
   if (runtimeFailure && typeof runtimeFailure === "object") {
     const safe = safeFailureDiagnosticReference(runtimeFailure) ?? {};
@@ -325,7 +432,7 @@ export function createExecutionDiagnostic({ executionId = randomUUID(), mode, st
       ...(typeof runtimeFailure.path === "string" ? { path: boundedDiagnosticText(runtimeFailure.path, 1024, secrets).text } : {}),
       ...(typeof runtimeFailure.dest === "string" ? { dest: boundedDiagnosticText(runtimeFailure.dest, 1024, secrets).text } : {}) };
   }
-  if (mode === "debug") output.stdout = boundedDiagnosticText(stdout, limit, secrets);
+  if (mode === "debug") output.stdout = { ...boundedDiagnosticText(stdout, limit, { ...secrets, inputTruncated: stdoutTruncated }), ...(stdoutTruncated ? { truncated: true } : {}) };
   return output;
 }
 
@@ -405,29 +512,32 @@ function diagnosticStoreFailureCode(value) {
 }
 
 export async function persistExecutionDiagnostic(diagnostic, { spawnImpl = spawn, storePath = DIAGNOSTICS_STORE_PATH } = {}) {
-  const child = spawnImpl("/usr/bin/sudo", ["-n", storePath], { env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"] });
+  let child;
+  try { child = spawnImpl("/usr/bin/sudo", ["-n", storePath], { env: { PATH: "/usr/bin:/bin", LANG: "C", LC_ALL: "C" }, stdio: ["pipe", "pipe", "pipe"] }); }
+  catch (error) { throw Object.assign(new Error('Diagnostic store could not be started', { cause: error }), { code: 'DIAGNOSTICS_STORE_FAILED', storeDiagnosticCode: safeFailureCode(error?.code, 'DIAGNOSTICS_STORE_FAILED') }); }
   const stdoutCapture = createBoundedUtf8Capture(4096);
   const stderrCapture = createBoundedUtf8Capture(4096);
   let stdout = ""; let stderr = "";
   child.stdout?.on("data", chunk => { stdoutCapture.push(chunk); });
   child.stderr?.on("data", chunk => { stderrCapture.push(chunk); });
-  child.stdin?.once?.("error", () => {});
-  child.stdin?.end(JSON.stringify({ ...diagnostic, repository: CONSUMER.repository }) + "\n");
   const result = await new Promise((resolve, reject) => {
-    child.once("error", error => reject(Object.assign(new Error("Diagnostic store could not be started"), {
-      code: "DIAGNOSTICS_STORE_FAILED",
-      storeDiagnosticCode: typeof error?.code === "string" && /^[A-Z0-9_]+$/.test(error.code) ? error.code : undefined
-    })));
-    child.once("close", code => {
+    const fail = (message, error, code, signal) => {
+      const out = stdoutCapture.finish(); const err = stderrCapture.finish();
+      reject(Object.assign(new Error(message, error ? { cause: error } : undefined), {
+        code: 'DIAGNOSTICS_STORE_FAILED', exitCode: code, signal,
+        storeDiagnosticCode: safeFailureCode(error?.code, diagnosticStoreFailureCode(err.value) ?? diagnosticStoreFailureCode(out.value)),
+        native: { stdout: out, stderr: err, operation: 'diagnostic-store' }
+      }));
+    };
+    child.once("error", error => fail('Diagnostic store could not be started', error));
+    for (const stream of [child.stdin, child.stdout, child.stderr]) stream?.once('error', error => fail('Diagnostic store stream failed', error));
+    child.once("close", (code, signal) => {
       stdout = stdoutCapture.finish().value;
       stderr = stderrCapture.finish().value;
-      if (code === 0) resolve({ stdout, stderr });
-      else reject(Object.assign(new Error("Diagnostic store rejected the bounded bundle"), {
-        code: "DIAGNOSTICS_STORE_FAILED",
-        exitCode: code,
-        storeDiagnosticCode: diagnosticStoreFailureCode(stderr) ?? diagnosticStoreFailureCode(stdout)
-      }));
+      if (code === 0 && !signal) resolve({ stdout, stderr });
+      else fail('Diagnostic store rejected the bounded bundle', undefined, code, signal);
     });
+    child.stdin?.end(JSON.stringify({ ...diagnostic, repository: CONSUMER.repository }) + "\n");
   });
   return result;
 }

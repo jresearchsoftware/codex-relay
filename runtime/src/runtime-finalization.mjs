@@ -1,7 +1,7 @@
 import { EXECUTION_CONSUMER as CONSUMER } from '../../consumer/consumer.mjs';
 import { join } from 'node:path';
 import { openRuntimeDiagnostic, normalizeRuntimeCapsule } from '../../controller/src/diagnostic-fallback.mjs';
-import { createExecutionDiagnostic, persistExecutionDiagnostic, safeFailureDiagnosticReference, safeDiagnosticStoreReference, readDiagnosticsConfig } from '../../controller/src/diagnostics.mjs';
+import { captureCausalDiagnostic, createExecutionDiagnostic, persistExecutionDiagnostic, safeFailureDiagnosticReference, safeDiagnosticStoreReference, readDiagnosticsConfig } from '../../controller/src/diagnostics.mjs';
 import { cleanupCodexSandbox } from './sandbox-cleanup.mjs';
 import { WriterBlockedError } from './contracts.mjs';
 
@@ -20,9 +20,9 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
     fallbackReference: { status: 'unavailable', executionId, code: 'RUNTIME_DIAGNOSTIC_MISSING' } });
   let state; let released = false;
   try { state = await capsule.read(); }
-  catch (error) { throw new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'The runtime capsule cannot be read; artifacts are retained', {
+  catch (error) { throw Object.assign(new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'The runtime capsule cannot be read; artifacts are retained', {
     executionId, containment, cleanup: 'retained', retention: 'unknown', persistence: 'failed',
-    primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_INVALID'), fallbackReference: capsule.reference }); }
+    primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_INVALID'), fallbackReference: capsule.reference }), { cause: error }); }
   let diagnosticMode = state.diagnosticStore?.mode === 'debug' ? 'debug' : 'normal';
   const dispatchObservation = safeFailureDiagnosticReference(failure) ?? {};
   // Only the trusted dispatcher's proven no-child observation may
@@ -51,9 +51,9 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
     persistence: state.persistence, retention: state.retention, failureDiagnostic: state.failureDiagnostic });
   const record = async () => {
     try { await capsule.write(state); }
-    catch (error) { throw new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Fallback update failed; inspect the preceding durable capsule', {
+    catch (error) { throw Object.assign(new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Fallback update failed; inspect the preceding durable capsule', {
       ...details(), stage: 'diagnostic-persistence', boundary: 'diagnostic-persistence', operation: 'persist-fallback',
-      primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_FAILED'), cleanup: 'retained', retention: 'unknown' }); }
+      primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_FAILED'), cleanup: 'retained', retention: 'unknown' }), { cause: error }); }
   };
   const retire = async ({ cleanupError } = {}) => {
     const contained = ['started', 'not_started'].includes(state.childState)
@@ -77,6 +77,7 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
           startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), phase: 'finalization',
           phases: ['contained-terminal', 'diagnostic-retirement'],
           lifecycle: normalizeRuntimeCapsule(state, executionId), classification: state.primaryCause,
+          error: cleanupError, causalEvidence: cleanupError?.causalEvidence ?? state.causalEvidence,
           runtimeFailure: cleanupError ? { code: safeCode(cleanupError, 'SANDBOX_CLEANUP_FAILED'),
             operation: 'sandbox-cleanup', syscall: cleanupError.syscall, path: cleanupError.path } : undefined,
           exitCode: state.childExitCode, signal: state.signal });
@@ -88,6 +89,7 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
         }
         state.terminalDiagnostic = reference;
       } catch (error) {
+        state.recorderFailure = captureCausalDiagnostic({ error, executionId, phase: 'diagnostic-persistence', operation: 'archive-finalization' }, { compact: true });
         state.terminalDiagnostic = { status: 'unavailable', executionId: diagnosticId,
           code: 'DIAGNOSTICS_STORE_FAILED', storeCode: safeCode(error, 'DIAGNOSTICS_STORE_FAILED') };
         await record();
@@ -98,7 +100,10 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
       await record();
     }
     try { await capsule.release(); released = true; }
-    catch (error) { throw new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Runtime diagnostic retirement failed', {
+    catch (error) {
+      state.recorderFailure = captureCausalDiagnostic({ error, executionId, phase: 'finalization', operation: 'release-fallback' }, { compact: true });
+      await record();
+      throw new WriterBlockedError('RUNTIME_DIAGNOSTICS_FAILED', 'Runtime diagnostic retirement failed', {
       ...details(), stage: 'finalization', boundary: 'finalization', operation: 'release-fallback',
       primaryCause: safeCode(error, 'DIAGNOSTIC_FALLBACK_FAILED') }); }
   };
@@ -139,6 +144,8 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
     state.cleanupContainment = ['reaped', 'not_required', 'unknown'].includes(error?.cleanupContainment) ? error.cleanupContainment : 'unknown';
     const cleanupFailure = safeFailureDiagnosticReference({ code, primaryCause: code, operation: 'sandbox-cleanup',
       syscall: error?.syscall, pathContext: 'sandbox', stage: 'cleanup', boundary: 'cleanup' });
+    state.secondaryEvidence = error?.causalEvidence ?? captureCausalDiagnostic({ error, executionId, phase: 'cleanup', operation: 'sandbox-cleanup' }, { compact: true });
+    state.causalEvidence ??= state.secondaryEvidence;
     // Preserve the original cause in failureDiagnostic while recording the
     // independent cleanup failure at this final boundary.
     state.failureDiagnostic ??= cleanupFailure;
@@ -149,12 +156,15 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
       const diagnostic = createExecutionDiagnostic({ executionId: diagnosticId, mode: diagnosticMode,
         startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), phase: 'cleanup',
         phases: ['cleanup-start', 'cleanup-failed'], lifecycle: state, classification: code,
+        error, causalEvidence: error?.causalEvidence,
         runtimeFailure: { operation: 'sandbox-cleanup', code, syscall: error?.syscall, path: error?.path },
         exitCode: state.childExitCode, signal: state.signal });
       const result = await diagnosticStore(diagnostic);
-      if (result?.status === 'unavailable') throw Object.assign(new Error('Store failed'), { code: result.storeCode ?? result.code });
-      state.diagnosticStore = { status: 'stored', executionId: diagnosticId, mode: diagnosticMode };
+      const reference = safeDiagnosticStoreReference(typeof result?.stdout === 'string' ? JSON.parse(result.stdout) : result);
+      if (reference?.status !== 'stored' || reference.executionId !== diagnosticId || reference.mode !== diagnosticMode) throw Object.assign(new Error('Cleanup diagnostic storage is not proven'), { code: result?.storeCode ?? result?.code ?? 'DIAGNOSTICS_STORE_FAILED', native: result });
+      state.diagnosticStore = reference;
     } catch (storeError) {
+      state.recorderFailure = captureCausalDiagnostic({ error: storeError, executionId, phase: 'diagnostic-persistence', operation: 'persist-cleanup' }, { compact: true });
       // The capsule already records the cleanup cause independently.
       state.diagnosticStore = { status: 'unavailable', executionId: `${executionId}-cleanup`,
         code: 'DIAGNOSTICS_STORE_FAILED', storeCode: safeCode(storeError, 'DIAGNOSTICS_STORE_FAILED') };
@@ -165,10 +175,10 @@ export async function finalizeRuntimeArtifacts({ executionId, containment, fallb
     try { await retire({ cleanupError: error }); }
     catch { /* The original cleanup failure remains primary; capsule retains the archive gap. */ }
     const finalDetails = details();
-    throw new WriterBlockedError('SANDBOX_CLEANUP_FAILED', 'Attempt cleanup failed; inspect retained artifacts', {
+    throw Object.assign(new WriterBlockedError('SANDBOX_CLEANUP_FAILED', 'Attempt cleanup failed; inspect retained artifacts', {
       ...finalDetails, primaryCause: code, stage: 'cleanup', boundary: 'cleanup', operation: 'sandbox-cleanup',
       failureDiagnostic: safeFailureDiagnosticReference({ ...finalDetails, ...cleanupFailure,
-        code: 'SANDBOX_CLEANUP_FAILED', primaryCause: code }) });
+        code: 'SANDBOX_CLEANUP_FAILED', primaryCause: code }) }), { cause: error, causalEvidence: state.secondaryEvidence });
   }
   state.cleanup = 'complete'; state.cleanupContainment = 'reaped'; state.retention = 'none'; state.lastSuccessfulBoundary = 'cleanup';
   await record();

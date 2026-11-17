@@ -27,6 +27,8 @@ function fixture(options = {}) {
   const handle = { reference: { status: 'stored', executionId: envelope.attemptId, slot: 0 },
     async read() { return capsule; }, async write(value) { capsule = value; }, async release() {} };
   return createOnDemandDispatchAdapter({
+    diagnosticStore: async value => ({ status: 'stored', executionId: value.executionId, mode: value.mode }),
+    readDiagnosticConfig: async () => ({ mode: 'normal' }),
     reserveDiagnostic: async () => handle,
     finalizeArtifacts: async () => ({ cleanup: 'complete', persistence: 'not_required', retention: 'none' }),
     ...options });
@@ -257,4 +259,24 @@ test('automatic dispatch default follows the scrubbed worker budget rather than 
   assert.equal((await dispatcher.dispatch(envelope)).result.status, 'success');
   assert.ok(delays.includes(100 * 60 * 1000), JSON.stringify(delays));
   assert.ok(!delays.includes(1000 + 10 * 60 * 1000), JSON.stringify(delays));
+});
+
+test('dispatch preserves malformed native output plus recorder failure before finalization and excludes it from public details', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'relay-dispatch-causal-')); t.after(() => rm(root, { recursive: true, force: true }));
+  let handle; let beforeFinalization;
+  const dispatcher = fixture({ reserveDiagnostic: async options => handle = await reserveRuntimeDiagnostic({ ...options, root }),
+    diagnosticStore: async () => { throw Object.assign(new Error('primary filesystem unavailable'), { code: 'ENOSPC' }); },
+    spawnImpl: launch('require("node:fs").readFileSync(0);writeSync(1,"{native malformed response token=private-fixture");writeSync(2,"transport error at boundary");process.exitCode=2;'),
+    finalizeArtifacts: async () => { beforeFinalization = await handle.read(); return { cleanup: 'retained', retention: 'retained' }; }
+  });
+  await assert.rejects(dispatcher.dispatch(envelope), error => {
+    assert.doesNotMatch(JSON.stringify(error.details), /native malformed|transport error|private-fixture/);
+    return error.code === 'CONTAINMENT_NOT_PROVEN';
+  });
+  assert.match(beforeFinalization.causalEvidence.stdout.text, /native malformed response/);
+  assert.match(beforeFinalization.causalEvidence.stderr.text, /transport error at boundary/);
+  assert.match(beforeFinalization.causalEvidence.exception.text, /SyntaxError/);
+  assert.match(beforeFinalization.recorderFailure.exception.text, /primary filesystem unavailable|ENOSPC/);
+  assert.equal(beforeFinalization.causalEvidence.process.exitCode, 2);
+  assert.doesNotMatch(JSON.stringify(beforeFinalization), /private-fixture/);
 });

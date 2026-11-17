@@ -96,7 +96,9 @@ test('diagnostic capture and primary store failure retain sandbox plus an indepe
     const record = await reopened.read();
     assert.equal(record.persistence, 'failed'); assert.equal(record.diagnosticStore.storeCode, 'ENOSPC');
     assert.equal(record.retention, 'retained'); assert.equal(record.childState, 'started');
-    assert.doesNotMatch(JSON.stringify(record), /private detail|secret/);
+    assert.match(record.recorderFailure.exception.text, /private detail/);
+    assert.doesNotMatch(JSON.stringify(record), /token=secret/);
+    assert.doesNotMatch(JSON.stringify(causalEvidence({ code: 'RUNTIME_DIAGNOSTICS_FAILED', details: record })), /private detail|token=secret/);
     await assert.rejects(f.finalize(), { code: 'RUNTIME_DIAGNOSTICS_FAILED' });
     assert.equal(f.cleanupCalls(), 0); assert.ok((await stat(join(f.cwd, '.codex-sandbox'))).isDirectory());
   });
@@ -270,4 +272,59 @@ test('no-child dispatch retirement never replaces unknown or pending actual runt
     assert.equal(retained.persistence, initial.persistence);
     assert.ok(await openRuntimeDiagnostic({ executionId: 'run-39', root: f.fallbackRoot }));
   });
+});
+
+test('normal runtime retains original parse output and code-less exceptions while public details remain bounded references', async t => {
+  for (const kind of ['invalid-json', 'uncoded-exception']) await t.test(kind, async t => {
+    const f = await fixture(t); let failure;
+    const override = kind === 'invalid-json'
+      ? { spawnImpl: childFixture({ stdout: 'native invalid result token=hidden-value\n' }) }
+      : { buildArgs() { throw new Error('original argument cause token=hidden-value'); } };
+    await assert.rejects(runGovernedCodexTask({ ...f.options, ...override }), error => { failure = error; return true; });
+    const saved = JSON.parse(await readFile(join(f.primaryRoot, 'run-39.json'), 'utf8'));
+    assert.match(JSON.stringify(saved.causalEvidence), kind === 'invalid-json' ? /native invalid result/ : /original argument cause/);
+    assert.doesNotMatch(JSON.stringify(saved), /hidden-value/);
+    assert.doesNotMatch(JSON.stringify(failure.details), /native invalid result|original argument cause|hidden-value|causalEvidence/);
+    assert.equal(saved.causalEvidence.executionId, 'run-39');
+    assert.equal(saved.causalEvidence.operation, kind === 'invalid-json' ? 'result-parse' : 'build-arguments');
+  });
+});
+
+test('original child evidence and independent recorder failure both survive a primary serializer failure', async t => {
+  const f = await fixture(t);
+  await assert.rejects(runGovernedCodexTask({ ...f.options,
+    spawnImpl: childFixture({ code: 7, stderr: 'upstream failed at native boundary token=hidden-value\n' }),
+    createDiagnostic() { throw Object.assign(new Error('serializer exhausted storage token=second-hidden'), { code: 'ENOSPC' }); }
+  }), { code: 'CODEX_NONZERO_EXIT' });
+  const record = await f.capsule.read();
+  assert.match(record.causalEvidence.stderr.text, /upstream failed at native boundary/);
+  assert.match(record.recorderFailure.exception.text, /serializer exhausted storage|ENOSPC/);
+  assert.doesNotMatch(JSON.stringify(record), /hidden-value|second-hidden/);
+  assert.equal(record.persistence, 'failed'); assert.equal(record.cleanup, 'retained');
+  assert.equal(record.causalEvidence.operation, 'child-result');
+  assert.ok((await stat(join(f.cwd, '.codex-sandbox'))).isDirectory());
+});
+
+test('native structured errors without a message survive normal capture independently of semantic result', async t => {
+  const f = await fixture(t);
+  await assert.rejects(runGovernedCodexTask({ ...f.options, spawnImpl: childFixture({ code: 1,
+    stdout: JSON.stringify({ type: 'error', error: { code: 'NATIVE_POLICY_DENIED', status: 403, token: 'native-private' } }) + '\n'
+  }) }), { code: 'CODEX_NONZERO_EXIT' });
+  const saved = JSON.parse(await readFile(join(f.primaryRoot, 'run-39.json'), 'utf8'));
+  assert.match(saved.codexErrors.events[0].native.text, /NATIVE_POLICY_DENIED|403/);
+  assert.doesNotMatch(JSON.stringify(saved), /native-private/);
+});
+
+test('runtime stream errors are captured with their original cause and retain unknown containment', async t => {
+  const f = await fixture(t);
+  let failure;
+  await assert.rejects(runGovernedCodexTask({ ...f.options, spawnImpl() {
+    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.pid = 4242;
+    setImmediate(() => child.stdout.emit('error', Object.assign(new Error('read pipe broke'), { code: 'EIO', syscall: 'read' })));
+    return child;
+  } }), error => { failure = error; return error.code === 'CODEX_STREAM_FAILED'; });
+  const record = await f.capsule.read();
+  assert.match(record.causalEvidence.exception.text, /read pipe broke|EIO/);
+  assert.equal(f.options.evidence.codexContainment, 'unknown');
+  assert.doesNotMatch(JSON.stringify(failure.details), /read pipe broke/);
 });
