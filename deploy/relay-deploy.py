@@ -19,7 +19,7 @@ import threading
 import uuid
 
 sys.dont_write_bytecode = True
-from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object
+from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object, InvalidConfig
 from git_source_locator import expected_locator, resume_receipt
 from lifecycle import progress, report_failure, public_log_reference
 
@@ -1453,7 +1453,16 @@ def main():
         report_failure(error, 'deployment-entrypoint')
         # Avoid dumping subprocess output or a full consumer/environment input.
         candidate = str(error) if isinstance(error, (ValueError, RuntimeError)) else ''
-        message = candidate if re.fullmatch(r'(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?:;[A-Za-z0-9_./:;= -]{0,450})?', candidate) else type(error).__name__
+        field = (re.fullmatch(r'INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?:([:;]).*)?', candidate)
+                 if isinstance(error, InvalidConfig) else None)
+        if field:
+            # Keep the supported field/check identity; values and host paths
+            # after it stay behind the diagnostic reference printed above.
+            message = 'INVALID_DEPLOYMENT_CONFIG:' + field[1]
+            if field[2]:
+                message += field[2] + 'protected-details'
+        else:
+            message = candidate if re.fullmatch(r'(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?:;[A-Za-z0-9_./:;= -]{0,450})?', candidate) else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)
         return 1
     finally:
