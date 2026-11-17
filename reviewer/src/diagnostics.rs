@@ -47,7 +47,11 @@ pub(crate) fn bounded(message: &str) -> (String, bool) {
         "refresh_token",
         "client_secret",
         "private_key",
+        "api_key",
+        "api-key",
+        "apikey",
         "password",
+        "passwd",
         "secret",
         "token",
     ] {
@@ -64,8 +68,13 @@ pub(crate) fn bounded(message: &str) -> (String, bool) {
                     .trim_start_matches(['"', '\'', ' ', ':', '=', '\t'])
                     .len();
             let mut start = after + skipped;
-            if key == "authorization" && text[start..].to_ascii_lowercase().starts_with("bearer ") {
-                start += "bearer ".len();
+            if key == "authorization" {
+                for scheme in ["bearer ", "basic "] {
+                    if text[start..].to_ascii_lowercase().starts_with(scheme) {
+                        start += scheme.len();
+                        break;
+                    }
+                }
             }
             if skipped == 0 || start == text.len() {
                 offset = after;
@@ -163,5 +172,13 @@ mod tests {
             "[REDACTED PRIVATE KEY] rest"
         );
         let _ = bounded("token ,😄😄😄😄😄😄");
+        let (cause, _) = bounded("Authorization: Basic fixture-basic-credential; api_key=private-api-key; passwd=private-password");
+        for secret in [
+            "fixture-basic-credential",
+            "private-api-key",
+            "private-password",
+        ] {
+            assert!(!cause.contains(secret), "{cause}");
+        }
     }
 }
