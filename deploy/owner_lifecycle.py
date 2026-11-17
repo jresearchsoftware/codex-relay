@@ -179,6 +179,7 @@ def child_progress(line):
     if (observed and observed[2] in dependencies.get(observed[1], set())
             or re.fullmatch(r'RELAY_LIFECYCLE_PROGRESS=(?:PREFLIGHT|STAGING|LOCK|QUIESCE|DRAIN|QUIESCED|APPLY|ACTIVATE/VERIFY|VERIFY_INSTALLED|RESUME|RECOVERY_REQUIRED|OPEN);target=[0-9a-f]{40}', line)
             or re.fullmatch(r'RELAY_DEPLOYMENT_LOG=protected-log/relay-[0-9a-f]{12}-[a-z-]{1,40}-[A-Za-z0-9_-]{6,32}\.log;access=protected;phase=[a-z-]{1,40}', line)
+            or re.fullmatch(r'RELAY_ANSIBLE_FAILURE=phase=(?:ansible-controller-start|native-target-start|native-target|native-target-receipt|target-operation|ansible-target-receipt|target-operation-cleanup|target-operation-interrupted);evidence=protected-transport/relay-ansible-operation-[A-Za-z0-9_-]{6,32};effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry', line)
             or line in warnings):
         print(line, flush=True)
 

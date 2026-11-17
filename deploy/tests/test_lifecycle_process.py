@@ -183,6 +183,8 @@ def test_exited_parent_with_inherited_pipe_is_refused_and_its_group_cleaned(tmp_
     'RELAY_DEPLOYMENT_PROGRESS=backend;dependency=private-secret;state=running',
     'RELAY_DEPLOYMENT_PROGRESS=private-secret;dependency=release-artifacts;state=waiting',
     'RELAY_DEPLOYMENT_WARNING=private-secret;inspect-before-retry',
+    'RELAY_ANSIBLE_FAILURE=phase=private-secret;evidence=protected-transport/relay-ansible-operation-abcdefgh;effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry',
+    'RELAY_ANSIBLE_FAILURE=phase=target-operation;evidence=/private/path;effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry',
     'RELAY_LIFECYCLE_PROGRESS=private-secret;target=' + 'a' * 40])
 def test_progress_forwarder_rejects_unowned_identifiers(line, capsys):
     owner.child_progress(line)
@@ -193,6 +195,7 @@ def test_progress_forwarder_rejects_unowned_identifiers(line, capsys):
     'RELAY_DEPLOYMENT_PROGRESS=backend-running;dependency=release-artifacts;elapsed_seconds=30',
     'RELAY_DEPLOYMENT_PROGRESS=backend;dependency=release-artifacts;state=failed;exit=7;elapsed_seconds=30',
     'RELAY_LIFECYCLE_PROGRESS=QUIESCE;target=' + 'a' * 40,
+    'RELAY_ANSIBLE_FAILURE=phase=target-operation;evidence=protected-transport/relay-ansible-operation-abcdefgh;effect=unknown;next=inspect-original-operation-and-private-transport-evidence-before-retry',
     'RELAY_DEPLOYMENT_WARNING=writer-lock-release-unproven;primary-failure-preserved;inspect-before-retry'])
 def test_progress_forwarder_preserves_existing_public_observations(line, capsys):
     owner.child_progress(line)
