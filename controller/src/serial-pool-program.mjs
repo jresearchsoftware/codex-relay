@@ -5,8 +5,14 @@ import { configuredRepositories } from '../../consumer/consumer-config.mjs';
 import { parseConsumerJson } from '../../consumer/consumer-config.mjs';
 import { loadSerialPoolCompatibility, verifySerialPoolCompatibility, createCompatibilityStore,
   historicalOperationContext } from './serial-pool-compatibility.mjs';
+import { createBoundedUtf8Capture } from './utf8-capture.mjs';
 
 const fail = code => { throw Object.assign(new Error(code), { code }); };
+const programFailure = (code, cause, native) => {
+  const error = Object.assign(new Error(code, { cause }), { code });
+  Object.defineProperty(error, 'native', { value: native, writable: true, configurable: true });
+  return error;
+};
 const programs = Object.freeze({
   writer: 'controller/src/privileged-writer-helper.mjs',
   'manual-outcome': 'controller/src/manual-outcome-helper.mjs',
@@ -32,35 +38,40 @@ export async function originalProgram(context, kind, input, { env = process.env,
   let child;
   try { child = execute('/usr/bin/node', [join(context.original.sourceRoot, programs[kind])],
     { env: childEnv, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }); }
-  catch { fail('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE'); }
+  catch (cause) { throw programFailure('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE', cause, { operation: 'original-program-spawn', kind }); }
   return new Promise((resolve, reject) => {
-    const output = []; const errors = []; let bytes = 0; let settled = false;
-    const timer = setTimeout(() => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE'), timeoutMs);
-    function stop(code) {
+    const output = createBoundedUtf8Capture(maxOutput), errors = createBoundedUtf8Capture(maxOutput);
+    let bytes = 0; let settled = false;
+    const native = (code, signal) => ({ operation: 'original-program', kind, stdout: output.finish(), stderr: errors.finish(), exitCode: code, signal,
+      observedBytes: bytes, outputLimit: maxOutput });
+    const timer = setTimeout(() => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE', undefined, 'timeout'), timeoutMs);
+    function stop(code, cause, reason) {
       if (settled) return;
       settled = true; clearTimeout(timer);
-      try { child.kill('SIGTERM'); } catch { /* no process diagnostics escape */ }
-      reject(Object.assign(new Error(code), { code }));
+      let killFailure;
+      try { child.kill('SIGTERM'); } catch (error) { killFailure = error; }
+      reject(programFailure(code, cause, { ...native(), reason,
+        ...(killFailure ? { killFailure: { name: killFailure.name, code: killFailure.code, message: killFailure.message, stack: killFailure.stack } } : {}) }));
     }
-    const collect = chunks => chunk => {
+    const collect = capture => chunk => {
       bytes += chunk.length;
-      if (bytes > maxOutput) return stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE');
-      chunks.push(chunk);
+      capture.push(chunk);
+      if (bytes > maxOutput) return stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE', undefined, 'output-limit');
     };
     child.stdout.on('data', collect(output)); child.stderr.on('data', collect(errors));
-    child.on('error', () => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE'));
-    child.stdin.on('error', () => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE'));
-    child.on('close', code => {
+    child.on('error', error => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE', error, 'process-error'));
+    for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on('error', error => stop('SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE', error, 'stream-error'));
+    child.on('close', (code, signal) => {
       if (settled) return;
       settled = true; clearTimeout(timer);
-      let value;
-      try { value = parseConsumerJson(Buffer.concat(output).toString('utf8')); } catch { /* no diagnostic streams escape */ }
+      let value, parseFailure;
+      try { value = parseConsumerJson(output.finish().value); } catch (error) { parseFailure = error; }
       if (code === 0 && value && typeof value === 'object' && !Array.isArray(value)) return resolve(value);
       let error;
-      try { error = JSON.parse(Buffer.concat(errors).toString('utf8')); } catch { /* fixed error below */ }
+      try { error = JSON.parse(errors.finish().value); } catch (cause) { parseFailure ??= cause; }
       const failure = error?.code ?? value?.error_code;
       const publicCode = /^[A-Z][A-Z0-9_]{0,79}$/.test(failure ?? '') ? failure : 'SERIAL_POOL_ORIGINAL_PROGRAM_UNAVAILABLE';
-      reject(Object.assign(new Error(publicCode), { code: publicCode }));
+      reject(programFailure(publicCode, parseFailure, native(code, signal)));
     });
     child.stdin.end(JSON.stringify(input));
   });
