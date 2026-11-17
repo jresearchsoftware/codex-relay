@@ -199,8 +199,11 @@ export async function readDrainSnapshot(operationId, remaining, { execute = exec
     return JSON.parse(result.stdout);
   } catch (error) {
     let payload;
-    try { payload = JSON.parse(error.stderr); } catch { /* flock contention has no JSON */ }
-    if (payload?.code) throw Object.assign(new Error(payload.code, { cause: error }), { code: payload.code, details: payload.details });
+    // A failed primary recorder can emit an independent fallback line before
+    // the fixed final helper envelope. Keep its original native stop code.
+    try { payload = JSON.parse(String(error.stderr ?? '').trim().split('\n').at(-1)); }
+    catch { /* flock contention and malformed helper output have no envelope */ }
+    if (/^[A-Z][A-Z0-9_]{0,79}$/.test(typeof payload?.code === 'string' ? payload.code : '')) throw Object.assign(new Error(payload.code, { cause: error }), { code: payload.code, details: payload.details });
     if (error.code === 1 && !error.stdout && !error.stderr) return { drained: false };
     throw Object.assign(new Error('ADMISSION_DRAIN_STATUS_UNAVAILABLE', { cause: error }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
   }

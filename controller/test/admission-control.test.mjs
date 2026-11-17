@@ -596,3 +596,22 @@ test('configured long drain identities respect the live transport byte limit', a
   assert.ok(progress[0].pending.length < 3500);
   assert.ok(progress[0].pending.split(',').length < 20);
 });
+
+
+test('drain preserves the final native stop and cause when recorder fallback precedes its envelope', async () => {
+  const inventory = { active: [11], unknown: [22] };
+  const error = Object.assign(new Error('native drain refusal'), { code: 1,
+    stderr: 'RELAY_DIAGNOSTIC_UNAVAILABLE={"originalEvidence":"observed_not_retained"}\n'
+      + JSON.stringify({ code: 'ADMISSION_DRAIN_UNKNOWN', details: { inventory },
+        diagnosticStore: { status: 'unavailable', code: 'DIAGNOSTICS_STORE_FAILED' } }) + '\n' });
+  await assert.rejects(readDrainSnapshot(operationId, 1000, { execute: async () => { throw error; } }), value => {
+    assert.equal(value.code, 'ADMISSION_DRAIN_UNKNOWN');
+    assert.equal(value.cause, error); assert.deepEqual(value.details.inventory, inventory); return true;
+  });
+  for (const stderr of ['noise\n{"code":{"private":"untrusted"}}', 'noise\n{"code":"private value"}',
+    '{"code":"ADMISSION_DRAIN_UNKNOWN"}\nmalformed final envelope']) {
+    await assert.rejects(readDrainSnapshot(operationId, 1000, { execute: async () => {
+      throw Object.assign(new Error('bad helper envelope'), { code: 1, stderr });
+    } }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
+  }
+});
