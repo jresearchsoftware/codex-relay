@@ -143,7 +143,7 @@ def git(root, *arguments, environment=None):
     return subprocess.check_output(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
         '-c', 'core.fsmonitor=false', '-c', 'core.attributesfile=/dev/null',
         '-C', str(root), *arguments], env=clean_environment() if environment is None else environment, text=True,
-        stderr=subprocess.DEVNULL, timeout=120).strip()
+        stderr=subprocess.PIPE, timeout=120).strip()
 
 
 def acquire_source(directory, repository, head, *, read_token=None):
@@ -255,7 +255,10 @@ console.log('GIT_CONSUMER_READBACK=PASS');'''
     proof = subprocess.run(['/usr/bin/node', '--input-type=module', '-e', program,
                             str(source / 'consumer/consumer-config.mjs')],
         input=json.dumps({'current': current, 'desired': desired['consumer']}), text=True,
-        env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False, timeout=60)
+        env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=60)
+    if proof.returncode:
+        raise ValueError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
+            proof.returncode, 'fixed-consumer-readback', output=proof.stdout, stderr=getattr(proof, 'stderr', ''))
     require(proof.returncode == 0 and proof.stdout == 'GIT_CONSUMER_READBACK=PASS\n',
             'git-consumer-readback-mismatch')
 
@@ -275,8 +278,11 @@ if 'generalRunnerPool' in c['consumer']:
 print(json.dumps({'config': c, 'values': compile_inputs(c)}))
 '''
     result = subprocess.run(['/usr/bin/python3', '-I', '-c', program, str(source / 'deploy')],
-        input=raw, env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        input=raw, env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, timeout=180)
+    if result.returncode:
+        raise ValueError('git-selected-config-invalid') from subprocess.CalledProcessError(
+            result.returncode, 'fixed-selected-config-parser', output=result.stdout, stderr=getattr(result, 'stderr', ''))
     require(result.returncode == 0 and len(result.stdout) <= 524288, 'git-selected-config-invalid')
     parsed = json.loads(result.stdout)
     require(isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)

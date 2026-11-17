@@ -343,6 +343,24 @@ class GitOwnerLifecycleTests(unittest.TestCase):
 
 
 class SelectedTargetConfigTests(unittest.TestCase):
+    def test_selected_parser_keeps_native_stderr_behind_the_original_public_code(self):
+        with REAL_TEMPORARY(prefix='relay-selected-parser-failure-') as directory:
+            source = Path(directory)
+            (source / 'deploy').mkdir()
+            (source / 'deploy/config.py').write_text('raise RuntimeError("native parser loader failed")\n')
+            with self.assertRaisesRegex(ValueError, '^git-selected-config-invalid$') as caught:
+                owner.selected_config(source, b'{}')
+            self.assertIn('native parser loader failed', caught.exception.__cause__.stderr)
+            self.assertNotIn('native parser loader failed', str(caught.exception))
+
+    def test_git_failure_retains_actionable_transport_stderr(self):
+        error = owner.subprocess.CalledProcessError(7, ['fixed-git-fetch'], stderr='TLS peer verification failed')
+        with patch.object(owner.subprocess, 'check_output', side_effect=error) as invoke:
+            with self.assertRaises(owner.subprocess.CalledProcessError) as caught:
+                owner.git('/fixture', 'fetch', 'https://github.com/example/product.git', HEAD)
+        self.assertEqual(caught.exception.stderr, 'TLS peer verification failed')
+        self.assertIs(invoke.call_args.kwargs['stderr'], owner.subprocess.PIPE)
+
     def test_parser_executes_target_schema_in_isolated_process(self):
         with REAL_TEMPORARY(prefix='relay-selected-parser-') as directory:
             source = Path(directory)
@@ -416,6 +434,13 @@ class SelectedTargetConfigTests(unittest.TestCase):
                 owner.git_result(install, HEAD, receipt, desired)
                 owner.git_result(install, HEAD, {**receipt, 'workflow_run_id': 32}, desired)
                 self.assertEqual(manifest['gitConfigReceipt']['workflow_run_id'], 31)
+                consumer_module = source / 'consumer/consumer-config.mjs'
+                original_module = consumer_module.read_bytes()
+                consumer_module.write_text('throw new Error("native consumer loader failed");\n')
+                with self.assertRaisesRegex(ValueError, '^git-consumer-readback-mismatch$') as caught:
+                    owner.git_result(install, HEAD, receipt, desired)
+                self.assertIn('native consumer loader failed', caught.exception.__cause__.stderr)
+                consumer_module.write_bytes(original_module)
                 actual['defaultProfile']['effort'] = 'low'
                 with self.assertRaisesRegex(ValueError, '^git-consumer-readback-mismatch$'):
                     owner.git_result(install, HEAD, receipt, desired)
