@@ -18,9 +18,12 @@ import subprocess
 import process_adoption as adoption
 
 
-def require(value):
+def require(value, *, check=None, expected=None, observed=None):
     if not value:
-        raise ValueError('SOURCE_UPGRADE_GENERAL_CHANGED')
+        error = ValueError('SOURCE_UPGRADE_GENERAL_CHANGED')
+        if check is not None:
+            error.observation = {'check': check, 'expected': expected, 'observed': observed}
+        raise error
 
 
 def _service(unit):
@@ -64,7 +67,11 @@ def _file(path, uid, *, device=None, inode=None, verified=None):
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
         before = os.fstat(stream.fileno())
         require(stat.S_ISREG(before.st_mode) and before.st_uid in [0, uid]
-                and not before.st_mode & 0o022 and before.st_nlink == 1)
+                and not before.st_mode & 0o022 and before.st_nlink == 1,
+                check='source-file-metadata',
+                expected={'type': 'regular', 'allowedUids': [0, uid], 'writeBits': 0, 'links': 1},
+                observed={'type': stat.S_IFMT(before.st_mode), 'uid': before.st_uid,
+                          'writeBits': before.st_mode & 0o022, 'links': before.st_nlink})
         if device is not None:
             major, minor = (int(part, 16) for part in device.split(':'))
             require(before.st_ino == int(inode) and os.major(before.st_dev) == major
@@ -91,7 +98,9 @@ def _directory(path, uid, *, mutable_root=False):
     descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
-        require(stat.S_ISDIR(before.st_mode) and before.st_uid in [0, uid] and not before.st_mode & 0o022)
+        require(stat.S_ISDIR(before.st_mode) and before.st_uid in [0, uid] and not before.st_mode & 0o022,
+                check='source-directory-metadata', expected={'type': 'directory', 'allowedUids': [0, uid], 'writeBits': 0},
+                observed={'type': stat.S_IFMT(before.st_mode), 'uid': before.st_uid, 'writeBits': before.st_mode & 0o022})
         names = sorted(os.listdir(descriptor))
         require(len(names) <= 20000 and _identity(os.fstat(descriptor)) == _identity(before)
                 and _identity(Path(path).lstat()) == _identity(before))
@@ -141,7 +150,7 @@ def _tree(path, uid, *, scope=None, verified=None):
         current = Path(current)
         require(current.is_relative_to(scope) and str(current) not in visiting and len(observed) < 20000)
         before = current.lstat()
-        require(before.st_uid in [0, uid])
+        require(before.st_uid in [0, uid], check='source-tree-owner', expected=[0, uid], observed=before.st_uid)
         visiting.add(str(current))
         if stat.S_ISLNK(before.st_mode):
             raw = os.readlink(current)
@@ -188,7 +197,9 @@ def _trust_tree(path, uid, *, boundary=Path('/'), verified=None):
         parent = path.parent
         while not os.path.lexists(parent): parent = parent.parent
         before = parent.lstat()
-        require(stat.S_ISDIR(before.st_mode) and before.st_uid in [0, uid] and not before.st_mode & 0o022)
+        require(stat.S_ISDIR(before.st_mode) and before.st_uid in [0, uid] and not before.st_mode & 0o022,
+                check='source-directory-metadata', expected={'type': 'directory', 'allowedUids': [0, uid], 'writeBits': 0},
+                observed={'type': stat.S_IFMT(before.st_mode), 'uid': before.st_uid, 'writeBits': before.st_mode & 0o022})
         return {'absent': True, 'parent': _identity(before), 'parents': parents}
     # Trust-store aliases legitimately cross /usr/lib/ssl -> /etc/ssl and
     # /etc/ssl/certs -> /usr/share. Their current protected targets are inputs.

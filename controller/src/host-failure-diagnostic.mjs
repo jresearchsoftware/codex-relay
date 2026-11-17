@@ -5,7 +5,7 @@ import { createExecutionDiagnostic, readDiagnosticsConfig, safeDiagnosticStoreRe
 import { writeDiagnosticBundle } from './diagnostic-store.mjs';
 import { reserveRuntimeDiagnostic } from './diagnostic-fallback.mjs';
 
-const codeOf = error => /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'UNCLASSIFIED_FAILURE';
+const codeOf = error => typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code) ? error.code : 'UNCLASSIFIED_FAILURE';
 
 // Used at trusted host boundaries, including rejection before target binding.
 // This writes diagnostics only: never an attempt reservation or native Outcome.
@@ -14,8 +14,8 @@ export async function recordHostFailure({ error, operation = 'unknown', phase = 
   readConfig = readDiagnosticsConfig, writeFallback = text => process.stderr.write(text),
   executionId = `host-${Number.isSafeInteger(runId) && runId > 0 ? runId : 'unknown'}-${randomUUID()}` } = {}) {
   const code = codeOf(error);
-  operation = /^[a-z][a-z0-9-]{0,63}$/.test(operation ?? '') ? redactDiagnosticText(operation, secrets) : 'unknown';
-  phase = /^[a-z][a-z0-9-]{0,39}$/.test(phase ?? '') ? phase : 'authority';
+  operation = typeof operation === 'string' && /^[a-z][a-z0-9-]{0,63}$/.test(operation) ? redactDiagnosticText(operation, secrets) : 'unknown';
+  phase = typeof phase === 'string' && /^[a-z][a-z0-9-]{0,39}$/.test(phase) ? phase : 'authority';
   let bundle;
   let primaryFailure;
   try {
@@ -45,7 +45,8 @@ export async function recordHostFailure({ error, operation = 'unknown', phase = 
     // Service journal/Actions stderr is independent of both filesystem recorders.
     // Fixed fields only: raw exception, event, paths and request bodies stay private.
     const result = { status: 'unavailable', executionId, code: 'DIAGNOSTICS_STORE_FAILED',
-      storeCode: codeOf(primaryFailure), fallbackCode: codeOf(failure), originalCode: code, originalEvidence: 'observed_not_retained' };
+      storeCode: codeOf(primaryFailure), fallbackCode: codeOf(failure), originalCode: code, originalEvidence: 'observed_not_retained',
+      fallbackReference: { status: 'unavailable', executionId, code: codeOf(failure) } };
     try { writeFallback(`RELAY_DIAGNOSTIC_UNAVAILABLE ${JSON.stringify(result)}\n`); } catch { /* host/output unavailable */ }
     return result;
   }

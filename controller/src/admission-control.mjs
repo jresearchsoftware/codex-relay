@@ -318,6 +318,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (identity && slot !== null && (identity.executionSlot ?? 'primary') !== slot) continue;
       if (row.error || !identity) {
         throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID', { cause: row.cause }), { code: 'ADMISSION_ATTEMPT_INVALID',
+          observation: { check: 'inventory.record', expected: 'readable native envelope', observed: { runId: row.runId, code: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } },
           details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } });
       }
       // A handoff is not evidence of physical runner occupation.
@@ -496,7 +497,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (!['quiesced', 'drained'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
       const pending = await inventory();
       if (pending.unknown.length) throw Object.assign(new Error('ADMISSION_DRAIN_UNKNOWN'), {
-        code: 'ADMISSION_DRAIN_UNKNOWN', details: { inventory: pending } });
+        code: 'ADMISSION_DRAIN_UNKNOWN', observation: { check: 'drain.unknown', expected: [], observed: pending.unknown }, details: { inventory: pending } });
       if (pending.active.length) return { ...state, ...pending, drained: false };
       return { ...await write({ ...state, phase: 'drained' }), ...pending, drained: true };
     },

@@ -28,8 +28,8 @@ export async function main(options = {}) {
       const run = /^[1-9][0-9]{0,15}$/.test(env.GITHUB_RUN_ID ?? '') ? env.GITHUB_RUN_ID : 'unknown';
       if (!progress.workerPossible) error.details = { ...error.details, childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' };
       const durable = await (options.persistRoutingFailure ?? options.persistFailure ?? persistAttemptFailureDiagnostic)({
-        executionId: `routing-${run}-${randomUUID()}`, error, stage: 'authority',
-        lastSuccessfulBoundary: 'controller-start' });
+        executionId: `routing-${run}-${randomUUID()}`, error, stage: progress.workerPossible ? 'finalization' : 'authority',
+        lastSuccessfulBoundary: progress.lastSuccessfulBoundary ?? 'controller-start' });
       error.details = { ...error.details, ...durable };
     }
     if (error.code === 'OWNER_EVENT_REQUIRED') return { status: 'BLOCKED', code: error.code,
@@ -44,7 +44,10 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   createJournal = () => createAttemptStore(EXECUTION_CONSUMER.paths.attemptRoot),
   resolveSlot = runnerExecutionSlot,
   persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect, signal, progress = {} } = {}) {
-  const event = JSON.parse(await readEvent(env.GITHUB_EVENT_PATH));
+  const rawEvent = await readEvent(env.GITHUB_EVENT_PATH);
+  progress.lastSuccessfulBoundary = 'event-read';
+  const event = JSON.parse(rawEvent);
+  progress.lastSuccessfulBoundary = 'event-parse';
   for (const [check, expected, observed, valid] of [
     ['repository', REPOSITORY, event?.repository?.full_name, event?.repository?.full_name === REPOSITORY],
     ['event', ['workflow_dispatch', 'issues', 'pull_request_target'], env.GITHUB_EVENT_NAME, ['workflow_dispatch', 'issues', 'pull_request_target'].includes(env.GITHUB_EVENT_NAME)],
@@ -52,8 +55,10 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     ['head_branch', `refs/heads/${CONSUMER.baseBranch}`, env.GITHUB_REF, env.GITHUB_REF === `refs/heads/${CONSUMER.baseBranch}`]
   ]) if (!valid) throw Object.assign(new Error('OWNER_EVENT_REQUIRED'), { code: 'OWNER_EVENT_REQUIRED', reason: check,
     observation: { check, expected, observed: observed ?? null, availability: observed === undefined ? 'unavailable' : 'available' } });
+  progress.lastSuccessfulBoundary = 'owner-event';
   const launch = env.GITHUB_EVENT_NAME === 'workflow_dispatch' ? parseLaunchInputs(event.inputs)
     : parseLabelLaunch(event, env.GITHUB_EVENT_NAME);
+  progress.lastSuccessfulBoundary = 'route-parse';
   const executionSlot = resolveSlot({ runnerName: env.RUNNER_NAME });
   if (CONSUMER.executionSlots && executionSlot !== EXECUTION_SLOT) fail('EXECUTION_SLOT_IDENTITY_INVALID');
   const local = createWriter();
@@ -63,6 +68,7 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   const journal = createJournal();
   const broker = { invoke: request => local.invoke({ ...request, ...(executionSlot ? { executionSlot } : {}), workflowReadToken: env.GITHUB_TOKEN }) };
   let admitted;
+  progress.lastSuccessfulBoundary = 'adapters-ready';
   try {
     admitted = await broker.invoke({ operation: 'admit', runId: Number(env.GITHUB_RUN_ID), workflowReadToken: env.GITHUB_TOKEN,
       ...launch });
@@ -82,6 +88,7 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     }
     throw error;
   }
+  progress.lastSuccessfulBoundary = 'admission';
   const warning = admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings;
   if (admitted.status === 'BLOCKED') { emitAdmissionWarnings(warning); return { ...admitted, phase: 'pre-worker-admission', worker: 'not_started' }; }
   let failure;
@@ -144,7 +151,17 @@ export async function reportRoutingResult(run, { write = value => process.stdout
     write(JSON.stringify(value) + '\n');
     return value?.status === 'BLOCKED' ? 1 : 0;
   } catch (error) {
-    writeError(JSON.stringify({ status: 'blocked', orchestration: 'FAILED', code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ROUTING_FAILED', diagnostic: error.details?.diagnostic ?? causalEvidence(error) }) + '\n');
+    const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ROUTING_FAILED';
+    const diagnostic = error.details?.diagnostic ?? causalEvidence(error);
+    const action = code.startsWith('GITHUB_')
+      ? 'Inspect the retained native API response and configured actor access; reconcile any uncertain mutation before recovery.'
+      : code.includes('CONFIG') || code.startsWith('EXECUTION_SLOT_')
+        ? 'Inspect the selected consumer configuration and reported field through the authorized host reader before correcting the caller configuration.'
+        : code === 'TRUSTED_GIT_FAILED'
+          ? 'Inspect the original Git output and branch observations in protected diagnostics before selecting the supported correction.'
+          : 'Inspect the protected diagnostic reference and original attempt before selecting a supported correction or recovery.';
+    writeError(`::error title=Relay routing::${code}; the requested operation did not complete. ${action}\n`);
+    writeError(JSON.stringify({ status: 'blocked', orchestration: 'FAILED', code, diagnostic }) + '\n');
     return 1;
   }
 }

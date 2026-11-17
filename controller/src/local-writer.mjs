@@ -12,7 +12,13 @@ const INVOCATION_TIMEOUT_MS = 450000;
 
 function requestError(error, operation) {
   let payload;
-  try { payload = JSON.parse(String(error.stderr ?? "")); } catch { payload = undefined; }
+  try { payload = JSON.parse(String(error.stderr ?? "")); }
+  catch {
+    // An independent diagnostic-unavailable line may precede the fixed final
+    // helper envelope. Preserve that envelope's native classification.
+    try { payload = JSON.parse(String(error.stderr ?? "").trim().split('\n').at(-1)); }
+    catch { payload = undefined; }
+  }
   const code = typeof payload?.code === "string" && /^[A-Z][A-Z0-9_]{0,79}$/.test(payload.code) ? payload.code : "WRITER_HELPER_FAILED";
   const failureDiagnostic = failureDiagnosticFromDetails(payload);
   const reason = ownerRunRejectionReason(code, payload?.reason);

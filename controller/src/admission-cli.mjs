@@ -169,7 +169,8 @@ export async function drainAdmission({ operationId, timeout }, { snapshot, wait 
       previous = identity; nextProgress = now() + 30000;
     }
     if (now() >= deadline) throw Object.assign(new Error('ADMISSION_DRAIN_TIMEOUT'), {
-      code: 'ADMISSION_DRAIN_TIMEOUT', details: { inventory: value, elapsedSeconds: timeout } });
+      code: 'ADMISSION_DRAIN_TIMEOUT', observation: { check: 'drain.deadline', expected: { drained: true, timeoutSeconds: timeout },
+        observed: { drained: value.drained, active: value.active, unknown: value.unknown } }, details: { inventory: value, elapsedSeconds: timeout } });
     await wait(Math.min(1000, deadline - now()));
   }
 }

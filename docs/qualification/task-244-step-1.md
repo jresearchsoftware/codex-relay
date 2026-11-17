@@ -80,3 +80,21 @@ maintenance check found the same official stable version. No model call was
 added for logging/progress. ChatGPT effective-text activation and receiving
 private workflow publication remain owner-controlled; #248/#256 stay open until
 their stated accepted-source/client/projection evidence is reconciled.
+
+
+The full deployment suite was executed in this worker. Thirty-six failing cases
+were reproduced against the exact admitted baseline in an isolated local
+worktree: six protected consumer-drift fixtures, twelve recovery-evidence
+fixtures, four managed-pool eligibility fixtures, twelve general-runner source
+proof fixtures, one native default-ACL fixture and one generated recovery-module
+fixture. The observed frontiers are protected owner/mode checks, a native ACL xattr call returning EINVAL, and the inherited source-fixture configuration mode. These
+are explicit local qualification limits; the source change does not weaken those
+checks. Candidate-only historical workflow closure and upgrade-wrapper fixture
+failures found by that comparison were corrected and rechecked separately.
+Native installed-runtime checks remain required after Writer publication.
+
+
+Primary native run/check annotations are not available from this credential-free
+worker before Writer publication. This result makes no absence-of-warning claim
+for those surfaces. The protected exact-head reviewers must inspect the native
+publication/check/warning records along with this source and its fixture limits.

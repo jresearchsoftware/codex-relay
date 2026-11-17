@@ -10,7 +10,7 @@ import { createPublicationBroker } from '../src/publication-broker.mjs';
 import { createGithubApi } from '../src/github-api.mjs';
 import { main, reportRoutingResult } from '../src/entrypoint.mjs';
 import { fixture } from './fixture.mjs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { captureCausalDiagnostic } from '../src/diagnostics.mjs';
 import { recordEntrypointFailure } from '../src/repository-entrypoint.mjs';
@@ -76,6 +76,16 @@ test('invalid primary receipt and unavailable fallback report both failures inde
   assert.match(output.join(''), /RELAY_DIAGNOSTIC_UNAVAILABLE/);
 });
 
+test('invalid caller operation cannot break the recorder or replace the original rejection', async t => {
+  const s = await stores(t);
+  const result = await recordHostFailure({ ...s, executionId: 'host-invalid-operation',
+    error: fail('BROKER_OPERATION_NOT_ALLOWED'), operation: { toString: 'untrusted' } });
+  assert.equal(result.status, 'stored');
+  const saved = JSON.parse(await readFile(join(s.primary, 'host-invalid-operation.json'), 'utf8'));
+  assert.equal(saved.input.operation, 'unknown');
+  assert.equal(saved.classification, 'BROKER_OPERATION_NOT_ALLOWED');
+});
+
 test('native API rejection retains bounded original body/status and network cause', async () => {
   const api = createGithubApi({ token: 'synthetic-token', fetchImpl: async () => new Response('repository access denied', { status: 403 }) });
   await assert.rejects(api.get('/issues/42'), error => {
@@ -132,4 +142,37 @@ test('bootstrap recorder failure reports its independent reason without replacin
   assert.match(output.join(''), /CONSUMER_CONFIG_INVALID/);
   assert.match(output.join(''), /observed_not_retained/);
   assert.doesNotMatch(output.join(''), /private/);
+});
+
+test('independent recorder fallback output cannot obscure the final helper classification', async () => {
+  const lines = 'RELAY_DIAGNOSTIC_UNAVAILABLE {"originalCode":"OWNER_RUN_NOT_ADMITTED"}\n'
+    + JSON.stringify({ code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status',
+      diagnosticStore: { status: 'unavailable', executionId: 'host-original', storeCode: 'ENOSPC' },
+      fallbackReference: { status: 'unavailable', executionId: 'host-original', code: 'EROFS' } });
+  const adapter = createLocalWriterAdapter({ spawnImpl: (_cmd, _args, options) => spawn(process.execPath,
+    ['-e', `process.stdin.resume();process.stdin.on('end',()=>{process.stderr.write(${JSON.stringify(lines)});process.exitCode=1})`], options) });
+  await assert.rejects(adapter.invoke({ operation: 'admit' }), error => {
+    assert.equal(error.code, 'OWNER_RUN_NOT_ADMITTED'); assert.equal(error.details.reason, 'status');
+    assert.equal(error.details.diagnosticStore.storeCode, 'ENOSPC');
+    assert.equal(error.details.fallbackReference.code, 'EROFS'); return true;
+  });
+});
+
+test('the Actions reporting wrapper really exits red for BLOCKED and green for a successful handoff', async () => {
+  const template = await readFile(new URL('../../deploy/workflows/routing.yml.in', import.meta.url), 'utf8');
+  assert.match(template, /process\.exitCode = await reportRoutingResult\(main\)/);
+  assert.doesNotMatch(template, /continue-on-error|workflow_run/);
+  for (const status of ['BLOCKED', 'IMPLEMENTED_PENDING_FRESH_REVIEW']) {
+    const value = status === 'BLOCKED'
+      ? { status, code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status', worker: 'not_started' } : { status };
+    const source = `import {reportRoutingResult} from ${JSON.stringify(new URL('../src/entrypoint.mjs', import.meta.url).href)};
+      process.exitCode=await reportRoutingResult(async()=>(${JSON.stringify(value)}));`;
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', source], { encoding: 'utf8', env: process.env });
+    assert.equal(result.status, status === 'BLOCKED' ? 1 : 0);
+    assert.deepEqual(JSON.parse(result.stdout), value);
+    if (status === 'BLOCKED') {
+      assert.match(result.stderr, /::error title=Codex admission::/);
+      assert.match(result.stderr, /no worker started/);
+    } else assert.equal(result.stderr, '');
+  }
 });
