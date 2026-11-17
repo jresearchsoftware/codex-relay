@@ -105,9 +105,32 @@ pub(crate) fn bounded(message: &str) -> (String, bool) {
 #[track_caller]
 pub(crate) fn record(code: &str, phase: &str, cause: &str) {
     let source = std::panic::Location::caller();
+    record_at(code, phase, cause, source);
+}
+
+fn record_at(code: &str, phase: &str, cause: &str, source: impl std::fmt::Display) {
     let (cause, truncated) = bounded(cause);
     tracing::error!(event = "relay_failure_cause", code, phase,
         source = %source, cause, cause_truncated = truncated);
+}
+
+pub(crate) fn install_panic_hook() {
+    // Tokio catches task panics, so a detached task can otherwise lose its
+    // failure attribution. Replace the default raw stderr hook to keep panic
+    // payloads bounded and redacted too. This does not catch or retry a panic.
+    std::panic::set_hook(Box::new(|panic| {
+        let cause = panic
+            .payload()
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("Non-string panic payload; original text unavailable");
+        let source = panic
+            .location()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "unavailable".to_string());
+        record_at("INTERNAL_RELAY_PANIC", "panic", cause, source);
+    }));
 }
 
 #[track_caller]
@@ -165,6 +188,46 @@ pub(crate) fn capture() -> (
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn panic_hook_retains_redacted_cause_without_suppressing_task_failure() {
+        use tracing::instrument::WithSubscriber;
+        const CHILD: &str = "RELAY_DIAGNOSTIC_PANIC_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "diagnostics::tests::panic_hook_retains_redacted_cause_without_suppressing_task_failure", "--nocapture"])
+                .env(CHILD, "1").output().unwrap();
+            assert!(
+                result.status.success(),
+                "isolated panic regression failed: {}{}",
+                String::from_utf8_lossy(&result.stdout),
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed; 0 failed"));
+            assert!(!String::from_utf8_lossy(&result.stderr).contains("private-panic-value"));
+            return;
+        }
+        let (subscriber, journal) = capture();
+        install_panic_hook();
+        let result = tokio::spawn(
+            async {
+                panic!(
+                    "original task panic; token=private-panic-value; {}",
+                    "x".repeat(8192)
+                );
+            }
+            .with_subscriber(subscriber),
+        )
+        .await;
+        assert!(result.unwrap_err().is_panic());
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(journal.contains("INTERNAL_RELAY_PANIC"), "{journal}");
+        assert!(journal.contains("original task panic"), "{journal}");
+        assert!(journal.contains("diagnostics.rs:"), "{journal}");
+        assert!(journal.contains("cause_truncated=true"), "{journal}");
+        assert!(!journal.contains("private-panic-value"), "{journal}");
+        assert!(journal.len() < 4600);
+    }
 
     #[test]
     fn capture_survives_first_unscoped_observation() {

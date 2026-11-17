@@ -384,21 +384,38 @@ fn native_review_body(validation_names: &[String], arguments: &Value, operation:
         review_body(validation_names, arguments)
     )
 }
-fn retained_review_body(app: &RepositoryTarget<'_>, arguments: &Value, operation: &str) -> String {
-    let store = app.store.lock().expect("store lock");
-    if let Some(body) = store.publication_body(operation).expect("publication body") {
-        return body;
+fn retained_review_body(
+    app: &RepositoryTarget<'_>,
+    arguments: &Value,
+    operation: &str,
+) -> Result<String, &'static str> {
+    let store = app
+        .store
+        .lock()
+        .map_err(|error| diagnostics::failure("INTERNAL_RELAY_ERROR", error))?;
+    if let Some(body) = store
+        .publication_body(operation)
+        .map_err(|error| diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
+    {
+        return Ok(body);
     }
-    if store.known(operation).expect("operation").is_some()
+    if store
+        .known(operation)
+        .map_err(|error| diagnostics::failure("INTERNAL_RELAY_ERROR", error))?
+        .is_some()
         && arguments["action"] == "REQUEST_CHANGES"
     {
-        return format!(
+        return Ok(format!(
             "{}\n\n<!-- jresearchsoftware-reviewer-relay:v1 operation={operation} -->",
             executable_cr::render_legacy(&app.policy.validation_names, arguments)
                 .expect("validated CR")
-        );
+        ));
     }
-    native_review_body(&app.policy.validation_names, arguments, operation)
+    Ok(native_review_body(
+        &app.policy.validation_names,
+        arguments,
+        operation,
+    ))
 }
 fn finding_digest(validation_names: &[String], arguments: &Value) -> String {
     let findings = if arguments["action"] == "REQUEST_CHANGES" {
@@ -806,6 +823,10 @@ async fn complete_check(
 ) -> Value {
     let repository = arguments["repository"].as_str().unwrap_or("");
     let sha = arguments["expected_head_sha"].as_str().unwrap_or("");
+    let retained_body = match retained_review_body(app, arguments, operation) {
+        Ok(body) => body,
+        Err(code) => return task_authority::error(code),
+    };
     {
         let native = match app
             .github
@@ -835,7 +856,7 @@ async fn complete_check(
                     "https://api.github.com/repos/{repository}/pulls/{}",
                     arguments["pr_number"]
                 )
-            || native["body"] != retained_review_body(app, arguments, operation)
+            || native["body"] != retained_body
         {
             return task_authority::error("APPROVAL_NATIVE_BINDING_MISMATCH");
         }
@@ -930,7 +951,7 @@ async fn approval_continuation_plan(
             || native["commit_id"] != arguments["expected_head_sha"]
             || native["user"]["login"] != app.policy.actor || native["user"]["type"] != "Bot"
             || native["pull_request_url"] != format!("https://api.github.com/repos/{}/pulls/{}",app.repository,arguments["pr_number"])
-            || native["body"] != retained_review_body(app, arguments, &operation_id(&app.policy.validation_names, arguments)) {
+            || native["body"] != retained_review_body(app, arguments, &operation_id(&app.policy.validation_names, arguments))? {
             return Err("APPROVAL_NATIVE_BINDING_MISMATCH");
         }
         let issue_number = step_sync::linked_issue(&pr)?;
@@ -1134,13 +1155,17 @@ async fn record_review(
     outcome: &str,
     arguments: &Value,
 ) -> Value {
+    let retained_body = match retained_review_body(app, arguments, operation) {
+        Ok(body) => body,
+        Err(code) => return task_authority::error(code),
+    };
     if review["state"]
         != if arguments["action"] == "APPROVE" {
             "APPROVED"
         } else {
             "CHANGES_REQUESTED"
         }
-        || review["body"].as_str() != Some(retained_review_body(app, arguments, operation).as_str())
+        || review["body"].as_str() != Some(retained_body.as_str())
     {
         return json!({"content":[{"type":"text","text":"REVIEW_CONTRACT_VERIFICATION_FAILED"}],"isError":true});
     }
@@ -1341,6 +1366,11 @@ fn publication_enabled(value: Option<&str>) -> bool {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .with_target(false)
+        .init();
+    diagnostics::install_panic_hook();
     let a = Args::parse();
     let (effective_config, loaded_config) = load_runtime_config_with_inputs(&a.config);
     validate_effective_runtime_config(&effective_config);
@@ -1355,10 +1385,6 @@ async fn main() {
     if configured_mount != "/mcp" {
         panic!("REVIEWER_MCP_MOUNT_PATH must remain the canonical /mcp route")
     }
-    tracing_subscriber::fmt()
-        .with_env_filter("info")
-        .with_target(false)
-        .init();
     assert_eq!(
         std::env::var("GITHUB_APP_ID").ok().as_deref(),
         Some(policy.app_id.as_str()),
@@ -1461,6 +1487,48 @@ mod tests {
 
     const REMOVED_REVIEW_THREAD: &str = "Task 10 — Step 3 — CR-10-002 — test review";
     const REVIEW_BODY: &str = "## Change Request\n\nreview";
+
+    #[test]
+    fn retained_review_body_preserves_sqlite_cause_and_returns_safe_error() {
+        let path = std::env::temp_dir().join(format!(
+            "relay-retained-body-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = store::Store::open(path.to_str().unwrap()).unwrap();
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE operations")
+            .unwrap();
+        let app = App {
+            policy: test_policy(),
+            repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
+            observed_arguments: Default::default(),
+            enabled: true,
+            store: Arc::new(Mutex::new(store)),
+            github: github::Github::new(),
+            trusted_client_ca: Arc::new(Vec::new()),
+        };
+        let args = base_args("APPROVE");
+        let target = app.target(&args).unwrap();
+        let (subscriber, journal) = diagnostics::capture();
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+        assert_eq!(
+            retained_review_body(&target, &args, "reserved-operation"),
+            Err("INTERNAL_RELAY_ERROR")
+        );
+        let journal = String::from_utf8(journal.lock().unwrap().clone()).unwrap();
+        assert!(journal.contains("no such table: operations"), "{journal}");
+        assert!(journal.contains("INTERNAL_RELAY_ERROR"), "{journal}");
+        assert!(!crate::task_authority::error("INTERNAL_RELAY_ERROR")
+            .to_string()
+            .contains("no such table"));
+        drop(app);
+        std::fs::remove_file(path).unwrap();
+    }
 
     pub(super) type ObservedArguments = Arc<Mutex<Vec<(String, Value)>>>;
 
