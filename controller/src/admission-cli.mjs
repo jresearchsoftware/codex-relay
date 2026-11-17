@@ -13,6 +13,7 @@ import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReser
 import { createSlotJournal } from './slot-journal.mjs';
 import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 import { fail } from './execution-contract.mjs';
+import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 import { assertPredispatchTargetCompatible } from './predispatch-target-compatibility.mjs';
 
@@ -145,20 +146,34 @@ export async function readAdmissionSnapshot(input = process.stdin) {
 export async function drainAdmission({ operationId, timeout }, { snapshot, wait = setTimeout,
   now = () => performance.now(), reportProgress = () => {} } = {}) {
   const started = now(); const deadline = started + timeout * 1000;
-  let nextProgress = started + 30000;
+  let nextProgress = started; let previous;
+  const report = (value, reason) => {
+    const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
+    const pending = Array.isArray(value.pending) ? value.pending.filter(item =>
+      [item?.task, item?.step, item?.runId].every(value => Number.isSafeInteger(value) && value > 0))
+      .slice(0, 20).map(item => `Task-${item.task}/Step-${item.step}/run-${item.runId}`).join(',') : '';
+    reportProgress({ phase: 'drain', active: count(value.active), unknown: count(value.unknown), pending: pending || 'none', reason,
+      elapsedSeconds: Math.min(timeout, Math.max(0, Math.floor((now() - started) / 1000))) });
+  };
   while (true) {
-    const value = await snapshot(operationId, Math.max(1, Math.ceil(deadline - now())));
-    if (value.drained === true) return value;
-    if (now() >= nextProgress) {
-      const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
-      reportProgress({ phase: 'drain', active: count(value.active), unknown: count(value.unknown),
-        elapsedSeconds: Math.min(timeout, Math.max(0, Math.floor((now() - started) / 1000))) });
-      nextProgress = now() + 30000;
+    let value;
+    try { value = await snapshot(operationId, Math.max(1, Math.ceil(deadline - now()))); }
+    catch (error) {
+      report(error.details?.inventory ?? {}, error.code === 'ADMISSION_DRAIN_UNKNOWN' ? 'inventory-unknown' : 'lock-or-inventory-unavailable');
+      throw error;
     }
-    if (now() >= deadline) fail('ADMISSION_DRAIN_TIMEOUT');
+    const identity = JSON.stringify([value.active, value.unknown, value.pending]);
+    if (value.drained === true) { report(value, 'drained'); return value; }
+    if (identity !== previous || now() >= nextProgress) {
+      report(value, Array.isArray(value.active) ? 'waiting-for-controllers' : 'lock-or-inventory-unavailable');
+      previous = identity; nextProgress = now() + 30000;
+    }
+    if (now() >= deadline) throw Object.assign(new Error('ADMISSION_DRAIN_TIMEOUT'), {
+      code: 'ADMISSION_DRAIN_TIMEOUT', details: { inventory: value, elapsedSeconds: timeout } });
     await wait(Math.min(1000, deadline - now()));
   }
 }
+
 export async function readDrainSnapshot(operationId, remaining, { execute = exec } = {}) {
   try {
     const result = await execute('/usr/bin/flock', ['-w', '1', `${CONSUMER.paths.claimRoot}/publication-v2.lock`,
@@ -171,9 +186,9 @@ export async function readDrainSnapshot(operationId, remaining, { execute = exec
   } catch (error) {
     let payload;
     try { payload = JSON.parse(error.stderr); } catch { /* flock contention has no JSON */ }
-    if (payload?.code) fail(payload.code);
+    if (payload?.code) throw Object.assign(new Error(payload.code, { cause: error }), { code: payload.code, details: payload.details });
     if (error.code === 1 && !error.stdout && !error.stderr) return { drained: false };
-    fail('ADMISSION_DRAIN_STATUS_UNAVAILABLE');
+    throw Object.assign(new Error('ADMISSION_DRAIN_STATUS_UNAVAILABLE', { cause: error }), { code: 'ADMISSION_DRAIN_STATUS_UNAVAILABLE' });
   }
 }
 export async function main(args = process.argv.slice(2)) {
@@ -184,7 +199,7 @@ export async function main(args = process.argv.slice(2)) {
     // Each snapshot has the same lock as admission and final Writer release.
     // Never hold that lock during the wait: admitted controllers must finish.
     return drainAdmission(options, {
-      reportProgress: value => process.stderr.write(`ADMISSION_DRAIN_PROGRESS phase=${value.phase} active=${value.active ?? 'UNAVAILABLE'} unknown=${value.unknown ?? 'UNAVAILABLE'} elapsedSeconds=${value.elapsedSeconds}\n`),
+      reportProgress: value => process.stderr.write(`ADMISSION_DRAIN_PROGRESS phase=${value.phase} active=${value.active ?? 'UNAVAILABLE'} unknown=${value.unknown ?? 'UNAVAILABLE'} elapsedSeconds=${value.elapsedSeconds} pending=${value.pending} reason=${value.reason}\n`),
       snapshot: readDrainSnapshot });
   }
   const admission = installedAdmissionControl();
@@ -201,7 +216,8 @@ export async function main(args = process.argv.slice(2)) {
   return admission[command](options);
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
-if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => {
-  process.stderr.write(JSON.stringify({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED' }) + '\n');
+if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
+  const diagnosticStore = await recordHostFailure({ error, operation: 'admission-lifecycle', phase: 'finalization' });
+  process.stderr.write(JSON.stringify({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED', diagnosticStore, ...(error.details?.inventory ? { details: { inventory: error.details.inventory } } : {}) }) + '\n');
   process.exitCode = 1;
 });

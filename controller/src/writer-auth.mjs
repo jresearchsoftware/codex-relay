@@ -1,6 +1,7 @@
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { createSign } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
+import { responseFailure } from './github-api.mjs';
 const API_ROOT = "https://api.github.com";
 const APP_ID = CONSUMER.writerApp.appId;
 const INSTALLATION_ID = CONSUMER.writerApp.installationId;
@@ -57,10 +58,12 @@ export async function http(path, { method = "GET", token, jwt, body } = {}) {
   if (jwt) headers.authorization = `Bearer ${jwt}`;
   if (body !== undefined) headers["content-type"] = "application/json";
   const response = await fetch(`${API_ROOT}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  if (!response.ok) return responseFailure(response, { code: 'GITHUB_MUTATION_FAILED', operation: 'writer-authentication', method, path,
+    knownSecrets: [token, jwt].filter(Boolean) });
   const text = await response.text();
   let value;
   try { value = text ? JSON.parse(text) : {}; } catch { value = {}; }
-  if (!response.ok) throw blocked("GITHUB_MUTATION_FAILED", `GitHub ${method} ${path} returned ${response.status}`);
+
   return value;
 }
 

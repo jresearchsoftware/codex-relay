@@ -4,7 +4,8 @@ import { RUN_NAME_MAX_CHARS } from './run-name.mjs';
 import { READY_LABELS } from './step-metadata.mjs';
 
 function positiveDecimal(value, code) {
-  if (!['string', 'number'].includes(typeof value) || !positive(Number(value)) || String(Number(value)) !== String(value)) fail(code);
+  if (!['string', 'number'].includes(typeof value) || !positive(Number(value)) || String(Number(value)) !== String(value)) fail(code,
+    { check: code.toLowerCase(), expected: 'canonical positive decimal integer', observed: value ?? null });
   return Number(value);
 }
 
@@ -18,7 +19,7 @@ export function dispatchRunName({ route, issueNumber, step, target, number }) {
 }
 
 export function parseLaunchInputs(inputs) {
-  if (!inputs || !['auto', 'manual'].includes(inputs.route)) fail('ROUTE_INVALID');
+  if (!inputs || !['auto', 'manual'].includes(inputs.route)) fail('ROUTE_INVALID', { check: 'inputs.route', expected: ['auto', 'manual'], observed: inputs?.route ?? null });
   const issueNumber = positiveDecimal(inputs.task, 'LAUNCH_TASK_INVALID');
   const step = inputs.step === undefined || inputs.step === '' ? null : launchStep(inputs.step);
   const target = inputs.pull_request ? 'pull_request' : 'issue';
@@ -48,11 +49,15 @@ export function labelRunCommandMatches(name, launch) {
 }
 
 export function parseLabelLaunch(event, eventName) {
-  if (event.action !== 'labeled' || !READY_LABELS.includes(event.label?.name)
-    || !['issues', 'pull_request_target'].includes(eventName)) fail('READY_EVENT_REQUIRED');
+  for (const [check, expected, observed, valid] of [
+    ['event.action', 'labeled', event.action, event.action === 'labeled'],
+    ['event.label', READY_LABELS, event.label?.name, READY_LABELS.includes(event.label?.name)],
+    ['event.name', ['issues', 'pull_request_target'], eventName, ['issues', 'pull_request_target'].includes(eventName)]
+  ]) if (!valid) fail('READY_EVENT_REQUIRED', { check, expected, observed: observed ?? null });
   const target = eventName === 'issues' ? 'issue' : 'pull_request';
   const subject = target === 'issue' ? event.issue : event.pull_request;
-  if (!positive(subject?.number) || (target === 'issue' && subject.pull_request)) fail('ROUTE_INVALID');
+  if (!positive(subject?.number)) fail('ROUTE_INVALID', { check: 'event.subject.number', expected: 'positive native target number', observed: subject?.number ?? null });
+  if (target === 'issue' && subject.pull_request) fail('ROUTE_INVALID', { check: 'event.subject.kind', expected: 'issue', observed: 'pull_request' });
   // Routing authenticates the command; Writer resolves the canonical Issue's
   // numbering position under its existing serialization boundary.
   return { target, number: subject.number, step: null,

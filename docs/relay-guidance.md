@@ -33,6 +33,13 @@ versions remain unchanged; the former parallel 7.0.0 proposals are reconciled
 sequentially under PV-009. The current candidate retains the `>=10.0.0` native
 floor, exact standalone snapshot and included publisher closure evidence.
 
+Task #244 adds protected causal evidence, live owner lifecycle progress and
+explicit failed Actions status for terminal `BLOCKED` results to this same
+unpublished 8.0.0 candidate. The exit-status change is a supported operator
+contract change, authorized by Task #244; the existing MAJOR classification
+covers it. Source generation does not activate an installation or reconcile live
+ChatGPT settings or private workflow projections.
+
 ### Earlier version-scoped classification
 
 The following paragraphs retain historical release rationale; their then-current

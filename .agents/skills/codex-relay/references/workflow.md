@@ -44,6 +44,15 @@ ambiguous external mutation or protected effect. Reconcile those facts before
 dependent work, retain original-attempt recovery protections and never replay
 an admitted execution because automation is unavailable.
 
+Assess ChatGPT's orchestration capabilities separately from those of the assigned
+Codex environment. A missing connected App does not prove that an authorized
+shell or SSH execution path is unavailable. Use the owning project's accepted
+execution and shell routing ([Relay development](https://github.com/jresearchsoftware/codex-relay/blob/main/CONTRIBUTING.md#execution-environment-and-shell-routing))
+and existing capability evidence; do not add a parallel routing guide or probe.
+An actually missing or unauthorized required path blocks the affected operation.
+An execution transport cannot replace a required native Reviewer/Writer tool,
+grant credentials or expand protected authority.
+
 For an explicitly authorized standalone source PR, current native independent
 `APPROVE` can lead to the already-authorized exact-head squash through the
 existing owner continuation channel without another confirmation or a fabricated

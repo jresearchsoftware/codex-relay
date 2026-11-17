@@ -13,27 +13,27 @@ const result = (e, status = 'blocked') => ({ version: e.version, attemptId: e.at
 const report = run => reportRoutingResult(run, { write() {}, writeError() {} });
 
 for (const progress of [false, true]) {
-  test(`safe worker BLOCKED ${progress ? 'with published progress' : 'without progress'} stays green on replay`, async t => {
+  test(`safe worker BLOCKED ${progress ? 'with published progress' : 'without progress'} reports a failed job without replaying execution`, async t => {
     const f = await fixture(t); const journal = f.journal; let executions = 0;
     const args = { ...f, journal, execute: async () => { executions++; if (progress) await f.commit(); return result(f.envelope); } };
-    assert.equal(await report(() => runAttempt(args)), 0);
+    assert.equal(await report(() => runAttempt(args)), 1);
     const saved = await journal.get(99);
     assert.equal(saved.diagnostic.orchestration, 'COMPLETED');
     if (progress) assert.equal((await f.api.get('/pulls/43')).draft, true);
     assert.equal(await report(() => runAttempt({ ...args,
-      prepare: () => assert.fail('reprepare'), collect: () => assert.fail('recollect') })), 0);
+      prepare: () => assert.fail('reprepare'), collect: () => assert.fail('recollect') })), 1);
     assert.equal(executions, 1); assert.equal(f.pushes(), progress ? 1 : 0); assert.equal(f.comments.length, 1);
   });
 }
 
 for (const code of ['CODEX_RESULT_MISSING', 'CODEX_RESULT_INVALID', 'CODEX_JSON_INVALID', 'CODEX_NONZERO_EXIT', 'CODEX_OUTPUT_TOO_LARGE', 'CODEX_RUNTIME_TIMEOUT']) {
-  test(`known contained worker ${code} preserves progress once and terminalizes non-red`, async t => {
+  test(`known contained worker ${code} preserves progress once and retains domain classification with a failed job`, async t => {
     const f = await fixture(t); const journal = f.journal;
     const args = { ...f, journal, execute: async () => {
       await f.commit(); throw failure(code, { childState: 'started', containment: 'reaped' });
     } };
-    assert.equal(await report(() => runAttempt(args)), 0);
-    assert.equal(await report(() => runAttempt(args)), 0);
+    assert.equal(await report(() => runAttempt(args)), 1);
+    assert.equal(await report(() => runAttempt(args)), 1);
     assert.equal((await journal.get(99)).outcome.status, 'BLOCKED');
     assert.equal(f.pushes(), 1); assert.equal(f.comments.length, 1);
     assert.equal((await f.api.get('/pulls/43')).draft, true);
@@ -52,7 +52,7 @@ for (const code of ['INTERNAL_FAILURE', 'DISPATCH_NOT_STARTED', 'PROCESS_START_F
 
 test('blocked remediation is draft, including a no-progress result', async t => {
   const f = await fixture(t, { remediation: true });
-  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => result(f.envelope) })), 0);
+  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => result(f.envelope) })), 1);
   assert.equal((await f.api.get('/pulls/43')).draft, true);
 });
 
@@ -262,10 +262,10 @@ test('resumed admission revalidates authority within the normal terminal boundar
   assert.equal(f.comments.length, 0);
 });
 
-test('CLI reporting emits one warning for a domain block and returns a real nonzero exit for internal failure', async () => {
+test('CLI reporting emits an error and nonzero exit for a handled domain block or internal failure', async () => {
   const output = []; const options = { write: x => output.push(x), writeError: x => output.push(x) };
-  assert.equal(await reportRoutingResult(async () => ({ status: 'BLOCKED' }), options), 0);
-  assert.equal(output.filter(x => x.startsWith('::warning')).length, 1);
+  assert.equal(await reportRoutingResult(async () => ({ status: 'BLOCKED' }), options), 1);
+  assert.equal(output.filter(x => x.startsWith('::error')).length, 1);
   assert.equal(await reportRoutingResult(async () => { throw new Error('private internal text'); }, options), 1);
   assert.ok(!output.join('').includes('private internal text'));
 });
@@ -275,7 +275,7 @@ test('a worker capability blocker reaches the Outcome as a bounded redacted clai
   const value = result(f.envelope);
   value.result.summary = 'Applicable local checks passed';
   value.result.blockedReason = 'Capability unavailable; password=synthetic-private-value';
-  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => value })), 0);
+  assert.equal(await report(() => runAttempt({ ...f, journal: f.journal, execute: async () => value })), 1);
   assert.match(f.comments[0].body, /Worker summary \(claim\): Applicable local checks passed/);
   assert.match(f.comments[0].body, /Worker blocker \(claim\): Capability unavailable/);
   assert.doesNotMatch(f.comments[0].body, /synthetic-private-value/);

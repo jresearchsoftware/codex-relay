@@ -15,7 +15,7 @@ export async function prepareCheckout(e, { root, remote = REMOTE, token = proces
   // visible and needs inspection instead of an automatic destructive retry.
   await mkdir(dirname(cwd), { recursive: true, mode: 0o2770 });
   try { await mkdir(cwd, { mode: 0o2770 }); }
-  catch (error) { if (error.code === 'EEXIST') fail('CHECKOUT_ALREADY_EXISTS'); throw error; }
+  catch (cause) { if (cause.code === 'EEXIST') throw Object.assign(new Error('CHECKOUT_ALREADY_EXISTS', { cause }), { code: 'CHECKOUT_ALREADY_EXISTS' }); throw cause; }
   await git(cwd, ['init']);
   await establishCanonicalCheckout(cwd, { branch: e.branch, startHead: e.startHead, freshIssue: e.target === 'issue' && !e.continuation,
     allowBaseAdvance: e.request?.kind === 'admission' }, { remote, token });

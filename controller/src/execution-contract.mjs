@@ -90,7 +90,8 @@ export function safeDomainTerminal(error, record, stage) {
   return collected?.clean === true && exactSha(collected.head)
     && (collected.head === record.envelope.startHead || record.progress?.head === collected.head);
 }
-export const fail = code => { throw Object.assign(new Error(code), { code }); };
+export const fail = (code, observation) => { throw Object.assign(new Error(code), { code,
+  ...(observation ? { observation } : {}) }); };
 // A protocol mismatch has no admitted execution or Outcome authority. Keep it
 // outside domain blockers so an old-format rejection cannot create a new chain.
 export function requireCurrentProtocol() {

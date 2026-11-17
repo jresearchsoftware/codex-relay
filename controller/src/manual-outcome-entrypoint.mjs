@@ -1,4 +1,4 @@
-import { readRepositoryRequest, entrypointFailure } from './repository-entrypoint.mjs';
+import { readRepositoryRequest, entrypointFailure, recordEntrypointFailure } from './repository-entrypoint.mjs';
 
 try {
   if (process.argv.length !== 2 || process.getuid?.() !== 0) throw Object.assign(new Error('FIXED_ROOT_BROKER_REQUIRED'), { code: 'FIXED_ROOT_BROKER_REQUIRED' });
@@ -7,5 +7,6 @@ try {
   const { main } = await import('./manual-outcome-helper.mjs');
   process.stdout.write(JSON.stringify(await main(request)) + '\n');
 } catch (error) {
-  process.stdout.write(JSON.stringify({ error_code: entrypointFailure(error, 'MANUAL_PUBLICATION_FAILED') }) + '\n'); process.exitCode = 1;
+  const diagnosticStore = await recordEntrypointFailure(error, 'manual-outcome');
+  process.stdout.write(JSON.stringify({ error_code: entrypointFailure(error, 'MANUAL_PUBLICATION_FAILED'), diagnosticStore }) + '\n'); process.exitCode = 1;
 }

@@ -13,7 +13,7 @@ const env = { GITHUB_EVENT_PATH: 'synthetic-event.json', GITHUB_EVENT_NAME: 'wor
 function options(overrides = {}) {
   let admissions = 0;
   return {
-    env, readEvent: async () => JSON.stringify(event), resolveSlot: () => CONSUMER.executionSlots ? EXECUTION_SLOT : undefined,
+    persistRoutingFailure: async () => ({}), env, readEvent: async () => JSON.stringify(event), resolveSlot: () => CONSUMER.executionSlots ? EXECUTION_SLOT : undefined,
     createWriter: () => ({ invoke: async () => { admissions++; return { status: 'BLOCKED', envelope: {} }; } }),
     admissions: () => admissions, ...overrides
   };

@@ -56,7 +56,8 @@ async function continuation(t, { route, labelLaunch = true } = {}) {
     } }),
     prepare: async e => { preparations++; assert.equal((await f.api.get('/pulls/43')).draft, true); await f.prepare(e); },
     collect: f.collect,
-    persistFailure: () => assert.fail('unexpected post-admission failure')
+    persistFailure: () => assert.fail('unexpected post-admission failure'),
+    persistRoutingFailure: async value => { assert.match(value.executionId, /^routing-/); return {}; }
   };
   return { ...f, options, operations, counts: () => ({ executions, preparations, handoffs }) };
 }

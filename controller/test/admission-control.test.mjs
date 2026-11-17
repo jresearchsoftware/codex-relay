@@ -423,10 +423,40 @@ test('long drain emits bounded counts every thirty seconds without exposing atte
   });
   assert.equal(value.drained, true);
   assert.deepEqual(progress, [
-    { phase: 'drain', active: 2, unknown: 0, elapsedSeconds: 30 },
-    { phase: 'drain', active: 2, unknown: 0, elapsedSeconds: 60 }
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 0 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 30 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'waiting-for-controllers', elapsedSeconds: 60 },
+    { phase: 'drain', active: 2, unknown: 0, pending: 'none', reason: 'drained', elapsedSeconds: 65 }
   ]);
   assert.doesNotMatch(JSON.stringify(progress), /private-attempt|12345678/);
+});
+
+test('drain reports two independently finishing controllers and the verified final gate transition promptly', async () => {
+  let clock = 0; const progress = [];
+  const identities = [{ task: 244, step: 1, runId: 111 }, { task: 245, step: 3, runId: 222 }];
+  await drainAdmission({ operationId, timeout: 5 }, { now: () => clock,
+    wait: async ms => { clock += ms; }, reportProgress: value => progress.push(value),
+    snapshot: async () => {
+      const pending = clock < 1000 ? identities : clock < 2000 ? identities.slice(1) : [];
+      return { active: pending.map(item => item.runId), unknown: [], pending, drained: pending.length === 0 };
+    } });
+  assert.deepEqual(progress.map(value => [value.active, value.elapsedSeconds, value.pending, value.reason]), [
+    [2, 0, 'Task-244/Step-1/run-111,Task-245/Step-3/run-222', 'waiting-for-controllers'],
+    [1, 1, 'Task-245/Step-3/run-222', 'waiting-for-controllers'], [0, 2, 'none', 'drained']
+  ]);
+  assert.doesNotMatch(JSON.stringify(progress), /task.*success|completed/i);
+});
+
+test('unknown drain inventory reports the actual blocker before preserving the original stop', async () => {
+  const progress = [];
+  await assert.rejects(drainAdmission({ operationId, timeout: 5 }, {
+    reportProgress: value => progress.push(value), snapshot: async () => {
+      throw Object.assign(new Error('uncontained original attempt'), { code: 'ADMISSION_DRAIN_UNKNOWN',
+        details: { inventory: { active: [11], unknown: [22], pending: [{ task: 244, step: 1, runId: 11 }] } } });
+    } }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  assert.equal(progress[0].active, 1); assert.equal(progress[0].unknown, 1);
+  assert.equal(progress[0].reason, 'inventory-unknown');
+  assert.equal(progress[0].pending, 'Task-244/Step-1/run-11');
 });
 
 test('root lifecycle CLI accepts only bounded fixed command arguments', () => {
@@ -444,7 +474,7 @@ test('root lifecycle CLI accepts only bounded fixed command arguments', () => {
 test('quiesced routing warning reports known absence of a worker without inventing a terminal Outcome', async () => {
   const output = []; const warnings = [];
   assert.equal(await reportRoutingResult(async () => ({ status: 'BLOCKED', code: 'ADMISSION_QUIESCED' }),
-    { write: value => output.push(value), writeError: value => warnings.push(value) }), 0);
+    { write: value => output.push(value), writeError: value => warnings.push(value) }), 1);
   assert.match(warnings[0], /Automatic admission is quiesced; no worker started/);
   assert.doesNotMatch(warnings[0], /terminal Outcome/);
   assert.equal(JSON.parse(output[0]).code, 'ADMISSION_QUIESCED');

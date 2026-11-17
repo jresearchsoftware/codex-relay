@@ -129,6 +129,13 @@ On 2026-11-12, Step 21 froze **0.167.2** against **0.167.1** using the official 
 
 The exact official 0.167.2 installer and all six credential-free loopback cases passed under an ordinary Linux UID. The probe checked exact release/symlink and restrictive installer umask, native JSONL events/identity/usage, schema transmission and local semantic rejection, stdin, requested model/effort, isolated home and sandbox policy, nonzero provider failure, and optional MCP 401 with both successful and failed turns. Debian WSL's existing `/tmp` was not writable by that UID, so the probe used an ephemeral `/tmp` mount in a private mount namespace without changing host permissions. The installer emitted its expected temporary-directory PATH-alias warning; direct execution of the exact binary passed. No credential or model call was used. This bounded maintenance does not advance the capability-review baseline or establish an installed-host update or Apply.
 
+## Task 244 routine maintenance
+
+On 2026-11-17 the official stable release endpoint still selected
+`rust-v0.169.0` (published 2026-11-13), matching the qualified **0.169.0**
+dependency. This cycle retains that exact pin; there is no dependency change,
+capability-review advancement or installed-host update claim.
+
 ## Task 243 routine maintenance
 
 On 2026-11-13, this implementation cycle froze the official stable candidate

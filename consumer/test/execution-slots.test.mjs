@@ -261,7 +261,7 @@ test('shared runner UID selects configured slots and recovers the original slot 
     { env: { ...process.env, RELAY_CONSUMER_CONFIG: config, RELAY_EXECUTION_SLOT: 'primary' } });
 });
 
-test('a duplicate controller never persists failure or completes the active owner reservation', async t => {
+test('a duplicate controller records only independent rejection evidence and never completes the active reservation', async t => {
   const f = await fixture(t);
   const operations = [];
   const event = { repository: { full_name: CONSUMER.repository }, sender: { login: CONSUMER.owner },
@@ -272,7 +272,8 @@ test('a duplicate controller never persists failure or completes the active owne
     createWriter: () => ({ invoke: async request => { operations.push(request.operation); return { envelope: f.envelope }; } }),
     createDispatcher: () => ({ dispatch: () => assert.fail('duplicate worker started') }),
     createJournal: () => ({ withLock: async () => { throw Object.assign(new Error('busy'), { code: 'ATTEMPT_CONTROLLER_BUSY' }); } }),
-    persistFailure: () => assert.fail('duplicate modified diagnostics')
+    persistFailure: () => assert.fail('duplicate modified active-attempt diagnostics'),
+    persistRoutingFailure: async value => { assert.match(value.executionId, /^routing-99-/); assert.notEqual(value.executionId, f.envelope.attemptId); return {}; }
   }), error => error.code === 'ATTEMPT_CONTROLLER_BUSY');
   assert.deepEqual(operations, ['admit']);
 });

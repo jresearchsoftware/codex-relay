@@ -27,11 +27,11 @@ test('categorical rejection survives the real helper serialization and routing b
     createDispatcher: () => ({ dispatch: () => assert.fail('worker must not start') }),
     createJournal: () => ({ put: () => assert.fail('journal must not be written') }),
     prepare: () => assert.fail('checkout must not be prepared'),
-    persistFailure: () => assert.fail('unbound rejection must not publish a diagnostic capsule')
+    persistFailure: async value => { assert.match(value.executionId, /^routing-/); assert.equal(value.error.details.childState, 'not_started'); return {}; }
   });
-  assert.equal(await reportRoutingResult(run, { write: v => { output += v; }, writeError: v => { annotation += v; } }), 0);
+  assert.equal(await reportRoutingResult(run, { write: v => { output += v; }, writeError: v => { annotation += v; } }), 1);
   assert.deepEqual(operations, ['admit']);
-  assert.deepEqual(JSON.parse(output), { status: 'BLOCKED', code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status' });
+  assert.deepEqual(JSON.parse(output), { status: 'BLOCKED', code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status', phase: 'pre-worker-admission', worker: 'not_started', runId: 99 });
   assert.match(annotation, /OWNER_RUN_NOT_ADMITTED \(status\)/);
   assert.match(annotation, /no worker started and no target-bound Outcome was authorized/);
   assert.doesNotMatch(output + annotation, /private|Reconcile the terminal Outcome/);

@@ -20,7 +20,11 @@ export async function transitionPr({ api, store, key, record, readPr, head, draf
   if (pr.draft !== draft) {
     let mutationError;
     try { await api[draft ? 'draft' : 'ready'](pr.node_id); } catch (error) { mutationError = error; }
-    pr = await readPr();
+    try { pr = await readPr(); } catch (error) {
+      if (mutationError) error.cause ??= mutationError;
+      throw error;
+    }
+    if (mutationError) await api.recordFailure?.({ error: mutationError, operation: draft ? 'draft-reconciled' : 'ready-reconciled', phase: 'writer-publication', runId: record.envelope?.runId });
     if (pr.head.sha !== head || pr.number !== intent.number) fail('PR_HEAD_OBSERVATION_STALE');
     if (pr.draft !== draft) {
       if (mutationError) throw mutationError;
