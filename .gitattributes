@@ -1,3 +1,5 @@
 * text=auto eol=lf
 # Preserve the pinned generator's blank EOF line without weakening other whitespace checks.
 vibevm/vibespecs/boot/INDEX.md whitespace=-blank-at-eof
+# Preserve timestamped blank lines in the exact original CI evidence extracts.
+docs/qualification/task-244-step-3-ci-*.txt whitespace=-blank-at-eol

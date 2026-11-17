@@ -1,0 +1,571 @@
+2026-11-17T13:55:46.3283707Z ##[group]Run cargo test --manifest-path reviewer/Cargo.toml --locked
+2026-11-17T13:55:46.3284126Z [36;1mcargo test --manifest-path reviewer/Cargo.toml --locked[0m
+2026-11-17T13:55:46.3303138Z shell: /usr/bin/bash -e {0}
+2026-11-17T13:55:46.3303358Z env:
+2026-11-17T13:55:46.3303686Z   RUSTUP_TOOLCHAIN: 1.90.0
+2026-11-17T13:55:46.3303942Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-11-17T13:55:46.3304291Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+2026-11-17T13:55:46.3304638Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-11-17T13:55:46.3304950Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-11-17T13:55:46.3305262Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+2026-11-17T13:55:46.3305569Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+2026-11-17T13:55:46.3305838Z ##[endgroup]
+2026-11-17T13:55:46.3682510Z     Updating crates.io index
+2026-11-17T13:55:46.8509888Z  Downloading crates ...
+2026-11-17T13:55:47.0759407Z   Downloaded asn1-rs-impl v0.2.0
+2026-11-17T13:55:47.0816926Z   Downloaded anstyle v1.0.14
+2026-11-17T13:55:47.0834450Z   Downloaded anstream v1.0.0
+2026-11-17T13:55:47.0857236Z   Downloaded ahash v0.8.12
+2026-11-17T13:55:47.0881520Z   Downloaded http-body v1.1.0
+2026-11-17T13:55:47.0895922Z   Downloaded axum-core v0.4.5
+2026-11-17T13:55:47.0920543Z   Downloaded num-integer v0.1.46
+2026-11-17T13:55:47.0940285Z   Downloaded httpdate v1.0.3
+2026-11-17T13:55:47.0956426Z   Downloaded lru-slab v0.1.2
+2026-11-17T13:55:47.0975861Z   Downloaded pkg-config v0.3.33
+2026-11-17T13:55:47.0999296Z   Downloaded powerfmt v0.2.0
+2026-11-17T13:55:47.1016588Z   Downloaded percent-encoding v2.3.2
+2026-11-17T13:55:47.1030166Z   Downloaded oid-registry v0.7.1
+2026-11-17T13:55:47.1060238Z   Downloaded potential_utf v0.1.5
+2026-11-17T13:55:47.1084010Z   Downloaded proc-macro2 v1.0.107
+2026-11-17T13:55:47.1118559Z   Downloaded pin-project-lite v0.2.17
+2026-11-17T13:55:47.1175368Z   Downloaded rand_pcg v0.10.2
+2026-11-17T13:55:47.1195750Z   Downloaded num-bigint v0.4.8
+2026-11-17T13:55:47.1251346Z   Downloaded serde_derive v1.0.229
+2026-11-17T13:55:47.1283617Z   Downloaded zerofrom-derive v0.1.7
+2026-11-17T13:55:47.1296709Z   Downloaded utf8parse v0.2.2
+2026-11-17T13:55:47.1308612Z   Downloaded tokio-macros v2.7.2
+2026-11-17T13:55:47.1319118Z   Downloaded cc v1.4.0
+2026-11-17T13:55:47.1351102Z   Downloaded utf8_iter v1.0.4
+2026-11-17T13:55:47.1362703Z   Downloaded tinyvec_macros v0.1.1
+2026-11-17T13:55:47.1371093Z   Downloaded subtle v2.6.1
+2026-11-17T13:55:47.1383487Z   Downloaded zerovec-derive v0.11.3
+2026-11-17T13:55:47.1403874Z   Downloaded zmij v1.0.23
+2026-11-17T13:55:47.1429723Z   Downloaded zeroize v1.9.0
+2026-11-17T13:55:47.1443915Z   Downloaded tokio-rustls v0.26.4
+2026-11-17T13:55:47.1473079Z   Downloaded unicode-ident v1.0.24
+2026-11-17T13:55:47.1508864Z   Downloaded sharded-slab v0.1.7
+2026-11-17T13:55:47.1544254Z   Downloaded zerotrie v0.2.4
+2026-11-17T13:55:47.1583540Z   Downloaded rustls-webpki v0.103.13
+2026-11-17T13:55:47.1618061Z   Downloaded typenum v1.20.1
+2026-11-17T13:55:47.1651693Z   Downloaded zerovec v0.11.6
+2026-11-17T13:55:47.1702099Z   Downloaded unicode-normalization v0.1.25
+2026-11-17T13:55:47.1732286Z   Downloaded serde_json v1.0.151
+2026-11-17T13:55:47.1793620Z   Downloaded rusqlite v0.32.1
+2026-11-17T13:55:47.1844051Z   Downloaded webpki-roots v1.0.9
+2026-11-17T13:55:47.1872034Z   Downloaded vcpkg v0.2.15
+2026-11-17T13:55:47.2285350Z   Downloaded tracing-subscriber v0.3.23
+2026-11-17T13:55:47.2349976Z   Downloaded zerocopy v0.8.55
+2026-11-17T13:55:47.2512614Z   Downloaded time v0.3.55
+2026-11-17T13:55:47.2624622Z   Downloaded quinn-proto v0.11.16
+2026-11-17T13:55:47.2677367Z   Downloaded syn v3.0.3
+2026-11-17T13:55:47.2763543Z   Downloaded syn v2.0.119
+2026-11-17T13:55:47.2846170Z   Downloaded regex-syntax v0.8.11
+2026-11-17T13:55:47.2901090Z   Downloaded rustls v0.23.43
+2026-11-17T13:55:47.2991776Z   Downloaded tower-http v0.6.11
+2026-11-17T13:55:47.3062157Z   Downloaded libc v0.2.189
+2026-11-17T13:55:47.3389609Z   Downloaded tracing v0.1.44
+2026-11-17T13:55:47.3518826Z   Downloaded icu_normalizer_data v2.2.0
+2026-11-17T13:55:47.3535693Z   Downloaded tower v0.5.3
+2026-11-17T13:55:47.3613156Z   Downloaded reqwest v0.12.28
+2026-11-17T13:55:47.3655015Z   Downloaded x509-parser v0.16.0
+2026-11-17T13:55:47.3695006Z   Downloaded url v2.5.8
+2026-11-17T13:55:47.3716141Z   Downloaded socket2 v0.6.5
+2026-11-17T13:55:47.3730930Z   Downloaded serde v1.0.229
+2026-11-17T13:55:47.3757619Z   Downloaded regex-automata v0.4.16
+2026-11-17T13:55:47.3867674Z   Downloaded serde_core v1.0.229
+2026-11-17T13:55:47.3888690Z   Downloaded ryu v1.0.23
+2026-11-17T13:55:47.3913225Z   Downloaded rand v0.10.2
+2026-11-17T13:55:47.3942576Z   Downloaded tracing-core v0.1.36
+2026-11-17T13:55:47.3963618Z   Downloaded tinyvec v1.12.0
+2026-11-17T13:55:47.3984103Z   Downloaded time-macros v0.2.32
+2026-11-17T13:55:47.4003171Z   Downloaded smallvec v1.15.2
+2026-11-17T13:55:47.4014773Z   Downloaded rustls-pki-types v1.15.1
+2026-11-17T13:55:47.4035462Z   Downloaded rustc-hash v2.1.3
+2026-11-17T13:55:47.4045805Z   Downloaded quinn v0.11.11
+2026-11-17T13:55:47.4070957Z   Downloaded yoke v0.8.3
+2026-11-17T13:55:47.4088206Z   Downloaded yasna v0.5.2
+2026-11-17T13:55:47.4107773Z   Downloaded tracing-log v0.2.0
+2026-11-17T13:55:47.4120977Z   Downloaded tracing-attributes v0.1.31
+2026-11-17T13:55:47.4146358Z   Downloaded tinystr v0.8.3
+2026-11-17T13:55:47.4165999Z   Downloaded thiserror-impl v2.0.19
+2026-11-17T13:55:47.4180234Z   Downloaded thiserror-impl v1.0.69
+2026-11-17T13:55:47.4193113Z   Downloaded thiserror v2.0.19
+2026-11-17T13:55:47.4247913Z   Downloaded thiserror v1.0.69
+2026-11-17T13:55:47.4307063Z   Downloaded synstructure v0.13.2
+2026-11-17T13:55:47.4318083Z   Downloaded slab v0.4.12
+2026-11-17T13:55:47.4330078Z   Downloaded simple_asn1 v0.6.4
+2026-11-17T13:55:47.4343097Z   Downloaded signal-hook-registry v1.4.8
+2026-11-17T13:55:47.4353490Z   Downloaded shlex v2.0.1
+2026-11-17T13:55:47.4364893Z   Downloaded tokio v1.53.1
+2026-11-17T13:55:47.4710695Z   Downloaded sha2 v0.10.9
+2026-11-17T13:55:47.4730617Z   Downloaded serde_path_to_error v0.1.20
+2026-11-17T13:55:47.4743667Z   Downloaded rustversion v1.0.23
+2026-11-17T13:55:47.4765861Z   Downloaded writeable v0.6.3
+2026-11-17T13:55:47.4781885Z   Downloaded rcgen v0.13.2
+2026-11-17T13:55:47.4804374Z   Downloaded rusticata-macros v4.1.0
+2026-11-17T13:55:47.4816395Z   Downloaded base64 v0.22.1
+2026-11-17T13:55:47.4845955Z   Downloaded strsim v0.11.1
+2026-11-17T13:55:47.4856592Z   Downloaded bytes v1.12.1
+2026-11-17T13:55:47.4884387Z   Downloaded tower-layer v0.3.3
+2026-11-17T13:55:47.4892302Z   Downloaded time-core v0.1.9
+2026-11-17T13:55:47.4901450Z   Downloaded sync_wrapper v1.0.2
+2026-11-17T13:55:47.4908239Z   Downloaded stable_deref_trait v1.2.1
+2026-11-17T13:55:47.4915455Z   Downloaded zerofrom v0.1.8
+2026-11-17T13:55:47.4923541Z   Downloaded yoke-derive v0.8.2
+2026-11-17T13:55:47.4932868Z   Downloaded want v0.3.1
+2026-11-17T13:55:47.4940333Z   Downloaded version_check v0.9.5
+2026-11-17T13:55:47.4950184Z   Downloaded ring v0.17.14
+2026-11-17T13:55:47.5276058Z   Downloaded untrusted v0.9.0
+2026-11-17T13:55:47.5288342Z   Downloaded try-lock v0.2.5
+2026-11-17T13:55:47.5295648Z   Downloaded tower-service v0.3.3
+2026-11-17T13:55:47.5302165Z   Downloaded thread_local v1.1.10
+2026-11-17T13:55:47.5312593Z   Downloaded serde_urlencoded v0.7.1
+2026-11-17T13:55:47.5325532Z   Downloaded minijinja v2.24.0
+2026-11-17T13:55:47.5369367Z   Downloaded idna v1.1.0
+2026-11-17T13:55:47.5398217Z   Downloaded hashbrown v0.14.5
+2026-11-17T13:55:47.5435606Z   Downloaded clap_builder v4.6.5
+2026-11-17T13:55:47.5485240Z   Downloaded rand_core v0.10.1
+2026-11-17T13:55:47.5498378Z   Downloaded hyper-util v0.1.20
+2026-11-17T13:55:47.5545708Z   Downloaded hyper v1.11.0
+2026-11-17T13:55:47.5597766Z   Downloaded http v1.5.0
+2026-11-17T13:55:47.5626611Z   Downloaded futures-util v0.3.33
+2026-11-17T13:55:47.5728815Z   Downloaded clap v4.6.5
+2026-11-17T13:55:47.5802710Z   Downloaded aho-corasick v1.1.4
+2026-11-17T13:55:47.5842754Z   Downloaded nom v7.1.3
+2026-11-17T13:55:47.5882945Z   Downloaded mio v1.2.2
+2026-11-17T13:55:47.5930044Z   Downloaded memchr v2.8.3
+2026-11-17T13:55:47.5973095Z   Downloaded icu_properties_data v2.2.0
+2026-11-17T13:55:47.6056499Z   Downloaded icu_normalizer v2.2.0
+2026-11-17T13:55:47.6085662Z   Downloaded der-parser v9.0.0
+2026-11-17T13:55:47.6112056Z   Downloaded clap_derive v4.6.4
+2026-11-17T13:55:47.6129108Z   Downloaded quote v1.0.47
+2026-11-17T13:55:47.6150363Z   Downloaded quinn-udp v0.5.15
+2026-11-17T13:55:47.6164510Z   Downloaded minimal-lexical v0.2.1
+2026-11-17T13:55:47.6199871Z   Downloaded icu_properties v2.2.0
+2026-11-17T13:55:47.6218154Z   Downloaded chacha20 v0.10.1
+2026-11-17T13:55:47.6236661Z   Downloaded bitflags v2.13.1
+2026-11-17T13:55:47.6270744Z   Downloaded litemap v0.8.2
+2026-11-17T13:55:47.6288602Z   Downloaded jsonwebtoken v9.3.1
+2026-11-17T13:55:47.6320619Z   Downloaded icu_provider v2.2.0
+2026-11-17T13:55:47.6340663Z   Downloaded icu_collections v2.2.0
+2026-11-17T13:55:47.6390161Z   Downloaded displaydoc v0.2.7
+2026-11-17T13:55:47.6405984Z   Downloaded deranged v0.5.8
+2026-11-17T13:55:47.6417573Z   Downloaded pem v3.0.6
+2026-11-17T13:55:47.6428376Z   Downloaded once_cell v1.21.4
+2026-11-17T13:55:47.6449408Z   Downloaded nu-ansi-term v0.50.3
+2026-11-17T13:55:47.6467929Z   Downloaded icu_locale_core v2.2.0
+2026-11-17T13:55:47.6520067Z   Downloaded futures-task v0.3.33
+2026-11-17T13:55:47.6529327Z   Downloaded find-msvc-tools v0.1.9
+2026-11-17T13:55:47.6541916Z   Downloaded fallible-iterator v0.3.0
+2026-11-17T13:55:47.6551813Z   Downloaded data-encoding v2.11.1
+2026-11-17T13:55:47.6560142Z   Downloaded cpufeatures v0.2.17
+2026-11-17T13:55:47.6571155Z   Downloaded colorchoice v1.0.5
+2026-11-17T13:55:47.6578814Z   Downloaded cfg_aliases v0.2.2
+2026-11-17T13:55:47.6586643Z   Downloaded cfg-if v1.0.4
+2026-11-17T13:55:47.6597318Z   Downloaded asn1-rs v0.6.2
+2026-11-17T13:55:47.6648235Z   Downloaded mime v0.3.17
+2026-11-17T13:55:47.6658605Z   Downloaded matchit v0.7.3
+2026-11-17T13:55:47.6673891Z   Downloaded matchers v0.2.0
+2026-11-17T13:55:47.6682481Z   Downloaded log v0.4.33
+2026-11-17T13:55:47.6701763Z   Downloaded is_terminal_polyfill v1.70.2
+2026-11-17T13:55:47.6709403Z   Downloaded ipnet v2.12.1
+2026-11-17T13:55:47.6723081Z   Downloaded hyper-rustls v0.27.9
+2026-11-17T13:55:47.6735048Z   Downloaded getrandom v0.2.17
+2026-11-17T13:55:47.6757828Z   Downloaded generic-array v0.14.7
+2026-11-17T13:55:47.6768784Z   Downloaded futures-core v0.3.33
+2026-11-17T13:55:47.6779709Z   Downloaded fallible-streaming-iterator v0.1.9
+2026-11-17T13:55:47.6786732Z   Downloaded errno v0.3.14
+2026-11-17T13:55:47.6798742Z   Downloaded digest v0.10.7
+2026-11-17T13:55:47.6812830Z   Downloaded clap_lex v1.1.0
+2026-11-17T13:55:47.6821751Z   Downloaded lazy_static v1.5.0
+2026-11-17T13:55:47.6835534Z   Downloaded itoa v1.0.18
+2026-11-17T13:55:47.6846720Z   Downloaded block-buffer v0.10.4
+2026-11-17T13:55:47.6855117Z   Downloaded axum v0.7.9
+2026-11-17T13:55:47.6912780Z   Downloaded num-conv v0.2.2
+2026-11-17T13:55:47.6919426Z   Downloaded idna_adapter v1.2.2
+2026-11-17T13:55:47.6926521Z   Downloaded getrandom v0.4.3
+2026-11-17T13:55:47.6955370Z   Downloaded futures-channel v0.3.33
+2026-11-17T13:55:47.6970064Z   Downloaded form_urlencoded v1.2.2
+2026-11-17T13:55:47.6976386Z   Downloaded crypto-common v0.1.7
+2026-11-17T13:55:47.6983893Z   Downloaded cpufeatures v0.3.0
+2026-11-17T13:55:47.6995059Z   Downloaded num-traits v0.2.19
+2026-11-17T13:55:47.7015055Z   Downloaded memo-map v0.3.3
+2026-11-17T13:55:47.7024419Z   Downloaded httparse v1.10.1
+2026-11-17T13:55:47.7043450Z   Downloaded http-body-util v0.1.4
+2026-11-17T13:55:47.7058593Z   Downloaded hashlink v0.9.1
+2026-11-17T13:55:47.7072310Z   Downloaded async-trait v0.1.91
+2026-11-17T13:55:47.7100306Z   Downloaded anstyle-parse v1.0.0
+2026-11-17T13:55:47.7112758Z   Downloaded heck v0.5.0
+2026-11-17T13:55:47.7122571Z   Downloaded autocfg v1.5.1
+2026-11-17T13:55:47.7136513Z   Downloaded anstyle-query v1.1.5
+2026-11-17T13:55:47.7145655Z   Downloaded atomic-waker v1.1.2
+2026-11-17T13:55:47.7154893Z   Downloaded asn1-rs-derive v0.5.1
+2026-11-17T13:55:47.7207009Z   Downloaded libsqlite3-sys v0.30.1
+2026-11-17T13:55:47.8520641Z    Compiling proc-macro2 v1.0.107
+2026-11-17T13:55:47.8521061Z    Compiling quote v1.0.47
+2026-11-17T13:55:47.8521416Z    Compiling unicode-ident v1.0.24
+2026-11-17T13:55:47.8582235Z    Compiling libc v0.2.189
+2026-11-17T13:55:47.9209615Z    Compiling find-msvc-tools v0.1.9
+2026-11-17T13:55:48.0187511Z    Compiling shlex v2.0.1
+2026-11-17T13:55:48.0823349Z    Compiling once_cell v1.21.4
+2026-11-17T13:55:48.1290541Z    Compiling cfg-if v1.0.4
+2026-11-17T13:55:48.1550219Z    Compiling cc v1.4.0
+2026-11-17T13:55:48.2120432Z    Compiling stable_deref_trait v1.2.1
+2026-11-17T13:55:48.2510425Z    Compiling pin-project-lite v0.2.17
+2026-11-17T13:55:48.2900255Z    Compiling itoa v1.0.18
+2026-11-17T13:55:48.4010222Z    Compiling bytes v1.12.1
+2026-11-17T13:55:48.8140332Z    Compiling syn v3.0.3
+2026-11-17T13:55:48.9990138Z    Compiling syn v2.0.119
+2026-11-17T13:55:49.0710237Z    Compiling version_check v0.9.5
+2026-11-17T13:55:49.2870495Z    Compiling futures-core v0.3.33
+2026-11-17T13:55:49.3745813Z    Compiling smallvec v1.15.2
+2026-11-17T13:55:49.3870378Z    Compiling ring v0.17.14
+2026-11-17T13:55:49.5100330Z    Compiling autocfg v1.5.1
+2026-11-17T13:55:49.7820412Z    Compiling num-traits v0.2.19
+2026-11-17T13:55:49.8720472Z    Compiling errno v0.3.14
+2026-11-17T13:55:49.9625800Z    Compiling tracing-core v0.1.36
+2026-11-17T13:55:50.5053104Z    Compiling num-conv v0.2.2
+2026-11-17T13:55:50.6088923Z    Compiling log v0.4.33
+2026-11-17T13:55:50.7541173Z    Compiling memchr v2.8.3
+2026-11-17T13:55:51.4230387Z    Compiling time-core v0.1.9
+2026-11-17T13:55:51.5662420Z    Compiling serde_core v1.0.229
+2026-11-17T13:55:51.7134021Z    Compiling time-macros v0.2.32
+2026-11-17T13:55:52.3910328Z    Compiling synstructure v0.13.2
+2026-11-17T13:55:52.4530377Z    Compiling displaydoc v0.2.7
+2026-11-17T13:55:52.7760531Z    Compiling tokio-macros v2.7.2
+2026-11-17T13:55:52.8600305Z    Compiling signal-hook-registry v1.4.8
+2026-11-17T13:55:53.0731837Z    Compiling socket2 v0.6.5
+2026-11-17T13:55:53.0831645Z    Compiling getrandom v0.2.17
+2026-11-17T13:55:53.2010297Z    Compiling mio v1.2.2
+2026-11-17T13:55:53.2700370Z    Compiling http v1.5.0
+2026-11-17T13:55:53.5490589Z    Compiling untrusted v0.9.0
+2026-11-17T13:55:53.6073202Z    Compiling writeable v0.6.3
+2026-11-17T13:55:53.6400255Z    Compiling litemap v0.8.2
+2026-11-17T13:55:53.7482493Z    Compiling zerofrom-derive v0.1.7
+2026-11-17T13:55:53.7540134Z    Compiling yoke-derive v0.8.2
+2026-11-17T13:55:53.7640204Z    Compiling zerovec-derive v0.11.3
+2026-11-17T13:55:54.3010370Z    Compiling tracing-attributes v0.1.31
+2026-11-17T13:55:54.6437497Z    Compiling powerfmt v0.2.0
+2026-11-17T13:55:54.7027579Z    Compiling deranged v0.5.8
+2026-11-17T13:55:54.7750215Z    Compiling zerofrom v0.1.8
+2026-11-17T13:55:54.7880821Z    Compiling http-body v1.1.0
+2026-11-17T13:55:54.8488600Z    Compiling yoke v0.8.3
+2026-11-17T13:55:54.9830401Z    Compiling zerovec v0.11.6
+2026-11-17T13:55:55.3710774Z    Compiling tracing v0.1.44
+2026-11-17T13:55:55.5570757Z    Compiling tinystr v0.8.3
+2026-11-17T13:55:55.5770580Z    Compiling potential_utf v0.1.5
+2026-11-17T13:55:55.6700167Z    Compiling zerotrie v0.2.4
+2026-11-17T13:55:55.7020763Z    Compiling icu_locale_core v2.2.0
+2026-11-17T13:55:55.8220629Z    Compiling time v0.3.55
+2026-11-17T13:55:55.9540400Z    Compiling tokio v1.53.1
+2026-11-17T13:55:57.5592794Z    Compiling futures-task v0.3.33
+2026-11-17T13:55:57.6580744Z    Compiling zeroize v1.9.0
+2026-11-17T13:55:57.7900358Z    Compiling slab v0.4.12
+2026-11-17T13:55:57.8960422Z    Compiling icu_properties_data v2.2.0
+2026-11-17T13:55:57.9901004Z    Compiling utf8_iter v1.0.4
+2026-11-17T13:55:58.0798763Z    Compiling icu_normalizer_data v2.2.0
+2026-11-17T13:55:58.1806226Z    Compiling percent-encoding v2.3.2
+2026-11-17T13:55:58.3261680Z    Compiling icu_collections v2.2.0
+2026-11-17T13:55:58.3420482Z    Compiling futures-util v0.3.33
+2026-11-17T13:55:58.7970569Z    Compiling rustls-pki-types v1.15.1
+2026-11-17T13:55:59.2272912Z    Compiling icu_provider v2.2.0
+2026-11-17T13:55:59.3380556Z    Compiling tower-service v0.3.3
+2026-11-17T13:55:59.3775043Z    Compiling base64 v0.22.1
+2026-11-17T13:55:59.5220297Z    Compiling httparse v1.10.1
+2026-11-17T13:55:59.6430796Z    Compiling serde v1.0.229
+2026-11-17T13:55:59.8210312Z    Compiling serde_derive v1.0.229
+2026-11-17T13:55:59.8560343Z    Compiling generic-array v0.14.7
+2026-11-17T13:55:59.9475983Z    Compiling thiserror v1.0.69
+2026-11-17T13:56:00.0340268Z    Compiling zmij v1.0.23
+2026-11-17T13:56:00.1070172Z    Compiling try-lock v0.2.5
+2026-11-17T13:56:00.1527772Z    Compiling zerocopy v0.8.55
+2026-11-17T13:56:00.1780178Z    Compiling minimal-lexical v0.2.1
+2026-11-17T13:56:00.3640238Z    Compiling nom v7.1.3
+2026-11-17T13:56:00.4160730Z    Compiling want v0.3.1
+2026-11-17T13:56:00.5740086Z    Compiling icu_normalizer v2.2.0
+2026-11-17T13:56:01.1270481Z    Compiling icu_properties v2.2.0
+2026-11-17T13:56:01.9190401Z    Compiling form_urlencoded v1.2.2
+2026-11-17T13:56:02.0344358Z    Compiling num-integer v0.1.46
+2026-11-17T13:56:02.0419450Z    Compiling thiserror-impl v1.0.69
+2026-11-17T13:56:02.3270172Z    Compiling futures-channel v0.3.33
+2026-11-17T13:56:02.3991415Z    Compiling sync_wrapper v1.0.2
+2026-11-17T13:56:02.4470714Z    Compiling ahash v0.8.12
+2026-11-17T13:56:02.4772291Z    Compiling atomic-waker v1.1.2
+2026-11-17T13:56:02.5330839Z    Compiling rustls v0.23.43
+2026-11-17T13:56:02.6141039Z    Compiling httpdate v1.0.3
+2026-11-17T13:56:02.6222791Z    Compiling serde_json v1.0.151
+2026-11-17T13:56:02.7180131Z    Compiling tower-layer v0.3.3
+2026-11-17T13:56:02.7780319Z    Compiling typenum v1.20.1
+2026-11-17T13:56:02.8376227Z    Compiling hyper v1.11.0
+2026-11-17T13:56:03.0580190Z    Compiling num-bigint v0.4.8
+2026-11-17T13:56:03.0740871Z    Compiling idna_adapter v1.2.2
+2026-11-17T13:56:03.1440505Z    Compiling rusticata-macros v4.1.0
+2026-11-17T13:56:03.9650343Z    Compiling rustls-webpki v0.103.13
+2026-11-17T13:56:04.2720168Z    Compiling asn1-rs-impl v0.2.0
+2026-11-17T13:56:04.4870402Z    Compiling asn1-rs-derive v0.5.1
+2026-11-17T13:56:04.5840306Z    Compiling thiserror v2.0.19
+2026-11-17T13:56:04.7736392Z    Compiling vcpkg v0.2.15
+2026-11-17T13:56:04.9560735Z    Compiling utf8parse v0.2.2
+2026-11-17T13:56:04.9830380Z    Compiling pkg-config v0.3.33
+2026-11-17T13:56:05.0037997Z    Compiling ipnet v2.12.1
+2026-11-17T13:56:05.3221672Z    Compiling rustversion v1.0.23
+2026-11-17T13:56:05.3800876Z    Compiling subtle v2.6.1
+2026-11-17T13:56:05.4550404Z    Compiling libsqlite3-sys v0.30.1
+2026-11-17T13:56:05.5267264Z    Compiling hyper-util v0.1.20
+2026-11-17T13:56:05.6431063Z    Compiling anstyle-parse v1.0.0
+2026-11-17T13:56:05.7580620Z    Compiling asn1-rs v0.6.2
+2026-11-17T13:56:07.3081128Z    Compiling idna v1.1.0
+2026-11-17T13:56:07.3610911Z    Compiling tower v0.5.3
+2026-11-17T13:56:07.8040326Z    Compiling http-body-util v0.1.4
+2026-11-17T13:56:08.0040451Z    Compiling thiserror-impl v2.0.19
+2026-11-17T13:56:08.0180302Z    Compiling colorchoice v1.0.5
+2026-11-17T13:56:08.0760631Z    Compiling ryu v1.0.23
+2026-11-17T13:56:08.2090879Z    Compiling lazy_static v1.5.0
+2026-11-17T13:56:08.2500424Z    Compiling regex-syntax v0.8.11
+2026-11-17T13:56:08.5590263Z    Compiling oid-registry v0.7.1
+2026-11-17T13:56:08.7865022Z    Compiling anstyle v1.0.14
+2026-11-17T13:56:08.9351462Z    Compiling anstyle-query v1.1.5
+2026-11-17T13:56:08.9830300Z    Compiling bitflags v2.13.1
+2026-11-17T13:56:09.0210261Z    Compiling is_terminal_polyfill v1.70.2
+2026-11-17T13:56:09.0590047Z    Compiling anstream v1.0.0
+2026-11-17T13:56:09.1770366Z    Compiling tokio-rustls v0.26.4
+2026-11-17T13:56:09.2910441Z    Compiling regex-automata v0.4.16
+2026-11-17T13:56:09.3580320Z    Compiling serde_urlencoded v0.7.1
+2026-11-17T13:56:09.5300283Z    Compiling url v2.5.8
+2026-11-17T13:56:10.2900390Z    Compiling hashbrown v0.14.5
+2026-11-17T13:56:11.1300388Z    Compiling crypto-common v0.1.7
+2026-11-17T13:56:11.1858894Z    Compiling block-buffer v0.10.4
+2026-11-17T13:56:11.2600205Z    Compiling pem v3.0.6
+2026-11-17T13:56:11.5030390Z    Compiling webpki-roots v1.0.9
+2026-11-17T13:56:11.5460314Z    Compiling async-trait v0.1.91
+2026-11-17T13:56:11.5700213Z    Compiling tinyvec_macros v0.1.1
+2026-11-17T13:56:11.5991497Z    Compiling strsim v0.11.1
+2026-11-17T13:56:11.9140280Z    Compiling heck v0.5.0
+2026-11-17T13:56:12.0550094Z    Compiling clap_lex v1.1.0
+2026-11-17T13:56:12.2008614Z    Compiling mime v0.3.17
+2026-11-17T13:56:12.2098332Z    Compiling clap_builder v4.6.5
+2026-11-17T13:56:12.3860514Z    Compiling axum-core v0.4.5
+2026-11-17T13:56:12.5823425Z    Compiling clap_derive v4.6.4
+2026-11-17T13:56:14.0790763Z    Compiling tinyvec v1.12.0
+2026-11-17T13:56:14.1150917Z    Compiling hyper-rustls v0.27.9
+2026-11-17T13:56:14.3210291Z    Compiling digest v0.10.7
+2026-11-17T13:56:14.3605577Z    Compiling matchers v0.2.0
+2026-11-17T13:56:14.4280376Z    Compiling hashlink v0.9.1
+2026-11-17T13:56:14.4427401Z    Compiling tower-http v0.6.11
+2026-11-17T13:56:14.7850169Z    Compiling simple_asn1 v0.6.4
+2026-11-17T13:56:14.9580370Z    Compiling sharded-slab v0.1.7
+2026-11-17T13:56:15.4304500Z    Compiling der-parser v9.0.0
+2026-11-17T13:56:15.6950979Z    Compiling serde_path_to_error v0.1.20
+2026-11-17T13:56:15.8650189Z    Compiling yasna v0.5.2
+2026-11-17T13:56:15.9850316Z    Compiling tracing-log v0.2.0
+2026-11-17T13:56:15.9940086Z    Compiling thread_local v1.1.10
+2026-11-17T13:56:16.1368337Z    Compiling cpufeatures v0.2.17
+2026-11-17T13:56:16.1463839Z    Compiling fallible-streaming-iterator v0.1.9
+2026-11-17T13:56:16.1732044Z    Compiling memo-map v0.3.3
+2026-11-17T13:56:16.2230122Z    Compiling matchit v0.7.3
+2026-11-17T13:56:16.2472955Z    Compiling fallible-iterator v0.3.0
+2026-11-17T13:56:16.4670288Z    Compiling data-encoding v2.11.1
+2026-11-17T13:56:16.5280101Z    Compiling nu-ansi-term v0.50.3
+2026-11-17T13:56:16.6357807Z    Compiling axum v0.7.9
+2026-11-17T13:56:16.8350296Z    Compiling x509-parser v0.16.0
+2026-11-17T13:56:17.4030110Z    Compiling tracing-subscriber v0.3.23
+2026-11-17T13:56:18.9297557Z    Compiling rusqlite v0.32.1
+2026-11-17T13:56:19.0240373Z    Compiling rcgen v0.13.2
+2026-11-17T13:56:19.6191717Z    Compiling minijinja v2.24.0
+2026-11-17T13:56:20.1270214Z    Compiling sha2 v0.10.9
+2026-11-17T13:56:20.2900221Z    Compiling jsonwebtoken v9.3.1
+2026-11-17T13:56:20.4422575Z    Compiling reqwest v0.12.28
+2026-11-17T13:56:20.6770934Z    Compiling unicode-normalization v0.1.25
+2026-11-17T13:56:21.0670310Z    Compiling clap v4.6.5
+2026-11-17T13:56:23.9541856Z    Compiling reviewer-mcp-http v0.1.0 (/home/runner/work/codex-relay/codex-relay/reviewer)
+2026-11-17T13:56:34.8296664Z     Finished `test` profile [unoptimized + debuginfo] target(s) in 48.48s
+2026-11-17T13:56:34.8863669Z      Running unittests src/main.rs (reviewer/target/debug/deps/reviewer_mcp_http-7a4c4d436dedda18)
+2026-11-17T13:56:34.8903613Z 
+2026-11-17T13:56:34.8903848Z running 184 tests
+2026-11-17T13:56:34.8917718Z test diagnostics::tests::preserves_native_cause_and_redacts_credentials_with_bounded_unicode ... ok
+2026-11-17T13:56:34.8925918Z test github::mutation_tests::a_lost_transport_response_cannot_release_the_send_reservation ... ok
+2026-11-17T13:56:34.8938066Z test github::mutation_tests::definite_rejection_classification_does_not_wait_for_diagnostic_body ... ok
+2026-11-17T13:56:34.8945782Z test github::mutation_tests::malformed_response_retains_parser_cause_without_releasing_uncertain_send ... ok
+2026-11-17T13:56:34.8959928Z test github::mutation_tests::prepared_mutation_authenticates_without_sending_an_external_effect ... ok
+2026-11-17T13:56:34.8990504Z test github::mutation_tests::rejected_native_cause_is_journalled_bounded_and_redacted_without_public_disclosure ... ok
+2026-11-17T13:56:34.9037765Z test github::mutation_tests::token_and_request_build_failures_are_safe_before_send ... ok
+2026-11-17T13:56:34.9047876Z test loaded_inputs::tests::frozen_evidence_uses_consumed_config_and_ca_even_after_disk_policy_changes ... ok
+2026-11-17T13:56:34.9055475Z test loaded_inputs::tests::missing_optional_input_is_an_error_without_a_partial_proof_or_panic ... ok
+2026-11-17T13:56:34.9061908Z test loaded_inputs::tests::only_source_provenance_is_excluded_from_loaded_configuration ... ok
+2026-11-17T13:56:34.9072348Z test loaded_inputs::tests::private_socket_authenticates_kernel_peer_and_returns_only_frozen_proof ... ok
+2026-11-17T13:56:34.9114851Z test manual_outcome::tests::bounded_submission_rejects_transport_and_identity_overrides ... ok
+2026-11-17T13:56:34.9164564Z test github::mutation_tests::mutation_rejections_and_ambiguous_responses_preserve_bounded_diagnostics ... ok
+2026-11-17T13:56:34.9203498Z test github::mutation_tests::review_markers_require_exactly_one_result_and_collection_completion ... ok
+2026-11-17T13:56:34.9205020Z test manual_outcome::tests::only_exact_public_writer_receipt_is_exposed ... ok
+2026-11-17T13:56:34.9208863Z test manual_outcome::tests::public_receipt_status_is_publication_only ... ok
+2026-11-17T13:56:34.9221162Z test mtls_identity::tests::accepts_exact_openai_san_and_client_auth ... ok
+2026-11-17T13:56:34.9240509Z test mtls_identity::tests::rejects_a_valid_certificate_followed_by_another_pem_or_trailing_bytes ... ok
+2026-11-17T13:56:34.9242021Z test mtls_identity::tests::rejects_certificate_header_without_proxy_attestation ... ok
+2026-11-17T13:56:34.9268888Z test mtls_identity::tests::rejects_missing_malformed_wrong_or_ambiguous_identity ... ok
+2026-11-17T13:56:34.9294301Z test github::mutation_tests::complete_check_readback_accepts_only_one_bounded_identical_late_duplicate ... ok
+2026-11-17T13:56:34.9295396Z test mtls_identity::tests::requires_the_owner_provisioned_ca_signature_for_proxy_attestation ... ok
+2026-11-17T13:56:34.9321897Z test publication::cancellation_tests::timeout_before_decisive_send_refunds_reservation ... ok
+2026-11-17T13:56:34.9322956Z test publication::cancellation_tests::timeout_after_decisive_send_preserves_unknown_effect_guard ... ok
+2026-11-17T13:56:34.9349762Z test publication_rendering::tests::shared_node_rust_rendering_fixtures_and_canonical_blocks_match ... ok
+2026-11-17T13:56:34.9351876Z test step_sync::autonomy_tests::task_relationship_vocabulary_preserves_same_repository_and_ignores_informational_links ... ok
+2026-11-17T13:56:34.9353455Z test step_sync::autonomy_tests::unrelated_step_named_labels_are_not_execution_metadata ... ok
+2026-11-17T13:56:34.9579902Z test publication_rendering::tests::expanded_safety_escaping_opens_complete_json_with_no_material_truncation ... ok
+2026-11-17T13:56:34.9689465Z test manual_outcome::tests::large_complete_v3_and_v4_claims_fit_without_truncation ... ok
+2026-11-17T13:56:34.9691877Z test store::tests::fresh_schema_has_only_publication_intent_and_original_bindings ... ok
+2026-11-17T13:56:34.9715668Z test store::tests::check_send_budget_is_durable_and_concurrent_rejections_refund_only_their_send ... ok
+2026-11-17T13:56:34.9726034Z test store::tests::concurrent_process_connections_reserve_one_decisive_publication ... ok
+2026-11-17T13:56:34.9728644Z test strict_json::tests::rejects_duplicate_keys_at_every_depth_including_escaped_keys ... ok
+2026-11-17T13:56:34.9729865Z test task_authority::unicode_length_tests::current_authority_lengths_follow_schema_unicode_units_with_separate_byte_bounds ... ok
+2026-11-17T13:56:34.9798049Z test store::tests::original_body_and_bindings_survive_safe_retry_and_restart ... ok
+2026-11-17T13:56:34.9809514Z test store::tests::historical_rows_and_events_are_preserved_without_new_receipt_writes ... ok
+2026-11-17T13:56:34.9827690Z test tests::composed_managed_template_is_accepted_by_the_runtime_contract ... ok
+2026-11-17T13:56:34.9829521Z test tests::connected_payload_rejects_removed_metadata_fields ... ok
+2026-11-17T13:56:35.0157446Z test manual_outcome::tests::helper_stderr_is_retained_on_cancellation_and_stays_out_of_public_error ... ok
+2026-11-17T13:56:35.0159329Z test tests::connected_reviewer_shape_requires_no_unavailable_caller_metadata ... ok
+2026-11-17T13:56:35.0179909Z test tests::current_part_identifier_accepts_alphanumeric_part_7a ... ok
+2026-11-17T13:56:35.0210429Z test tests::draft_closed_merged_stale_and_malformed_targets_are_distinguishable ... ok
+2026-11-17T13:56:35.0227840Z test tests::duplicate_raw_json_and_oversized_transport_fail_before_github ... ok
+2026-11-17T13:56:35.0300041Z test tests::connected_reviewer_shape_does_not_require_caller_approval ... ok
+2026-11-17T13:56:35.0329978Z test tests::check_recovery_rejects_a_check_from_the_wrong_github_app ... ok
+2026-11-17T13:56:35.0824475Z test tests::every_declared_validation_and_safe_profile_round_trips_without_retired_authority ... ok
+2026-11-17T13:56:35.0826125Z test tests::evidence::different_repositories_and_invalid_targets_fail_before_authentication ... ok
+2026-11-17T13:56:35.0970288Z test tests::evidence::denied_hidden_absent_and_malformed_sources_remain_distinct ... ok
+2026-11-17T13:56:35.1210449Z test tests::evidence::folded_typed_outcomes_preserve_exact_head_execution_warning_and_bot_provenance ... ok
+2026-11-17T13:56:35.1360478Z test tests::evidence::late_outcome_after_unrelated_history_remains_reachable_in_bounded_scan ... ok
+2026-11-17T13:56:35.1690774Z test tests::check_publication_failure_and_uncertain_response_recover_without_duplicate_review ... ok
+2026-11-17T13:56:35.2140806Z test tests::evidence::ordinary_annotations_and_legacy_warning_summaries_remain_readable ... ok
+2026-11-17T13:56:35.2620708Z test tests::evidence::every_warning_field_is_sanitized_and_genuine_loss_remains_unknown ... ok
+2026-11-17T13:56:35.2680606Z test tests::evidence::pr_writer_outcomes_bind_runtime_runs_and_collection_failures_preclude_absence ... ok
+2026-11-17T13:56:35.2850745Z test tests::evidence::protected_content_is_redacted_and_multibyte_text_is_bounded ... ok
+2026-11-17T13:56:35.2920345Z test tests::evidence::credentials_are_checked_before_truncation_and_after_control_removal ... ok
+2026-11-17T13:56:35.3250707Z test tests::evidence::response_links_cross_repository_heads_and_changed_targets_are_rejected ... ok
+2026-11-17T13:56:35.3629633Z test tests::evidence::routing_execution_runs_preserve_their_base_head_and_exact_outcome_provenance ... ok
+2026-11-17T13:56:35.3990595Z test tests::evidence::supported_completeness_excludes_ui_only_service_annotations ... ok
+2026-11-17T13:56:35.4060432Z test tests::evidence::supported_evidence_is_exact_head_scoped_read_only_and_honest_about_primary_gaps ... ok
+2026-11-17T13:56:35.4180118Z test tests::evidence::task_wording_and_test_service_warning_patterns_remain_complete ... ok
+2026-11-17T13:56:35.4240153Z test tests::evidence::response_pagination_item_and_request_limits_return_partial_evidence ... ok
+2026-11-17T13:56:35.4269776Z test tests::exposes_four_bounded_tools_and_only_accepted_actions ... ok
+2026-11-17T13:56:35.4271092Z test tests::managed_ansible_runtime_config_accepts_the_validated_private_gateway ... ok
+2026-11-17T13:56:35.4285388Z test tests::missing_config_is_rejected_instead_of_using_a_transport_default ... ok
+2026-11-17T13:56:35.4435736Z test tests::multi_repository::config_normalizes_legacy_and_multiple_repositories_and_rejects_ambiguous_forms ... ok
+2026-11-17T13:56:35.5100264Z test tests::multi_repository::every_tool_requires_a_configured_explicit_target_before_github_access ... ok
+2026-11-17T13:56:35.5130029Z test tests::multi_repository::managed_multi_repository_template_is_accepted_by_runtime_contract ... ok
+2026-11-17T13:56:35.5560723Z test tests::http_mcp_security_contract_covers_live_lookup_duplicates_and_disable ... ok
+2026-11-17T13:56:35.5665015Z test tests::evidence::protected_paths_and_unit_contents_are_not_declassified_by_a_safe_reference ... ok
+2026-11-17T13:56:35.6280715Z test tests::new_cr_publication_roundtrips_through_reviewer_step_sync_and_matching_launch ... ok
+2026-11-17T13:56:35.6790446Z test tests::multi_repository::typed_authority_retains_repository_identity_in_the_shared_journal_and_native_readback ... ok
+2026-11-17T13:56:35.6990456Z test tests::operation_identity_binds_all_execution_data_and_normalizes_omitted_defaults ... ok
+2026-11-17T13:56:35.7020415Z test tests::operation_identity_includes_findings_and_route_is_canonical ... ok
+2026-11-17T13:56:35.7049816Z test tests::portability::consumer_policy_has_no_implicit_identity_or_base ... ok
+2026-11-17T13:56:35.7079890Z test tests::portability::declared_validation_names_are_bounded_and_fail_closed ... ok
+2026-11-17T13:56:35.7109913Z test tests::portability::disabled_publication_has_no_github_mutation_for_either_action ... ok
+2026-11-17T13:56:35.7139843Z test tests::portability::plain_reviewer_example_and_publication_mode_are_unambiguous ... ok
+2026-11-17T13:56:35.7930742Z test tests::new_cr_requires_next_current_step_but_same_published_cr_retry_does_not_increment ... ok
+2026-11-17T13:56:35.8060777Z test tests::multi_repository::review_evidence_publication_and_recovery_use_one_service_without_pr_or_step_collisions ... ok
+2026-11-17T13:56:35.8062299Z test tests::rejects_ambiguous_non_normalized_and_control_payloads ... ok
+2026-11-17T13:56:35.8090885Z test tests::producer_bounds_the_aggregate_and_rendered_payload_and_requires_structured_cr ... ok
+2026-11-17T13:56:35.9064811Z test tests::retained_structured_cr_is_published_canonically_and_replayed_once ... ok
+2026-11-17T13:56:35.9480579Z test tests::returned_wrong_review_body_or_state_is_never_reported_as_executable_success ... ok
+2026-11-17T13:56:35.9510208Z test tests::reviewer_bind_contract_accepts_tcp_only_loopback_and_validated_private_gateway ... ok
+2026-11-17T13:56:35.9511596Z test tests::reviewer_runtime_config_binds_the_deployable_service_and_artifact_identity ... ok
+2026-11-17T13:56:35.9539921Z test tests::reviewer_runtime_config_rejects_placeholder_artifact_identity ... ok
+2026-11-17T13:56:35.9850550Z test tests::retained_omitted_execution_fields_publish_resolved_metadata ... ok
+2026-11-17T13:56:36.0050214Z test tests::step_metadata::approve_never_projects_step_metadata ... ok
+2026-11-17T13:56:36.0059945Z test tests::step_metadata::canonical_link_parser_preserves_native_controller_boundaries ... ok
+2026-11-17T13:56:36.0870475Z test tests::shared_invalid_cr_corpus_is_rejected_before_any_github_request ... ok
+2026-11-17T13:56:36.1434863Z test tests::step_metadata::historical_anchor_without_exact_title_only_upgrades_complete_unchanged_projection ... ok
+2026-11-17T13:56:36.1490415Z test tests::evidence::plausible_credentials_and_mixed_protected_content_never_escape_in_warning_text ... ok
+2026-11-17T13:56:36.1650554Z test tests::portability::two_consumer_same_artifact_reviewer_to_writer_qualification ... ok
+2026-11-17T13:56:36.1760501Z test tests::step_metadata::historical_durable_review_requires_explicit_reconciliation_before_anchor_adoption ... ok
+2026-11-17T13:56:36.2350354Z test tests::step_metadata::only_configured_human_owner_issue_can_authorize_metadata_projection ... ok
+2026-11-17T13:56:36.2486052Z test tests::step_metadata::issue_and_title_authority_fail_before_new_review ... ok
+2026-11-17T13:56:36.3440837Z test tests::task_authority::ambiguous_publication_recovers_existing_native_comment_and_never_blind_retries ... ok
+2026-11-17T13:56:36.4202350Z test tests::step_metadata::changed_authority_blocks_partial_recovery_before_another_metadata_write ... ok
+2026-11-17T13:56:36.4772465Z test tests::task_authority::closed_disposable_pr_context_does_not_require_reopening_for_approval ... ok
+2026-11-17T13:56:36.5200852Z test tests::task_authority::current_protocol_refuses_new_legacy_chain_on_unmarked_task_and_preserves_native_approval ... ok
+2026-11-17T13:56:36.5260123Z test tests::task_authority::current_tool_descriptors_require_v4_new_work_and_preserve_older_recovery ... ok
+2026-11-17T13:56:36.5370328Z test tests::step_metadata::partial_metadata_recovery_preserves_native_review_and_step_at_every_stage ... ok
+2026-11-17T13:56:36.5381722Z test tests::task_authority::current_protocol_refuses_fresh_older_execution_authority_without_publication_or_reservation ... ok
+2026-11-17T13:56:36.5950534Z test tests::task_authority::draft_v4_candidate_accepts_substantive_findings_without_approval ... ok
+2026-11-17T13:56:36.5998782Z test tests::task_authority::drift_shape_rejects_invalid_digest_flags_unsorted_or_overlapping_gaps ... ok
+2026-11-17T13:56:36.6011957Z test tests::task_authority::ambiguous_marked_task_linkage_and_postpreview_drift_block_native_approval_before_mutation ... ok
+2026-11-17T13:56:36.6042171Z test tests::task_authority::current_typed_authority_cancellation_refunds_only_before_decisive_http_send ... ok
+2026-11-17T13:56:36.7570493Z test tests::task_authority::current_typed_review_cancellation_refunds_only_before_decisive_http_send ... ok
+2026-11-17T13:56:36.8490807Z test tests::task_authority::historical_authority_reservation_recovers_exact_original_body_across_renderer_upgrade ... ok
+2026-11-17T13:56:36.8520609Z test tests::task_authority::enabled_current_protocol_preserves_exact_legacy_reserved_partial_and_completed_operations ... ok
+2026-11-17T13:56:36.9138225Z test tests::task_authority::fresh_v4_cr_omits_old_compatibility_but_reserved_original_binding_is_preserved ... ok
+2026-11-17T13:56:36.9871654Z test tests::task_authority::fresh_v4_migration_accepts_original_no_compatibility_outcome_despite_historical_v3_request ... ok
+2026-11-17T13:56:37.1020840Z test tests::task_authority::incomplete_task_link_inspection_refuses_governed_approval_and_preserves_generic_multi_links ... ok
+2026-11-17T13:56:37.1456540Z test tests::task_authority::historical_v4_unmarked_cr_without_original_binding_observes_existing_check_but_cannot_send ... ok
+2026-11-17T13:56:37.1538416Z test tests::task_authority::manual_outcome_capability_is_optional_mtls_gated_and_cannot_select_reviewer_publication ... ok
+2026-11-17T13:56:37.1651338Z test tests::task_authority::missing_native_review_remains_uncertain_despite_prior_completion_and_existing_check ... ok
+2026-11-17T13:56:37.2215193Z test tests::task_authority::missing_v4_local_binding_cannot_reinterpret_original_cr_after_decision_drift ... ok
+2026-11-17T13:56:37.4011191Z test tests::task_authority::native_approve_requires_reviewed_current_task_on_material_drift_and_pins_that_acceptance ... ok
+2026-11-17T13:56:37.5532952Z test tests::task_authority::native_approve_continuation_binds_current_writer_result_and_respects_explicit_hold ... ok
+2026-11-17T13:56:37.6188575Z test tests::task_authority::native_v4_result_binding_ignores_incidental_display_drift_and_supports_no_change ... ok
+2026-11-17T13:56:37.7350749Z test tests::task_authority::lost_v3_projection_anchor_never_adopts_partial_step_or_title_state ... ok
+2026-11-17T13:56:37.7780680Z test tests::task_authority::next_direction_requires_selected_current_task_decision_and_bounded_step ... ok
+2026-11-17T13:56:37.8010740Z test tests::task_authority::no_pr_v4_acceptance_uses_native_admission_when_owner_numbering_has_advanced ... ok
+2026-11-17T13:56:37.8347636Z test tests::task_authority::ordinary_unlinked_pr_keeps_preview_and_native_approve_without_task_admission ... ok
+2026-11-17T13:56:37.8601042Z test tests::task_authority::no_pr_task_has_trusted_result_approval_and_idempotent_native_identity ... ok
+2026-11-17T13:56:38.1915644Z test tests::task_authority::pagination::every_native_collection_preserves_order_and_exact_record_capacity ... ok
+2026-11-17T13:56:38.2459564Z test tests::task_authority::pagination::incomplete_invalid_duplicate_and_failed_pages_never_return_a_prefix ... ok
+2026-11-17T13:56:38.3563368Z test tests::task_authority::historical_cr_rows_keep_receipts_and_allow_one_prospective_absent_check_recovery ... ok
+2026-11-17T13:56:38.3600376Z test tests::task_authority::ordinary_review_uses_native_receipts_despite_missing_stale_or_historical_sqlite_receipts ... ok
+2026-11-17T13:56:38.4962653Z test tests::task_authority::pagination::paged_approval_rejects_stale_chain_wrong_actor_and_changed_digest_without_writes ... ok
+2026-11-17T13:56:38.5190546Z test tests::task_authority::original_outcome_accepts_current_amended_task_without_rewriting_execution_binding ... ok
+2026-11-17T13:56:38.7258532Z test tests::task_authority::pagination::reduction_after_a_complete_page_retries_only_the_unread_offset ... ok
+2026-11-17T13:56:38.8170818Z test tests::task_authority::pagination::task84_and_task109_synthetic_histories_exceed_one_response_without_losing_records ... ok
+2026-11-17T13:56:39.0231163Z test tests::task_authority::pr_scoped_decision_can_bind_existing_pr_request_without_promoting_fresh_task_scope ... ok
+2026-11-17T13:56:39.0610637Z test tests::task_authority::reference_digest_and_native_parent_are_rechecked_before_mutation ... ok
+2026-11-17T13:56:39.0990816Z test tests::task_authority::pagination::reduced_page_size_still_accepts_exactly_500_records_with_completion_proof ... ok
+2026-11-17T13:56:39.1050041Z test tests::task_authority::rust_and_node_render_exact_same_typed_record ... ok
+2026-11-17T13:56:39.1080090Z test tests::task_authority::source_pr_acceptance_marker_cannot_be_supplied_in_review_prose ... ok
+2026-11-17T13:56:39.4524617Z test tests::task_authority::source_pr_changed_authority_refuses_stale_preview_and_published_replay ... ok
+2026-11-17T13:56:39.4560313Z test tests::task_authority::retained_v4_outcome_keeps_exact_v3_compatibility_source_and_rejects_its_successor ... ok
+2026-11-17T13:56:39.7016377Z test tests::task_authority::source_pr_current_charter_and_decisions_need_no_step_admission_or_result ... ok
+2026-11-17T13:56:39.7100316Z test tests::task_authority::source_pr_current_v4_ignores_unrelated_historical_request_branch_and_pr ... ok
+2026-11-17T13:56:39.7940648Z test tests::task_authority::source_pr_ignores_forged_writer_identity_without_using_it_as_execution_evidence ... ok
+2026-11-17T13:56:39.9681049Z test tests::task_authority::pagination::task_approval_verifies_late_request_outcome_and_large_history_before_publication ... ok
+2026-11-17T13:56:40.1270814Z test tests::task_authority::source_pr_never_falls_back_for_admission_markers_automatic_requests_or_writer_results ... ok
+2026-11-17T13:56:40.1340470Z test tests::task_authority::source_pr_requires_verified_owner_same_repository_and_exact_head ... ok
+2026-11-17T13:56:40.3040878Z test tests::task_authority::source_pr_owner_authored_retained_writer_result_keeps_original_exact_result_path ... ok
+2026-11-17T13:56:40.3761193Z test tests::task_authority::source_pr_retained_manual_branch_binding_supports_original_null_existing_pr ... ok
+2026-11-17T13:56:40.4131373Z test tests::task_authority::source_pr_retained_direct_manual_result_approves_and_replays_without_inventing_execution ... ok
+2026-11-17T13:56:40.7145100Z test tests::task_authority::trusted_decisions_are_normalized_and_untrusted_or_superseded_sources_fail ... ok
+2026-11-17T13:56:40.7710568Z test tests::task_authority::source_pr_retained_manual_request_keeps_branch_and_step_bindings ... ok
+2026-11-17T13:56:40.8941291Z test tests::task_authority::typed_cr_accepts_one_identical_late_check_duplicate_and_bounds_further_ambiguity ... ok
+2026-11-17T13:56:40.9021047Z test tests::task_authority::typed_charter_rejects_legacy_cr_writer_but_preserves_native_approve ... ok
+2026-11-17T13:56:40.9320733Z test tests::task_authority::superseded_request_wrong_result_or_writer_identity_cannot_be_approved ... ok
+2026-11-17T13:56:42.2031069Z test tests::task_authority::pagination::oversized_record_and_aggregate_budget_have_distinct_errors ... ok
+2026-11-17T13:56:42.4829476Z test tests::task_authority::typed_findings_are_durable_evidence_then_next_request_not_an_executable_cr ... ok
+2026-11-17T13:56:42.5410989Z test tests::task_authority::typed_cr_recovery_rejects_native_tampering_authority_drift_and_ambiguous_checks ... ok
+2026-11-17T13:56:42.5490320Z test tests::task_authority::typed_publisher_disabled_unknown_fields_and_writer_outcomes_fail_without_mutation ... ok
+2026-11-17T13:56:42.6780682Z test tests::task_authority::uncertain_absent_review_never_reposts_but_absent_check_has_one_recovery_send ... ok
+2026-11-17T13:56:42.6820231Z test tests::task_authority::typed_cr_recovers_verified_github_effects_after_complete_local_state_loss ... ok
+2026-11-17T13:56:42.6880304Z test tests::task_authority::v4_abandoned_closing_pr_has_no_approval_or_task_closure_effect ... ok
+2026-11-17T13:56:42.7650845Z test tests::task_authority::v4_closed_disposable_pr_approval_preserves_immutable_binding_without_reopening ... ok
+2026-11-17T13:56:42.8631639Z test tests::task_authority::v4_decisions_allocate_no_step_or_request_and_effective_closure_is_visible ... ok
+2026-11-17T13:56:43.0016653Z test tests::task_authority::v4_exact_native_approve_returns_conditional_closure_authority_without_inventing_completion ... ok
+2026-11-17T13:56:43.1030460Z test tests::task_authority::v4_closing_designation_preserves_exact_head_acceptance_and_replay ... ok
+2026-11-17T13:56:43.1532750Z test tests::task_authority::v4_fresh_cr_binds_observed_base_but_recovers_reserved_body_after_base_movement ... ok
+2026-11-17T13:56:43.1630310Z test tests::task_authority::typed_pr_cr_uses_native_review_check_and_recoverable_step_projection ... ok
+2026-11-17T13:56:43.2350835Z test tests::task_authority::v4_keep_open_continuation_retains_condition_authority_without_policy_conversion ... ok
+2026-11-17T13:56:43.3142870Z test tests::task_authority::v4_native_cr_needs_no_request_or_step_projection_and_cannot_change_task_closure ... ok
+2026-11-17T13:56:43.3330583Z test tests::task_authority::v4_trusted_task_decision_can_reconcile_invalid_original_closure_intent ... ok
+2026-11-17T13:56:43.6560617Z test tests::task_authority::v4_unsafe_closing_links_fail_before_approval_and_reservation ... ok
+2026-11-17T13:56:43.6710554Z test tests::task_authority::verified_nonstandard_resolution_proves_equivalent_defaults_and_old_outcomes_show_only_real_gaps ... ok
+2026-11-17T13:56:43.6830456Z test tests::task_authority::v4_no_pr_approval_binds_writer_admission_and_preserves_warnings_without_public_request ... ok
+2026-11-17T13:56:43.7070464Z test tests::transport::evidence_and_projection_never_accept_caller_selected_metadata_or_sources ... ok
+2026-11-17T13:56:43.8750661Z test tests::transport::listed_schema_and_complete_calls_preserve_repository_for_both_actions ... ok
+2026-11-17T13:56:43.9080304Z test tests::transport::repository_error_requires_changed_input_and_is_not_action_specific ... ok
+2026-11-17T13:56:43.9350689Z test tests::transport::runtime_repository_admission_is_bounded_and_required ... ok
+2026-11-17T13:56:43.9561176Z test tests::transport::unchanged_repository_reaches_action_specific_validation_before_github ... ok
+2026-11-17T13:56:44.0920510Z test tests::transport::wrong_app_or_returned_review_actor_fails_closed_through_http ... ok
+2026-11-17T13:56:44.1100679Z test tests::task_authority::writer_created_artifact_cr_blocks_stale_approval_and_can_be_superseded_by_task_request ... ok
+2026-11-17T13:56:44.1900252Z test tests::task_authority::typed_cr_recovers_each_partial_publication_phase_without_duplicate_native_posts ... ok
+2026-11-17T13:56:44.2030196Z test tests::wrong_binding_and_publication_state_never_create_reviews ... ok
+2026-11-17T13:56:44.2616953Z test tests::transport::managed_config_instances_bind_tools_tokens_and_publications_to_their_own_repository ... ok
+2026-11-17T13:56:44.2617389Z 
+2026-11-17T13:56:44.2617735Z test result: ok. 184 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.37s
+2026-11-17T13:56:44.2618042Z
