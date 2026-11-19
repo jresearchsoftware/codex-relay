@@ -349,10 +349,11 @@ continuation only for that reviewed head, squash merge, passing native required
 checks and verified mergeability. Unresolved checks block continuation;
 an explicit hold blocks continuation, and incomplete Task work or an unsatisfied
 completion condition blocks Issue closure. Native next-request or selected Task
-Decision references are re-read before publication. `execution_supported: false` makes explicit
-that this Reviewer implementation publishes the policy and performs neither a
-merge nor closure. Execution belongs to a separately authorized trusted owner
-channel, never the worker. `REQUEST_CHANGES` requires an owner-authorized
+Decision references are re-read before publication. Use
+`automatic_continuation_authorized` for the bounded policy decision and
+`merge_performed` and `issue_closure_performed` for effect reporting. The Reviewer
+returns both effect fields as false. Integration belongs to the separately
+authorized trusted owner channel. `REQUEST_CHANGES` requires an owner-authorized
 publication after review preview; a preview alone grants no mutation authority.
 Task Approval is independent acceptance of the bound result, not PR approval.
 The v4 continuation receipt carries effective closure permission, hold/next,

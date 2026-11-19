@@ -981,7 +981,7 @@ async fn approval_continuation_plan(
             "mergeability":"must_be_verified","unresolved_checks":"block_continuation",
             "issue_closure_policy":if close_authorized {"close-authorized"} else {"keep-open"},
             "close_issue_authorized":close_authorized && task_complete && !held && !remaining_task_work,"hold":held,"task_complete":task_complete,"remaining_task_work":remaining_task_work,"request_authority":request,"warnings":if valid_closure {json!([])} else {json!(["ISSUE_CLOSURE_POLICY_INVALID"])},
-            "execution_supported":false,"merge_performed":false,"issue_closure_performed":false});
+            "merge_performed":false,"issue_closure_performed":false});
         if request["schema_version"]=="4.0" {
             let object=plan.as_object_mut().unwrap();
             for key in ["task_complete","remaining_task_work","close_issue_authorized"] { object.remove(key); }
@@ -995,7 +995,7 @@ async fn approval_continuation_plan(
         Ok(plan)
     }.await;
     result.unwrap_or_else(|code| json!({"policy":"native-approve-exact-head-squash-v1","approved_head_sha":arguments["expected_head_sha"],"merge_method":"squash","required_native_checks":"must_pass_for_exact_head","automatic_continuation_authorized":false,"close_issue_authorized":false,
-        "error_code":code,"execution_supported":false,"merge_performed":false,"issue_closure_performed":false}))
+        "error_code":code,"merge_performed":false,"issue_closure_performed":false}))
 }
 
 async fn current_approval_authority(

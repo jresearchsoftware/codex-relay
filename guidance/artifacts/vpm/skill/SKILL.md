@@ -5,7 +5,7 @@ description: Author and carry out Codex Relay governed Tasks, handoffs, Change R
 
 # Codex Relay
 
-This Skill supplies Relay product guidance version **8.0.0** as a source
+This Skill supplies Relay product guidance version **10.0.0** as a source
 candidate; the version alone is not a release or acceptance claim. Its accompanying
 provenance identifies the product source, delivery form and shared protocol source. Guidance
 availability does not prove an installed service, workflow or connected App is
@@ -51,13 +51,17 @@ the assembled [shared protocol source](references/shared-protocols.md) when trig
 - `requirement-authority.md`: requirement provenance and binding authority.
 - `package-versioning.md`: versioned Relay guidance/release/dependency maintenance.
 - `self-adoption.md`: a producer's own Skill, AGENTS and boot candidates.
-- `github-repository-governance.md`: workflow/protection decisions.
+- `github-repository-governance.md`: workflow/protection decisions, including
+  GH-014 when optional repository settings are being decided.
+- `human-command-interaction.md`: one next human action and coherent copyback
+  for supported Relay command and administration interactions.
 
 Read a relevant topic in full, including exceptions. The selected shared
 protocols are the portable owners, not editable Relay copies. The workflow binds
 them to Relay's current v4 product and retained old-attempt compatibility.
-This Skill does not impose Relay development policy on unrelated consumer work
-or change a consumer's explicit project-wide topic adoption/settings.
+Small Improvements is Relay development policy with its own adoption boundary.
+The product topics apply to Relay interactions and leave project-wide consumer
+adoption and settings to the owning project.
 
 Apply shared meaning through the Relay bindings in these references. Live
 canonical authority governs the admitted work; this Skill grants no execution,

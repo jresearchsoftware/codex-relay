@@ -281,7 +281,7 @@ async fn review_evidence_publication_and_recovery_use_one_service_without_pr_or_
         assert_eq!(plan["repository"], repository, "{approved}");
         assert_eq!(plan["approved_head_sha"], HEAD);
         assert_eq!(plan["automatic_continuation_authorized"], true);
-        assert_eq!(plan["execution_supported"], false);
+        assert!(plan.get("execution_supported").is_none());
         ids.push(operation_id(&[], &approval));
 
         let mut cr = cr_fixture();

@@ -1,8 +1,9 @@
 # Relay's ChatGPT Project Instructions
 
 This directory is Relay's consumer binding for the accepted Shared Governance
-10.0.0 generator. It is repository guidance, not a new Relay Skill release or
-runtime change. The [Task 101 Decision](https://github.com/jresearchsoftware/codex-relay/issues/101#issuecomment-6718773565)
+12.1.0 generator. The overlay is Relay repository guidance. The separate
+[Skill release contract](../docs/relay-guidance.md#version-and-provenance)
+owns changes to distributed product guidance. The [Task 101 Decision](https://github.com/jresearchsoftware/codex-relay/issues/101#issuecomment-6718773565)
 authorizes this integration. Candidate files do not govern their own execution
 or review. Source acceptance, live settings application and Task completion are
 separate facts; Task 101 stays open for actual owner-controlled reconciliation
@@ -21,7 +22,7 @@ the generator nor duplicates the product bundle owned by Task 91.
 Use Python 3.11+ and Git only at maintenance time. Ordinary chats read accepted
 files through supported GitHub capabilities. No VibeVM binary, new registry,
 background service or per-message integrity check is required. Read the
-[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/README.md)
+[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/README.md)
 for input validation, exit codes, exact diffs and cache removal behavior.
 
 First establish the independently accepted exact source and authority through
@@ -30,7 +31,7 @@ the current Task/review and Git evidence. Freeze that source for the effort;
 from the repository root (replace both placeholders with verified values):
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py update \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py update \
   --repository . --binding chatgpt/binding.json \
   --accepted-sha <accepted-full-SHA> --authority-anchor <current-authority-URL>
 ```
@@ -52,6 +53,13 @@ accepted `7f95a60c485ccf40025dae78f652adc8df3b19ea` with its
 [owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/244#issuecomment-6943093940).
 The unchanged 8,000-character budget still applies; generation does not verify
 or update live Project Settings.
+
+Task #273 uses the unchanged generator bytes from the new Shared 12.1.0
+selection with the frozen admitted Relay baseline
+`95b374b9a575810b4253db46adbe1618b82afd89` and the
+[Task charter](https://github.com/jresearchsoftware/codex-relay/issues/273).
+The new local SI, GH and HC routes change complete Instructions. Follow the
+full-text post-integration Settings handoff below.
 
 The first projection used accepted starting source
 `b9de15342525da0144edf18b457f7e640a9bf087` (Shared 7.0.0 adoption, PR 214),
@@ -109,7 +117,7 @@ Instructions text or selected Sources need owner action.
 For an owner-provided export, exact comparison is available without UI writes:
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py compare \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py compare \
   --repository . --binding chatgpt/binding.json --live-export /path/to/owner-export.md --live-format raw
 ```
 
@@ -129,30 +137,28 @@ Relay inputs, deterministic regeneration, changed custom text, optional cache,
 accepted-source isolation, native routing failures and export comparison. They
 are local implementation evidence, not independent acceptance or live-client proof.
 
-Small Improvements planning follows accepted root AGENTS and the
-[Relay binding](../docs/relay-guidance-ownership.md#small-improvements-binding),
-through the locked Shared 10.0.0 protocol. The authored custom guidance supplies
-the ChatGPT planner route; the generator remains unchanged. The same suite
-checks authored/generated instruction coverage with these tabletop fixtures:
+The authored and generated Instructions route complete policy through the
+[Relay governance bindings](../docs/relay-guidance-ownership.md) and selected
+Shared 12.1.0 slot. In the scenario checks below, the already-authorized
+receiving work and its native trust boundaries remain in force.
 
-| Planning situation | Expected disposition from the instructions |
+| Situation | Expected disposition |
 | --- | --- |
-| Suitable source Task; relevant bounded candidate on a later result page | Use `repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement`, inspect all pages, assess relevant Issues/dependencies/conflicts/ownership, and automatically include eligible candidates under Relay's standing preference after recording selected IDs, bounded scope and provenance in authenticated receiving authority. |
-| First source-changing Step after analysis; relevant CR | Discover at preparation; a CR still cannot enlarge Task-wide authority. |
-| Analysis-only work | Skip discovery; no tracker prerequisite. |
-| Unchanged subsequent Step or inner correction | Skip ceremonial rescanning; refresh on materially changed scope/information. |
-| Empty results, or only irrelevant/conflicting/unowned candidates | Continue the original work without forced inclusion or a queue-empty gate. |
-| Suggested/linked/labelled candidate without receiving authority | Do not implement; selection needs explicit receiving Task/Decision/CR authority. |
-| Selected candidate pending integration, cancelled receiver or partial delivery | Preserve source Issue links, provenance, label and open state; record the exact remainder/disposition. |
-| Deferred correction without label capability | Report the gap; do not claim it queued. |
+| Suitable source Task or newly commencing PR with two eligible Issues across multiple pages, including unrelated work | Check all pages of the exact open `small-improvement` label in Relay. Include both bounded corrections under standing delegation and link their Issues in the receiving record and result. Freeze native scope at launch. |
+| First source Step after analysis or relevant CR | Discover at preparation. A CR stays within its authority, and a label alone grants none. |
+| One candidate requires protected work or conflicts with an express exclusion | Record the concrete deferral and authorized route. Keep its source Issue open and labeled. |
+| Analysis-only work, unchanged later Step, already admitted scope or approved PR | Skip ceremonial rescans and retain the existing bounds. |
+| No eligible candidates or incomplete discovery | Continue authorized work and report any tracker capability gap. |
+| Unfinished or partially delivered candidate | Preserve source provenance, label and open state with the exact remainder. |
+| Optional settings at an applicable bootstrap or settings decision | Show observed values or unknown, impact and recommendations. Reuse recorded unchanged choices or ask Yes/No per relevant setting. Defer unanswered settings and apply only through established settings authority with readback. |
+| Ordinary work or an unrelated package update | GH-014 requires no new settings questions. |
+| Human shell diagnostics | Group deterministic work into one paste-safe Bash or PowerShell action producing one report with meaningful errors/status. Pause before judgment, choice, permission or safety changes. |
+| Authorized standalone or native executor with available tools | Act within the existing route. HC governs the human instructions and copyback. |
 
-These are instruction coverage and tabletop evidence, not an executable planner
-or proof of automatic model compliance. Keep actual discovery, owner selection,
-included/excluded candidate dispositions and receiving links in the existing
-Task/PR/Outcome records, rather than a second backlog here. Selection and local
-tests do not establish accepted integration or authorize source-Issue closure.
-After accepted merge, the full-text settings handoff above still applies; no
-new execution Step is needed solely to repeat an unchanged handoff.
+The scenarios qualify instruction coverage. Source-Issue closure still needs
+accepted integration and any applicable operational verification. After merge,
+the changed complete Instructions require the owner Settings reconciliation
+above. Use the accepted generated file for the complete replacement.
 
 The following owner/client exercises remain explicit acceptance evidence:
 

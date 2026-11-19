@@ -1,3 +1,6 @@
+import { canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { foldManualHandoff, safePublicationText } from '../../contracts/src/publication-rendering.mjs';
+
 // Presentation only: the caller supplies an already validated, admitted
 // envelope. Protected authority, integrity bindings and publication reservations
 // remain with Writer; this copyable prompt does not replace those records.
@@ -26,4 +29,32 @@ export function compactManualPrompt(e, authorityUrl) {
       : 'Complete the admitted work and validation.',
     'Submit one canonical Outcome through submit_manual_outcome using the admitted binding.');
   return lines.join('\n');
+}
+
+export function renderManualHandoff(e, authorityUrl, outcomeBinding) {
+  const prompt = compactManualPrompt(e, authorityUrl);
+  let width = 3;
+  for (const match of prompt.matchAll(/`+/g)) width = Math.max(width, match[0].length + 1);
+  const fence = '`'.repeat(width);
+  const visible = [
+    'MANUAL_CODEX_HANDOFF_READY',
+    `Thread: ${safePublicationText(e.thread)}`,
+    `Attempt: ${e.attemptId}`,
+    `Model: ${e.profile.cliModelId}; effort: ${e.profile.effort}`,
+    `Subagents: ${e.subagentsAllowed ? 'On' : 'Off'}`,
+    `Canonical authority: ${authorityUrl}`,
+    '',
+    'Copyable prompt:',
+    '',
+    `${fence}text`,
+    prompt,
+    fence,
+  ].join('\n');
+  const description = '\n\nManual Outcome binding: copy these admitted values unchanged into `submit_manual_outcome`. Set the final parent to the Task-owned PR when one exists, and add the status, result, summary, warnings and limitations from verified execution evidence. This binding is not an execution result.';
+  const binding = `\`\`\`json\n${canonicalAuthorityJson(outcomeBinding)}\n\`\`\``;
+  return {
+    body: `${visible}${description}\n\n<details>\n<summary>Manual Outcome binding (JSON)</summary>\n\n${binding}\n\n</details>`,
+    // Match an exact already-published body if the old receipt is missing.
+    previousBody: `${foldManualHandoff(visible)}${description}\n\n${binding}`,
+  };
 }

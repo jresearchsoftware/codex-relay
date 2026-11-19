@@ -123,7 +123,7 @@ class CommittedFlowTests(unittest.TestCase):
                               (QUALIFICATION.TREE_HASH.encode(), b"sha256:" + b"0" * 64),
                               (QUALIFICATION.DISTRIBUTION_REVISION.encode(), b"0" * 40),
                               (b'@=10.0.0', b'@=6.0.0'),
-                              (b'version = "9.0.0"', b'version = "5.0.0"'),
+                              (b'version = "10.0.0"', b'version = "5.0.0"'),
                               (lock["meta"]["generated_by"].encode(), b'other'),
                               (b'file://', b'file:///foreign/')):
             with self.subTest(field=before):
@@ -143,10 +143,10 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["tree_hash"], QUALIFICATION.TREE_HASH)
         self.assertEqual(len(facts["route"]), 6)
         self.assertEqual(facts["project_skill"], "PASS")
-        self.assertEqual(facts["payload_files"], 22)
+        self.assertEqual(facts["payload_files"], 24)
         self.assertEqual(len(QUALIFICATION.PROTOCOLS), 9)
-        self.assertEqual(facts["first_party_version"], "9.0.0")
-        self.assertEqual(facts["standalone_snapshot"], "10.0.0")
+        self.assertEqual(facts["first_party_version"], "10.0.0")
+        self.assertEqual(facts["standalone_snapshot"], "12.1.0")
         self.assertEqual({name: value["version"] for name, value in facts["landscape"].items()}, {
             "org.jresearch.ai/landscape-model-guidance": "1.0.3",
             "org.jresearch.ai/landscape-subagents": "1.0.2"})
@@ -284,7 +284,7 @@ class CommittedFlowTests(unittest.TestCase):
                                    (selection["revision"], "0" * 40),
                                    ('name = "' + selection["name"] + '"', 'name = "development-governance"'),
                                    ('name = "' + selection["name"] + '"',
-                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=9.0.0"]')])):
+                                    'name = "' + selection["name"] + '"\ndependencies = ["org.jresearch.ai/codex-relay@=10.0.0"]')])):
                 path = self.root / name
                 original = path.read_text()
                 for before, after in changes:
@@ -374,8 +374,8 @@ class CommittedFlowTests(unittest.TestCase):
     def test_small_improvements_routes_cannot_use_unselected_or_bundled_protocols(self):
         policy = (QUALIFICATION.SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
         for name, before, after in (
-                ("AGENTS.md", policy, policy.replace("/10.0.0/", "/7.0.1/")),
-                ("AGENTS.md", "Relay explicitly adopts all ten", "Relay merely installs all ten"),
+                ("AGENTS.md", policy, policy.replace("/12.1.0/", "/7.0.1/")),
+                ("AGENTS.md", "Relay explicitly adopts all eleven", "Relay merely installs all eleven"),
                 (QUALIFICATION.LOCAL_GOVERNANCE, "../" + policy,
                  "../guidance/artifacts/standalone/codex-relay/references/shared/small-improvements.md"),
                 (QUALIFICATION.BOOT / "90-user.md", "Small Improvements is adopted",
@@ -392,14 +392,18 @@ class CommittedFlowTests(unittest.TestCase):
         name = QUALIFICATION.LOCAL_GOVERNANCE
         for before, after in (
                 ("label:small-improvement", "in:title Small improvement"),
-                ("Analysis-only Task | Skip the SI scan", "Analysis-only Task | Require the SI scan"),
-                ("trusted Decisions and admission remain the source of scope",
-                 "label and scheduling become the source of scope"),
-                ("one independent review assess the combined exact head",
+                ("Analysis-only Task or inner correction with unchanged scope | Skip the scan",
+                 "Analysis-only Task | Require a scan"),
+                ("all eligible same-repository corrections, including unrelated topics", "one related correction"),
+                ("Writer verifies the native owner launch and snapshots its actual effective authority",
+                 "Writer admits the labeled candidate"),
+                ("Already admitted execution or already approved PR", "Unscheduled work"),
+                ("honor the exclusion", "ignore the exclusion"),
+                ("one independent review of the combined exact head",
                  "successful tests accept the combined result"),
-                ("Keep source Issues open and labelled while work remains pending",
+                ("keep unfinished or partial work open and discoverable",
                  "Close source Issues and remove their label upon scheduling"),
-                ("queue-empty gate or new mandatory CI gate", "a mandatory queue-empty CI gate")):
+                ("queue-empty gate, new runtime", "a mandatory queue-empty CI gate")):
             path = self.root / name
             original = path.read_text()
             pattern = r"\s+".join(re.escape(word) for word in before.split())
@@ -408,6 +412,19 @@ class CommittedFlowTests(unittest.TestCase):
                 path.write_text(re.sub(pattern, lambda _: after, original, count=1))
                 self.rejects()
             path.write_text(original)
+
+    def test_human_and_settings_bindings_keep_applicability_and_stop_conditions(self):
+        path = self.root / "packages/codex-relay/skill/references/workflow.md"
+        original = path.read_text()
+        for phrase in ("explicit Yes or No per relevant optional setting",
+                       "Ordinary Task execution and Skill updates alone do",
+                       "one coherent result to return", "preserve native process failure",
+                       "human judgment, a choice, new permission or a safety reassessment"):
+            with self.subTest(boundary=phrase):
+                self.assertIn(phrase, original)
+                path.write_text(original.replace(phrase, "replaced boundary", 1))
+                self.rejects()
+        path.write_text(original)
 
     def test_manifest_and_lock_graph_source_and_hash_are_bound(self):
         for name, replacements in (

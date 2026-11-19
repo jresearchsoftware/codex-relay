@@ -18,10 +18,10 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "10.0.0"
+VERSION = "12.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "9.0.0"
+SELF_VERSION = "10.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
 PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
@@ -38,22 +38,24 @@ PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
                    "independent-review", "contract-and-decision-maintenance", "context-loading"))
 GUIDES = tuple("vibevm/vibespecs/guides/" + name + ".md" for name in
                ("engineering-methods", "onboarding", "onboarding-examples"))
-PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
+HISTORICAL_PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
            "tools/chatgpt/README.md", "tools/chatgpt/base.md", "tools/chatgpt/project.py",
            *PROTOCOLS, *GUIDES, "vibevm/vibespecs/protocols/small-improvements.md",
            "vibevm/vibespecs/guides/small-improvements.md"}
+PAYLOAD = HISTORICAL_PAYLOAD | {"vibevm/vibespecs/protocols/human-command-interaction.md",
+                                "vibevm/vibespecs/guides/human-command-interaction.md"}
 # Accepted producer exports omit only their generated local client routes.
 SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/INDEX.md",
                "vibevm/vibespecs/boot/.vibe-boot-artifacts.lock"}
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "20c76b3629a62f0c7629f4a8eb1a67491eb6c37d"
+DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "c207adca23cb3c022dac9ea953dd96364097fa85"
-PAYLOAD_HASH = "460eaa016fea59a74d6952e2a9898f4111cba92a1e4239715b0e88af9fdfb21c"
-RECEIPT_HASH = "926895f737911c5794a4b898bf3c25b3e0d2e7deda6728f9160f5d19d5c1d994"
-TREE_HASH = "sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3"
+SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
+PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
+RECEIPT_HASH = "86d63eb311906dde6593e81c65a32274be3e31463e8b84268ba20759c43117f7"
+TREE_HASH = "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "7ee75b41d178fd639d3bc97521cf950a96915ba0bfae29269b564e9ea515df3a"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -243,12 +245,12 @@ def check_small_improvements_adoption(root):
     _, human = managed(read_file(root, "AGENTS.md"))
     human = " ".join(human.decode().split())
     policy = (SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
-    require("Relay explicitly adopts all ten complete applicable Shared Governance **10.0.0** protocols" in human
+    require("Relay explicitly adopts all eleven complete applicable Shared Governance **12.1.0** protocols" in human
             and "[Small improvements](" + policy + ")" in human,
             "Human-owned adoption must select the complete installed Small Improvements protocol")
     boot = " ".join(read_file(root, BOOT / "90-user.md").decode().split())
     require("Small Improvements is adopted" in boot
-            and "analysis-only work skips the scan" in boot
+            and "Analysis-only work skips the scan" in boot
             and LOCAL_GOVERNANCE.as_posix() in boot,
             "Small Improvements boot must preserve conditional discovery and its local binding")
     binding = read_file(root, LOCAL_GOVERNANCE).decode()
@@ -260,12 +262,16 @@ def check_small_improvements_adoption(root):
             "Small Improvements binding must retain the selected protocol and exact-label repository lookup")
     require(all(phrase in binding for phrase in (
         "normal independent exact-head acceptance and integration of this adoption",
-        "receiving Task's trusted Decisions and admission remain the source of scope authority",
-        "one independent review assess the combined exact head",
-        "Keep source Issues open and labelled while work remains pending",
-        "Analysis-only Task | Skip the SI scan",
+        "same-repository corrections, including unrelated topics",
+        "Writer verifies the native owner launch and snapshots its actual effective authority",
+        "honor the exclusion",
+        "Already admitted execution or already approved PR",
+        "first source Step after analysis, relevant CR or newly commencing PR",
+        "one independent review of the combined exact head",
+        "keep unfinished or partial work open and discoverable",
+        "Analysis-only Task or inner correction with unchanged scope | Skip the scan",
         "no cross-repository or periodic queue scan",
-        "queue-empty gate or new mandatory CI gate")),
+        "queue-empty gate, new runtime")),
         "Small Improvements binding lost an activation, scope, review, discovery or closure boundary")
 
 
@@ -330,7 +336,7 @@ def check_package(directory, *, standalone=False, historical=False):
             "af758c7c375f54741e46b8c0bfa1ea5311d315839aeae385b3d0ffd468473c36",
             "f4a568278ba45cc6bd64280f4fae74a337de3d3c9384e0e72bd5912e74487c61",
             "sha256:9dc1463bb4c130282e5ac332e0d7f4c18502d950b85e2015d04d5b9634589c3f")
-    payload = PAYLOAD
+    payload = HISTORICAL_PAYLOAD if historical else PAYLOAD
     files = files_in(directory)
     require(set(files) == payload | {RECEIPT, MARKER}, "Unexpected or missing passive slot files")
     hashes = {name: hashlib.sha256(files[name]).hexdigest() for name in sorted(payload)}
@@ -424,12 +430,16 @@ def check_first_party_registry(root, expected):
     progress_files = files_in(root / progress)
     require(tree_hash(progress_files) == "sha256:639b1c9dfcb7f29f2855efcead2d981ea18d445a978a4ff0ac88b81c7ba83298",
             "Frozen accepted 8.0.0 registry changed")
+    prior_release = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v9.0.0")
+    prior_release_files = files_in(root / prior_release)
+    require(tree_hash(prior_release_files) == "sha256:5fdf664ae919fa60f0861ba531cd41e56def80af36977724e692118884515531",
+            "Frozen accepted Relay 9.0.0 registry changed")
     previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
     require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
             "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (closure, closure_files), (progress, progress_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (closure, closure_files), (progress, progress_files), (prior_release, prior_release_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 
@@ -487,6 +497,32 @@ def check_first_party(root):
     return expected, source_hash
 
 
+def check_product_interaction_bindings(root):
+    """Check both supported delivery routes and local applicability boundaries."""
+    policy = SLOT / "vibevm/vibespecs/protocols"
+    _, authored = managed(read_file(root, "AGENTS.md"))
+    boot = read_file(root, SLOT / PACKAGE_BOOT).decode()
+    for topic in ("github-repository-governance", "human-command-interaction"):
+        protocol = topic + ".md"
+        require((policy / protocol).as_posix().encode() in authored
+                and "../protocols/" + protocol in boot,
+                "Missing explicit project adoption or complete package boot route for " + topic)
+        for form in ("standalone/codex-relay", "vpm/skill"):
+            skill = Path("guidance/artifacts") / form
+            require(f"`{protocol}`" in read_file(root, skill / "SKILL.md").decode()
+                    and protocol in read_file(root, skill / "references/shared-protocols.md").decode(),
+                    "Missing explicit product adoption or complete delivery route for " + topic)
+    workflow = " ".join(read_file(root, "packages/codex-relay/skill/references/workflow.md").decode().split())
+    require(all(phrase in workflow for phrase in (
+        "onboarding or bootstrapping a repository on GitHub or deciding relevant settings",
+        "explicit Yes or No per relevant optional setting", "Reuse an unchanged authorized choice",
+        "Ordinary Task execution and Skill updates alone do not trigger settings choices",
+        "one self-contained next action", "one coherent result to return",
+        "preserve native process failure", "propagate the relevant failure status",
+        "human judgment, a choice, new permission or a safety reassessment")),
+        "Product guidance lost a GH-014 or HC-001–003 applicability or authority boundary")
+
+
 def check_manual_handoff_contract(root):
     """Bind manual-client completion to original Writer evidence."""
     workflow = " ".join(read_file(root, "packages/codex-relay/skill/references/workflow.md").decode().split()).lower()
@@ -517,6 +553,7 @@ def check_project(root):
                        for selection in LANDSCAPE}
     check_landscape_adoption(root)
     check_small_improvements_adoption(root)
+    check_product_interaction_bindings(root)
     check_manual_handoff_contract(root)
     first_party, source_hash = check_first_party(root)
     check_standalone_snapshot(root)

@@ -40,11 +40,28 @@ five selected topics. The package supplies all available files; the human-owned
 route explicitly adopts only the chosen five. An existing local rule requiring
 owner authorization for signing-key use remains local and unchanged.
 
+Apply [GH-014](../protocols/github-repository-governance.md#GH-014) to the
+relevant optional settings. The following fictional General-settings read is
+dated 2026-11-16. The operator presents each question with its observation,
+recommendation and consequence; Birch's maintainer answers in the existing
+onboarding Task's Decision B2 that day, before any choice is reported resolved:
+
+| Question | Observed | Recommendation and practical impact | Maintainer's recorded answer |
+| --- | --- | --- | --- |
+| Allow merge commits? Yes or No (`allow_merge_commit`) | true | No: use a squash-oriented task history; commit-topology needs could justify Yes. | No |
+| Allow squash merging? Yes or No (`allow_squash_merge`) | true | Yes: retain the proposed task integration method. | Yes |
+| Allow rebase merging? Yes or No (`allow_rebase_merge`) | true | No: keep one proposed ordinary method; retain it if individual commits matter. | No |
+| Automatically delete merged PR head branches? Yes or No (`delete_branch_on_merge`) | false | Yes: clean up disposable task heads; a No retains manual branch management. | No |
+
+The explicit No to auto-delete is valid despite the recommendation. It does
+not authorize enabling deletion. All four choices are resolved; actual settings
+remain as observed, and policy/configuration application is still outside scope.
+
 **Plan and authority.** Prepare one candidate diff covering the dependency, lock,
 materialized slot, boot route, selected-topic declarations and manual Issue/result
 binding. Record how existing contributor PRs remain startable. File application,
 package installation and adoption still need the project's separate admission
-and review. Recommend squash and disposable-branch deletion if compatible;
+and review. Plan the owner's selected squash profile with auto-delete off;
 protection-setting changes are a separate owner/admin action, outside this diff.
 Do not require Relay, a new bot or another authenticated reviewer identity.
 
@@ -81,6 +98,18 @@ scope; self-adoption is NOT APPLICABLE. Recommend contract/decision maintenance
 for changes to recommendations; the owner defers it and retains local policy.
 Choose a pinned package and an explicit read-only manual route to selected full
 protocols; no claim of native VibeVM boot or client integration is made.
+
+In fictional Decision A3 on 2026-11-16, the operator asks **“Allow merge commits?
+Yes or No”**, shows `allow_merge_commit=true` from that day's General-settings
+read, and recommends Yes: retaining this option has little effect on the
+accepted direct-main path. The owner answers **Yes**. The operator also asks
+**“Automatically delete merged PR head branches? Yes or No”**, shows
+`delete_branch_on_merge=false`, and recommends No: there is no ordinary merged-PR
+head cleanup need. The owner answers **No**. Both answers are attributed and
+recorded before resolution; neither question is skipped because these options
+have little ordinary-path effect. No squash/rebase change is proposed or relevant
+to this direct-only scope. Existing values happen to match these choices but
+were never treated as earlier owner decisions.
 
 **Plan and authority.** The owner separately admits a narrow instruction/link
 change through the existing review route. Keep primary sources, dates,
@@ -120,6 +149,22 @@ publisher identity, credential handling, release admission and recovery. Defer
 additional context/review/contract topics while existing local rules serve those
 domains; self-adoption is NOT APPLICABLE to this downstream package consumer.
 The owner chooses a pinned native dependency and explicit selected-topic route.
+
+The fictional 2026-11-16 General-settings read and Decision C2 distinguish
+configuration from owner selection. After each question and its consequence is
+presented, Cedar's release owner answers as follows in the existing Task:
+
+| Question | Observed | Recommendation and practical impact | Recorded answer |
+| --- | --- | --- | --- |
+| Allow merge commits? Yes or No (`allow_merge_commit`) | true | Yes: preserve release-sync topology; assess compatibility with any linear-history rule. | Yes |
+| Allow squash merging? Yes or No (`allow_squash_merge`) | true | Yes: keep disposable task PR integration available. | Yes |
+| Allow rebase merging? Yes or No (`allow_rebase_merge`) | false | No: no supported path needs it. | No |
+| Automatically delete merged PR head branches? Yes or No (`delete_branch_on_merge`) | true | No: the planned same-repository release-sync PR would expose its retained head unless compatible protection is established. | Unanswered; unresolved |
+
+The operator neither assumes Yes from the enabled setting nor applies the
+recommended No. The unanswered item is handed to the release owner while
+independent file/routing and publisher-evidence work continues. This preserves
+both the real retained-head risk and the unresolved choice.
 
 **Plan and authority.** Prepare a reviewed file-adoption plan preserving both
 paths. For that planned merged-PR head usage, recommend compatible deletion protection
@@ -227,6 +272,22 @@ administrator, blocking result-publication readiness until authorized readback.
 same authority/topic discovery as Birch. File reads and ordinary check history
 work, but classic protection returns an ambiguous 404; inherited rules or bypass
 actors are hidden. A visible `protected` flag cannot fill those gaps.
+
+The same fictional 2026-11-16 read cannot expose General merge/delete fields,
+so their observed values are **unknown**, separately from the protection gap.
+The operator asks each question with the PR/disposable-branch recommendation:
+
+| Question | Observed | Recommendation and impact | Owner's Decision F2 that day |
+| --- | --- | --- | --- |
+| Allow merge commits? Yes or No | unknown | No: prefer the selected squash history. | No |
+| Allow squash merging? Yes or No | unknown | Yes: provide that ordinary merge method. | Yes |
+| Allow rebase merging? Yes or No | unknown | No: the proposed path has no individual-commit need. | No |
+| Automatically delete merged PR head branches? Yes or No | unknown | Yes: remove disposable merged heads; No would retain manual cleanup. | Unanswered; unresolved |
+
+Record the first three attributable answers before resolving those choices;
+their configuration remains UNVERIFIED. Auto-delete remains unresolved and
+unknown. Continue independent file planning without either enabling deletion
+or claiming all optional choices resolved.
 
 **Plan and check.** Recommend the minimal file plan and list required enforcement
 evidence separately. Reuse current owner UI exports/readback if sufficient; do not

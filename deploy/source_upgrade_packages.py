@@ -14,7 +14,7 @@ import stat
 import subprocess
 import urllib.request
 
-VERSION = '0.169.0'
+VERSION = '0.170.0'
 INSTALLER_URL = 'https://chatgpt.com/codex/install.sh'
 REFERENCE = 'codex-proof-reference'
 # This installer writes the current symlink's host-specific dev/inode/ctime

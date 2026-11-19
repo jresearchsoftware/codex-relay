@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "package": "org.jresearch.ai/codex-relay",
-  "version": "9.0.0",
+  "version": "10.0.0",
   "license": "MIT",
   "redistribution_authority": "https://github.com/jresearchsoftware/codex-relay/issues/169#issuecomment-6314092881",
   "components": [
@@ -16,22 +16,22 @@
       "copyright": "Copyright (c) 2026 Codex Relay contributors",
       "license_file": "LICENSE",
       "source": "https://github.com/jresearchsoftware/codex-relay",
-      "contract_revision": "7f95a60c485ccf40025dae78f652adc8df3b19ea"
+      "contract_revision": "95b374b9a575810b4253db46adbe1618b82afd89"
     },
     {
       "paths": [
-        "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/**"
+        "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/**"
       ],
       "copyright": [
         "Copyright (c) 2026 shared-governance contributors",
         "Copyright (c) 2026 Codex Relay contributors (derived governance text)"
       ],
       "license_files": [
-        "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/LICENSE"
+        "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/LICENSE"
       ],
       "source": "https://github.com/jresearchsoftware/shared-governance",
-      "source_revision": "c207adca23cb3c022dac9ea953dd96364097fa85",
-      "distribution_revision": "20c76b3629a62f0c7629f4a8eb1a67491eb6c37d",
+      "source_revision": "e4b5b738ae0918014dd06b5616fe37a5dcb93290",
+      "distribution_revision": "8dfe533015339e560ba923bb58961595b9e544f3",
       "purpose": "Frozen release-closure evidence only; consumer-selected locked dependency supplies native Skill protocols."
     }
   ],

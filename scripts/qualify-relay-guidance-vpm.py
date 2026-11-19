@@ -20,17 +20,17 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACT = ROOT / "guidance/artifacts/vpm"
 # Current semantic floor and exact adjacent counterexample, independently of range enforcement.
 SHARED_CURRENT = {
-    "version": "10.0.0", "revision": "20c76b3629a62f0c7629f4a8eb1a67491eb6c37d",
-    "tree_hash": "sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3",
+    "version": "12.1.0", "revision": "8dfe533015339e560ba923bb58961595b9e544f3",
+    "tree_hash": "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89",
 }
 SHARED_BELOW_BOUND = {
-    "version": "9.0.0", "revision": "f6a9d65323536ec900343ae5d71fbe09d097e925",
-    "tree_hash": "sha256:ca6250d7b3569e33be8efb8b49288387dd35054ce28f4469c38c06b437796d8c",
+    "version": "12.0.0", "revision": "0f95fcdb5b710f8ff65140e49bb884be605b619f",
+    "tree_hash": "sha256:c6f9446985160512ade52f332f0023a2af4bce70e4dfdad7ec82efb1fcce6094",
 }
 SHARED_GIT = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
 PROTOCOLS = ("context-loading", "task-handoff", "independent-review", "contract-and-decision-maintenance",
              "proportional-controls", "requirement-authority", "package-versioning", "self-adoption",
-             "github-repository-governance")
+             "github-repository-governance", "human-command-interaction")
 # Stable section names predate the numbered clause anchors introduced in 3.0.0.
 WORKFLOW_SECTIONS = {
     "task-handoff": ("Stable charter and chronological authority", "Step as an authorized execution cycle",
@@ -314,6 +314,11 @@ def qualify(vibe):
     require('<a id="RA-007"></a>' in current_ra and
             "Even an explicit request" in current_ra and "incoming proposal" in current_ra,
             "Current floor must provide the used project-context semantic boundary")
+    current_protocols = selected_slot / "vibevm/vibespecs/protocols"
+    require('<a id="GH-014"></a>' in (current_protocols / "github-repository-governance.md").read_text()
+            and all(f'<a id="HC-00{number}"></a>' in (current_protocols / "human-command-interaction.md").read_text()
+                    for number in (1, 2, 3)),
+            "Current floor must supply GitHub settings choices and human-command interaction")
     # Prove the adjacent release's missing semantic contract independently of the range.
     adjacent = sandbox / "adjacent-shared-only"
     adjacent.mkdir()
@@ -329,10 +334,9 @@ def qualify(vibe):
             "Adjacent layout fixture must bind the exact immutable package")
     adjacent_protocols = adjacent / "vibevm/vibedeps" / metadata["shared_coordinate"].replace("/", ".") / \
         SHARED_BELOW_BOUND["version"] / "vibevm/vibespecs/protocols"
-    require(all((adjacent_protocols / (topic + ".md")).is_file() for topic in PROTOCOLS),
-            "Adjacent semantic counterexample unexpectedly lacks the historical layout")
-    require('<a id="RA-007"></a>' not in (adjacent_protocols / "requirement-authority.md").read_text(),
-            "Adjacent version unexpectedly supplies the required project-context rule")
+    require('<a id="GH-014"></a>' in (adjacent_protocols / "github-repository-governance.md").read_text()
+            and not (adjacent_protocols / "human-command-interaction.md").exists(),
+            "Adjacent version must supply GitHub settings choices but not the required human-command topic")
     # Native refusal verifies range enforcement, not the semantic incompatibility.
     below_consumer = sandbox / "consumer-below-bound"
     below_consumer.mkdir()
@@ -375,7 +379,7 @@ def qualify(vibe):
               "compatibility_graphs": {selected: {key: {field: value[field] for field in
                   ("version", "content_hash", "source_ref")} for key, value in graph.items()}
                   for selected, graph in compatibility_graphs.items()},
-              "below_bound": {**SHARED_BELOW_BOUND, "result": "historical layout present; required RA-007 semantics absent; native resolver unsatisfiable"},
+              "below_bound": {**SHARED_BELOW_BOUND, "result": "GH-014 present; required HC-001–003 absent; native resolver unsatisfiable"},
               "delivery_forms": "same Relay contract; native locked dependency and standalone immutable snapshot",
               "native_protocol_routing": "consumer lock/slot and sole selected shared boot route verified",
               "update_rollback_repeat_offline_drift_removal": "PASS",

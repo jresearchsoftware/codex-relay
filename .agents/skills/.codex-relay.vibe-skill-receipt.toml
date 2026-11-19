@@ -7,11 +7,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "2c3c1defc6cb550d9a340256933cad6d4fa0b5115a8ecd2ab8da5aad829b4f16"
+sha256 = "2673451564d64a06b2e1f0ea40f8180d31e852e776defa627990f2eecb4eeabb"
 
 [[file]]
 path = "SKILL.md"
-sha256 = "62517a2f2d30ba1e2e49ace151cfe07adcce891abe795152a45c30eb0d2c2c1a"
+sha256 = "bc0eaef66bf344c7d4067206151ff9f253a5e70654b95bc910e1ba01958b9b16"
 
 [[file]]
 path = "references/compatibility.md"
@@ -27,7 +27,7 @@ sha256 = "532243aea27bd74c624884fc50f713ef1ccdf1de34e97b77551022b29ae3f996"
 
 [[file]]
 path = "references/installation.md"
-sha256 = "a0f9360c4df572cfd40b6b21185389eb6f7ff8ef926dda9c76b25d82a2e23768"
+sha256 = "820875f849da9d49622dde2f612001b90befae1b4d9fa4bafdfa39deb886cbbb"
 
 [[file]]
 path = "references/product/contract.json"
@@ -47,8 +47,8 @@ sha256 = "234120b2b2529620b1800dd34eb84545db11ab74f2d54fb69285f00e03186d82"
 
 [[file]]
 path = "references/shared-protocols.md"
-sha256 = "998b49ea6d287f10769cce76ff2bf42c7d2837e8c37879f8b2cba0c239690ea8"
+sha256 = "835ffe880a4ca6ac1d072c4852f16decd778c0a557a9930124720ff70862a492"
 
 [[file]]
 path = "references/workflow.md"
-sha256 = "88d436a630aa9184412d566a4d8640f0830c653001b344e147a357290620e33c"
+sha256 = "c08d3e8849bc47143dfff3b807643c6e5ff8e34fd15fc2e239c10b12c9fef7cd"

@@ -18,10 +18,10 @@ pytestmark = pytest.mark.skipif(sys.platform != 'linux' or os.geteuid() != 0, re
 
 
 def distribution(home, install):
-    release = home / 'packages/standalone/releases/0.169.0-test-linux'
+    release = home / 'packages/standalone/releases/0.170.0-test-linux'
     (release / 'bin').mkdir(parents=True)
     binary = release / 'bin/codex'
-    binary.write_text('#!/bin/sh\nprintf "codex-cli 0.169.0\\n"\n'); binary.chmod(0o755)
+    binary.write_text('#!/bin/sh\nprintf "codex-cli 0.170.0\\n"\n'); binary.chmod(0o755)
     (release / 'resource').write_bytes(b'official independent resource bytes')
     (release / 'resource-link').symlink_to(release / 'resource')
     install.mkdir(exist_ok=True)
@@ -71,7 +71,7 @@ def runtime(argv, *, env, cwd):
                         str(Path(cwd).parent / 'rust/bin/cargo'), str(Path(cwd).parent / 'rust/bin/rustc'),
                         str(Path(cwd).parent / 'rust/bin/rustfmt')]
     assert set(env) == {'PATH', 'LANG', 'LC_ALL', 'HOME', 'CODEX_HOME'}
-    return SimpleNamespace(returncode=0, stdout=b'codex-cli 0.169.0\ncargo 1.90.0 (fixture)\nrustc 1.90.0 (fixture)\nrustfmt 1.8.0\n')
+    return SimpleNamespace(returncode=0, stdout=b'codex-cli 0.170.0\ncargo 1.90.0 (fixture)\nrustc 1.90.0 (fixture)\nrustfmt 1.8.0\n')
 
 
 def snapshot(root):
@@ -105,7 +105,7 @@ def test_reference_only_verification_never_probes_live_codex_or_rust(prepared, m
     monkeypatch.setattr(packages, '_rust_metadata', forbidden)
     # Live inputs are deliberately invalid and not even supplied to the private
     # reference reader. The mandatory full frontier still rejects this state.
-    (Path(values['relay_codex_package_home']) / 'packages/standalone/releases/0.169.0-test-linux/resource').write_bytes(b'live drift')
+    (Path(values['relay_codex_package_home']) / 'packages/standalone/releases/0.170.0-test-linux/resource').write_bytes(b'live drift')
     (Path(values['relay_rust_toolchain_root']) / 'support-library').chmod(0o666)
     minimal = {key: values[key] for key in ['relay_codex_cli_version', 'relay_codex_installer_url']}
     before = snapshot(root)
@@ -120,7 +120,7 @@ def test_reference_only_verification_never_probes_live_codex_or_rust(prepared, m
 def test_reference_only_verification_rejects_tampering_without_reacquisition(prepared, monkeypatch, change):
     root, stage, values, receipt, _ = prepared
     reference = stage / packages.REFERENCE
-    resource = reference / 'package-home/packages/standalone/releases/0.169.0-test-linux/resource'
+    resource = reference / 'package-home/packages/standalone/releases/0.170.0-test-linux/resource'
     if change == 'installer': (reference / 'installer.sh').write_bytes(b'changed producer')
     elif change == 'resource': resource.write_bytes(b'changed private resource')
     elif change == 'mode': resource.chmod(0o755)
@@ -146,9 +146,9 @@ def history_distribution(prepared, monkeypatch):
     live = Path(values['relay_codex_package_home'])
     for home, identity in [(reference, b'1 11 1790000000.123456789'), (live, b'2 22 1790000001.987654321')]:
         standalone = home / 'packages/standalone'
-        (standalone / 'current').symlink_to('releases/0.169.0-test-linux')
+        (standalone / 'current').symlink_to('releases/0.170.0-test-linux')
         history = standalone / 'selection-history'
-        history.write_bytes(b'0.169.0-test-linux\n\n' + identity + b'\n')
+        history.write_bytes(b'0.170.0-test-linux\n\n' + identity + b'\n')
         history.chmod(0o644)
     receipt = {**receipt, 'payloadTreeSha256': packages._tree(reference / 'packages')}
     return root, stage, values, receipt, reference, live
@@ -169,18 +169,18 @@ def test_only_qualified_history_kernel_identity_is_equivalent_and_never_rewritte
 
 
 @pytest.mark.parametrize('body', [
-    b'0.169.0-test-linux\n\n1 2 3.000000000\nextra\n',
-    b'0.169.0-test-linux\n\n1 2 3.000000000',
-    b'0.169.0-test-linux\r\n\r\n1 2 3.000000000\r\n',
+    b'0.170.0-test-linux\n\n1 2 3.000000000\nextra\n',
+    b'0.170.0-test-linux\n\n1 2 3.000000000',
+    b'0.170.0-test-linux\r\n\r\n1 2 3.000000000\r\n',
     b'other-release\n\n1 2 3.000000000\n',
-    b'0.169.0-test-linux\nprevious-release\n1 2 3.000000000\n',
-    b'0.169.0-test-linux\n../escape\n1 2 3.000000000\n',
-    b'0.169.0-test-linux\n\ntrue 2 3.000000000\n',
-    b'0.169.0-test-linux\n\n-1 2 3.000000000\n',
-    b'0.169.0-test-linux\n\n1 0 3.000000000\n',
-    b'0.169.0-test-linux\n\n1 2 3.00\n',
-    b'0.169.0-test-linux\n\n1 2 3.000000000 extra\n',
-    b'0.169.0-test-linux\n\n1 2 3.000000000\xff\n',
+    b'0.170.0-test-linux\nprevious-release\n1 2 3.000000000\n',
+    b'0.170.0-test-linux\n../escape\n1 2 3.000000000\n',
+    b'0.170.0-test-linux\n\ntrue 2 3.000000000\n',
+    b'0.170.0-test-linux\n\n-1 2 3.000000000\n',
+    b'0.170.0-test-linux\n\n1 0 3.000000000\n',
+    b'0.170.0-test-linux\n\n1 2 3.00\n',
+    b'0.170.0-test-linux\n\n1 2 3.000000000 extra\n',
+    b'0.170.0-test-linux\n\n1 2 3.000000000\xff\n',
 ])
 def test_history_schema_and_first_two_lines_are_not_ignored(prepared, monkeypatch, body):
     _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
@@ -197,13 +197,13 @@ def test_history_exception_preserves_all_other_owner_and_payload_checks(prepared
     if change == 'mode': history.chmod(0o755)
     elif change == 'owner': os.chown(history, 9999, 9999)
     elif change == 'symlink':
-        history.unlink(); history.symlink_to('releases/0.169.0-test-linux/resource')
+        history.unlink(); history.symlink_to('releases/0.170.0-test-linux/resource')
     elif change == 'hardlink': os.link(history, history.with_name('another-history'))
     elif change == 'extra-payload':
-        (live / 'packages/standalone/releases/0.169.0-test-linux/resource').write_bytes(b'different official resource')
+        (live / 'packages/standalone/releases/0.170.0-test-linux/resource').write_bytes(b'different official resource')
     elif change == 'current-target':
         current = live / 'packages/standalone/current'
-        current.unlink(); current.symlink_to('releases/0.169.0-test-linux/resource')
+        current.unlink(); current.symlink_to('releases/0.170.0-test-linux/resource')
     else: monkeypatch.setattr(packages, 'SELECTION_HISTORY_INSTALLER_SHA256', '0' * 64)
     with pytest.raises(ValueError):
         packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
@@ -220,7 +220,7 @@ def test_history_and_current_identity_remain_bound_across_operation_proofs(prepa
     assert before['equivalenceSha256'] == after['equivalenceSha256']
     assert before['selectionHistory']['live']['currentIdentity'] != after['selectionHistory']['live']['currentIdentity']
     history = live / 'packages/standalone/selection-history'
-    history.write_bytes(b'0.169.0-test-linux\n\n3 33 1790000002.000000000\n')
+    history.write_bytes(b'0.170.0-test-linux\n\n3 33 1790000002.000000000\n')
     changed = packages.verify_packages(stage, OPERATION, values, SOURCE, receipt, execute=runtime)
     assert changed['treeSha256'] != after['treeSha256']
     assert changed['equivalenceSha256'] == after['equivalenceSha256']
@@ -232,7 +232,7 @@ def test_history_or_same_target_alias_change_during_probes_is_refused(prepared, 
     _, stage, values, receipt, _reference, live = history_distribution(prepared, monkeypatch)
     def mutate(argv, *, env, cwd):
         if change == 'history':
-            (live / 'packages/standalone/selection-history').write_bytes(b'0.169.0-test-linux\n\n4 44 1790000003.000000000\n')
+            (live / 'packages/standalone/selection-history').write_bytes(b'0.170.0-test-linux\n\n4 44 1790000003.000000000\n')
         else:
             current = live / 'packages/standalone/current'
             target = os.readlink(current)
@@ -246,8 +246,8 @@ def test_history_or_same_target_alias_change_during_probes_is_refused(prepared, 
                                   'hardlink', 'escape', 'reference-byte', 'installer', 'operation', 'receipt'])
 def test_payload_drift_never_passes_on_version_alone(prepared, change):
     root, stage, values, receipt, _ = prepared
-    release = Path(values['relay_codex_package_home']) / 'packages/standalone/releases/0.169.0-test-linux'
-    if change == 'live-byte': (release / 'bin/codex').write_text('#!/bin/sh\nprintf "codex-cli 0.169.0\\n"\n# tampered\n')
+    release = Path(values['relay_codex_package_home']) / 'packages/standalone/releases/0.170.0-test-linux'
+    if change == 'live-byte': (release / 'bin/codex').write_text('#!/bin/sh\nprintf "codex-cli 0.170.0\\n"\n# tampered\n')
     elif change == 'aux-resource': (release / 'resource').write_bytes(b'changed auxiliary bytes')
     elif change == 'extra': (release / 'extra').write_bytes(b'unexpected bytes')
     elif change == 'removed': (release / 'resource-link').unlink()
@@ -256,7 +256,7 @@ def test_payload_drift_never_passes_on_version_alone(prepared, change):
     elif change == 'hardlink': os.link(release / 'resource', release / 'alias')
     elif change == 'escape':
         (release / 'resource-link').unlink(); (release / 'resource-link').symlink_to('/etc/passwd')
-    elif change == 'reference-byte': (stage / packages.REFERENCE / 'package-home/packages/standalone/releases/0.169.0-test-linux/resource').write_bytes(b'changed reference')
+    elif change == 'reference-byte': (stage / packages.REFERENCE / 'package-home/packages/standalone/releases/0.170.0-test-linux/resource').write_bytes(b'changed reference')
     elif change == 'installer': (stage / packages.REFERENCE / 'installer.sh').write_bytes(b'changed installer')
     elif change == 'operation': receipt = {**receipt, 'operation': 'other operation'}
     else: receipt = {**receipt, 'payloadTreeSha256': '0' * 64}

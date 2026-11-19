@@ -10,23 +10,29 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **9.0.0** is a **MAJOR** candidate from independently accepted **8.0.0**
-at `7f95a60c485ccf40025dae78f652adc8df3b19ea`. Task #244 adds protected causal
-evidence, live owner lifecycle progress and failed Actions status for terminal
-`BLOCKED` results. That exit-status change is a supported operator contract
-change authorized by Task #244, so it requires MAJOR under PV-002. The accepted
-8.0.0 source already froze its package bytes; publication availability does not
-permit reuse. Frozen 8.0.0 and all earlier registry payloads remain unchanged.
-
-The current candidate retains the `>=10.0.0` native Shared floor, exact standalone
-snapshot and included publisher closure evidence. Source generation does not
-activate an installation or reconcile live ChatGPT settings or private workflow
-projections.
+Guidance **10.0.0** is a **MAJOR** candidate from independently accepted and
+published **9.0.0**, with accepted Relay baseline
+`95b374b9a575810b4253db46adbe1618b82afd89`. Task #273 adds mandatory GH-014
+owner choices at applicable repository settings decisions and adopts HC-001–003
+in product interactions. It removes a supported Reviewer response field
+(`post_review_continuation.execution_supported`) and changes the manual
+handoff display while preserving its prompt/binding bytes. Under PV-002/009/018
+the settings step and field removal determine the major classification.
+The product's native floor becomes `>=12.1.0`, and standalone and publisher
+closure evidence select exact Shared 12.1.0. The
+[compatibility assessment](relay-skill-compatibility.md#task-273-shared-1000-through-1210)
+details the scope, old-attempt compatibility and verification boundaries. The
+root's standing Small Improvements delegation is a separate local adoption
+and would not require a product release by itself.
 
 ### Earlier version-scoped classification
 
-The following paragraphs retain historical release rationale; their then-current
-floors, snapshots and adoption facts do not replace the current 9.0.0 selection.
+Guidance **9.0.0** was a **MAJOR** change from independently accepted **8.0.0**
+at `7f95a60c485ccf40025dae78f652adc8df3b19ea`. Task #244 adds protected causal
+evidence, live owner lifecycle progress and failed Actions status for terminal
+`BLOCKED` results. It retained the `>=10.0.0` native Shared floor and exact
+10.0.0 standalone and publisher closure evidence. Its registry payload remains
+frozen along with earlier accepted releases.
 
 Guidance **8.0.0** was a **MAJOR** change from independently accepted **7.0.0**
 at `c8e990bef9aabefe9ec0bd74141afdba7d2dfde1`. Task #266 changes supported
@@ -48,8 +54,8 @@ new stop command, protected permission or installed activation is introduced.
 Task #194's independently accepted 7.0.0 supplies the closure workflow and
 Shared 10.0.0 baseline below. Its accepted registry bytes and all earlier frozen
 versions remain unchanged; the former parallel 7.0.0 proposals are reconciled
-sequentially under PV-009. The current candidate retains the `>=10.0.0` native
-floor, exact standalone snapshot and included publisher closure evidence.
+sequentially under PV-009. Relay 8.0.0 retained the `>=10.0.0` native floor and
+exact 10.0.0 standalone snapshot and publisher closure evidence.
 
 Guidance **7.0.0** was a **MAJOR** change from independently accepted **6.1.0**
 at `4f0990c4b676a45f7e37d37ecb10fecc871b7a25`. It changes closure timing and
@@ -171,8 +177,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 9.0.0 uses `contract_source: source-tree` and records the accepted
-Task 244 baseline `7f95a60c485ccf40025dae78f652adc8df3b19ea` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 10.0.0 uses `contract_source: source-tree` and records the accepted
+Task 273 baseline `95b374b9a575810b4253db46adbe1618b82afd89` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -181,10 +187,10 @@ pins. Source-tree mode keeps clean offline generation valid after squash merge
 without requiring an unmerged branch commit object. Managed
 pool ABI remains `relay-workflows-v4`; SERIAL remains `relay-workflows-v3`.
 Current authority v4 and retained admitted v3/legacy attempts stay distinct.
-This delivery change does not change deployed runtime semantics.
+The guidance build and source acceptance do not activate the runtime changes.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 9.0.0 is a candidate. Native source
+release. Before independent acceptance, 10.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
@@ -195,17 +201,18 @@ SemVer requirement from the standalone snapshot and its exact identities:
 
 | Identity | Selected value |
 | --- | --- |
-| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `10.0.0` |
-| Accepted producer source | `c207adca23cb3c022dac9ea953dd96364097fa85` |
-| Public distribution commit | `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
-| Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
+| Standalone Shared coordinate/version | `org.jresearch.ai/development-governance` `12.1.0` |
+| Accepted producer source | `e4b5b738ae0918014dd06b5616fe37a5dcb93290` |
+| Frozen distribution commit | `8dfe533015339e560ba923bb58961595b9e544f3` |
+| Complete distribution tree | `sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89` |
+| Native Shared requirement | `>=12.1.0`; consumer lock supplies the selected instance |
 
-[AGENTS](../AGENTS.md) adopts all ten applicable complete topics;
+[AGENTS](../AGENTS.md) adopts all eleven applicable complete topics;
 [ownership bindings](relay-guidance-ownership.md) retain product-specific
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -243,7 +250,7 @@ installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -274,8 +281,8 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's root policy selects Shared 10.0.0; current standalone snapshot
-and release-closure evidence use the same exact immutable 10.0.0 distribution. Other consumers
+future releases. Relay's root policy selects Shared 12.1.0. The current standalone snapshot
+and release-closure evidence use the same exact immutable distribution. Other consumers
 retain their own deliberate selections.
 
 On an intentional Shared update, assess changes in actually used protocols,

@@ -128,6 +128,17 @@ small reviewable change and ordinary project Git recovery. Do not expand
 credentials, add a service or change supported workflows merely to make a
 recommended profile pass.
 
+For adopted GitHub governance, use the canonical
+[optional-setting decision step, GH-014](../protocols/github-repository-governance.md#GH-014).
+Present the current observed value (or unknown), recommendation and practical
+impact for each relevant setting, including merge commits and automatic merged
+PR head deletion, and ask its explicit Yes/No question. Keep attributable answers
+in the existing Task/Decision chronology before application or choice resolution;
+link a still-applicable earlier explicit answer rather than asking again.
+Record unanswered items as unresolved and continue independent authorized work.
+The current value alone supplies no owner choice. If this topic is not adopted,
+retain the project's local configuration-decision procedure.
+
 Keep these layers explicit in the plan:
 
 | Layer | Concrete proposed action, if needed | Evidence after an authorized action |
@@ -136,7 +147,7 @@ Keep these layers explicit in the plan:
 | Normative adoption | Owner selects topics and local exceptions in accepted human-owned AGENTS or equivalent policy. | Exact reviewed adoption text, canonical owner decision and preserved obligations; a dependency alone is insufficient. |
 | Project routing/agent instructions | Add precise conditional links from existing accepted entrypoints to selected full guidance and local bindings. Preserve root/nested instructions, contributor paths and the supported client hierarchy. | Follow the actual route to readable accepted files; check relevant conditions, relative links and nested behavior. |
 | Client binding | Bind manual/Codex/ChatGPT paths only where used. Keep tracker, role, language, permissions, specialist and product routes local. | Relevant client/readback evidence, with static desired text separated from live loading/settings. |
-| Repository/tool configuration | Identify necessary checks, review/writer permissions, branch/tag rules, release/publication and manual operator steps. | Authorized supported readback and ordinary existing run evidence for each applicable path. Protected mutation is a separate receiving-project action. |
+| Repository/tool configuration | Identify necessary checks, review/writer permissions, branch/tag rules, release/publication and manual operator steps. Route relevant optional GitHub choices through GH-014 where adopted. | Attributable choices remain distinct from observed values, authorized supported readback and ordinary existing run evidence for each applicable path. Protected mutation is a separate receiving-project action. |
 | Migration/integration | Reconcile canonical duplicates and commit source, dependencies/generated routes and human guidance together where that layout is selected. | Reviewable exact result, applicable validation, acceptance and rollback under the project's own workflow. |
 
 Proceed with covered setup when the receiving project's existing authority
@@ -162,7 +173,7 @@ Select the following checks by the chosen scope; do not create unrelated gates.
 | Codex or another repository agent, if used | Inspect actual root/inherited/nested instruction routes and generated blocks without replacing custom text. Use supported read-only client observations/probes when needed for the intended claim. Report unavailable startup/platform/model evidence; static files do not prove model compliance or runtime identity. |
 | ChatGPT, if used | Preserve reviewed custom instructions and source-controlled desired text. If selecting the package's optional maintenance tool (package-root `tools/chatgpt/README.md`), use the pinned slot's one projector with the consumer's binding/custom files; inspect its content check/diff rather than copying a per-project generator. For projects intentionally using generated Instructions and adopting TH-029, a task changing the complete effective text requires owner-controlled live reconciliation after acceptance/integration and before completion, even without an application clause; unchanged text retains earlier gaps without a new application duty. Sources upload remains separately selected. A raw owner export comparison proves that comparison, not live UI currentness or reliable model loading. Canonical access need not depend on optional Sources caches. |
 | Task, review and validation | Walk a normal change using the local tracker/authority, result and review path. Inspect meaningful check triggers, exact-head run/results and warning evidence, reviewer availability/identity and continuation permissions. A single-account attributed assessment does not satisfy a distinct native reviewer rule. A new project without runs reports proposed validation as unverified; no artificial mutation is needed. |
-| GitHub, if used | Follow the adopted [repository protocol](../protocols/github-repository-governance.md#verify-what-github-actually-enforces), or the local equivalent: inspect merge/delete options, classic protection, applicable inherited branch/tag rulesets, enforcement, targeting and bypass details with existing access. Inspect required checks/review identities and allowed writers for both source and publication paths. An empty branch-rules result does not inspect tag/classic protection; inaccessible or ambiguous 404 evidence is unverified. |
+| GitHub, if used | Follow the adopted [repository protocol](../protocols/github-repository-governance.md#verify-what-github-actually-enforces), or the local equivalent: inspect merge/delete options, classic protection, applicable inherited branch/tag rulesets, enforcement, targeting and bypass details with existing access. Under GH-014, distinguish owner answers, unresolved questions and observed/application state. Inspect required checks/review identities and allowed writers for both source and publication paths. An empty branch-rules result does not inspect tag/classic protection; inaccessible or ambiguous 404 evidence is unverified. |
 | Publication or another host, if used | Trace the accepted-source-to-artifact/version route and writer scope through existing evidence. Preserve retained branches and immutable published refs; use the host's own permission/review interfaces or durable manual records. No GitHub or Relay adapter is required. |
 
 For GitHub capability details consult current official [ruleset documentation](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/about-rulesets)
@@ -185,6 +196,8 @@ Keep a concise handoff in the existing onboarding/Task/change record. Include:
 - The chosen scope/profile, accepted source/package identity and topic choices.
 - Retained local authority, exceptions and material duplicate/migration findings.
 - Changes completed versus proposed, owners and separate authorizations needed.
+- For adopted GitHub governance, link GH-014's setting observations, recommendations,
+  impacts and attributable Yes/No answers; name unanswered choices as unresolved.
 - Checks, primary evidence and environment, warnings/limits and their effect.
 - A clear verdict: what works now, what cannot yet be relied on, and what would
   complete the chosen scope. Name the responsible owner and next authorized

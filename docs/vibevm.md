@@ -1,20 +1,16 @@
 # Pinned development guidance and first-party Skill consumption
 
-Relay selects Shared Governance **10.0.0** for project-wide adoption under
-Task [#194](https://github.com/jresearchsoftware/codex-relay/issues/194), following
-the accepted 7.0.1 adoption in Task #199. Candidate Relay **9.0.0** retains its
-standalone snapshot and publisher closure evidence at exact Shared 10.0.0 and
-requires **`>=10.0.0`** for the current semantic contract. The
-[compatibility assessment](relay-skill-compatibility.md#task-194-current-migration-through-1000)
-reconciles Shared 7/8/9/10 closure, bounded-result, residual-defect, evidence and
-project-context behavior; the [release contract](relay-guidance.md#version-and-provenance)
-classifies Task #244's MAJOR from independently accepted Relay 8.0.0.
-Historical frozen releases retain their original bytes, floors and snapshots. Human-owned [AGENTS](../AGENTS.md) adopts
-all ten applicable complete shared topics, including the separately selected
-[Small Improvements binding](relay-guidance-ownership.md#small-improvements-binding).
-The [ownership mapping](relay-guidance-ownership.md) retains native actors,
-trust boundaries and the qualified legacy transition. Candidate guidance remains
-proposal data until independently accepted; installation alone adopts no policy.
+Relay selects Shared Governance **12.1.0** for project-wide adoption under
+[Task #273](https://github.com/jresearchsoftware/codex-relay/issues/273).
+Human-owned [AGENTS](../AGENTS.md) adopts all eleven complete topics and the
+[ownership mapping](relay-guidance-ownership.md) retains native actors, trust
+boundaries, local-only SI adoption and the qualified legacy transition.
+Candidate Relay **10.0.0** requires **`>=12.1.0`** and carries exact 12.1.0
+standalone and publisher evidence. The
+[compatibility assessment](relay-skill-compatibility.md#task-273-shared-1000-through-1210)
+and [release contract](relay-guidance.md#version-and-provenance) explain the
+separate project and product decisions. Existing packages keep their frozen
+bytes, and candidate guidance remains proposal data until accepted.
 
 ## Native route and conditional reading
 
@@ -35,8 +31,8 @@ vibevm/vibespecs/boot/INDEX.md      native generated index
 
 The Shared boot pointer routes proportional controls, requirement authority,
 package versioning, Task handoff, producer self-adoption, GitHub repository
-governance, independent review, contract/decision maintenance and context
-loading. Read each complete topic when its trigger applies; unrelated work
+governance, independent review, contract/decision maintenance, context
+loading, Small Improvements and human command interaction. Read each complete topic when its trigger applies; unrelated work
 skips it. Shared meanings have one canonical owner. Native Task/Decision/CR,
 admission, Writer/Reviewer publication, exact-result identity and protected
 operations remain Relay product mechanisms.
@@ -128,7 +124,7 @@ Under PV-015/018 the accepted Landscape and project-only Small Improvements
 integration stays outside the product's standalone snapshot and release-evidence
 closure. That historical integration changed no product requirement or payload.
 Task 194 separately changed the Relay product and prepared accepted 7.0.0;
-Task 266 prepared accepted 8.0.0 from that baseline; Task 244 prepares 9.0.0. Current source work publishes neither
+Task 266 prepared accepted 8.0.0 from that baseline. Task 244 prepared 9.0.0; Task 273 prepares 10.0.0. Current source work publishes neither
 Landscape nor Relay and authorizes no installed Apply.
 
 During candidate development, freeze independently accepted source guidance via
@@ -150,41 +146,28 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 
 ## Selected immutable identities
 
-The [manifest](../vibe.toml) pins Shared `=10.0.0` by anonymous public Git
-source and exact commit. The native local registry supplies Relay `=9.0.0`,
-whose `>=10.0.0` semantic edge resolves to that explicit root. The root exact
-selection is project policy, separate from other consumers' locks and topic
-adoption. The schema-7 [lock](../vibe.lock), complete versioned slots, receipt,
-generated index and projected Skill belong to the same reviewed source change.
+The [manifest](../vibe.toml) pins Shared `=12.1.0` by anonymous public Git
+source and exact commit. The local registry supplies Relay `=10.0.0`, whose
+`>=12.1.0` edge resolves to that explicit root. The exact root selection is
+project policy. The schema-7 [lock](../vibe.lock), complete slots, receipt,
+boot index and projected Skill belong to the same reviewed source change.
 
 | Identity | Selected value |
 | --- | --- |
-| Shared accepted producer source | `jresearchsoftware/shared-governance` `c207adca23cb3c022dac9ea953dd96364097fa85` |
-| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d` |
-| Shared annotated tag | `v10.0.0`, tag object `a2ed1184aa249793a8a1981234c9686088a48c26`, peels to that distribution |
-| Complete native distribution tree hash | `sha256:5356b4db1b459ad6c23962c67d22fd2c0a8ed034a7d0b8b70986d5dd1e726bb3` |
-| Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `7f95a60c485ccf40025dae78f652adc8df3b19ea` |
+| Shared accepted producer source | `jresearchsoftware/shared-governance` `e4b5b738ae0918014dd06b5616fe37a5dcb93290` |
+| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `8dfe533015339e560ba923bb58961595b9e544f3` |
+| Shared annotated tag | `v12.1.0`, tag object `fa6b8ef67ccc51f88e1e0a1692c40ce4424c99a2`, peels to that distribution |
+| Complete native distribution tree hash | `sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89` |
+| Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `95b374b9a575810b4253db46adbe1618b82afd89` |
 
-The producer source and distribution commit are distinct identities. The
-receipt's payload hashes and native tree hash use different recipes: the tree
-also covers the receipt. Verify the complete file set and all payload bytes
-against the accepted producer path `packages/development-governance`; a tag or
-`frozen = true` alone proves neither transport identity nor drift refusal.
-The enclosing accepted Relay commit identifies its guidance release; the
-contract baseline does not claim that the candidate has already been accepted.
-
-Guidance 9.0.0 is MAJOR from independently accepted 8.0.0 under PV-002/009:
-Task #244 adds protected causal diagnostics and live owner lifecycle progress,
-and makes terminal `BLOCKED` results fail Actions visibly. The exit-status
-change is an authorized supported operator contract change. The accepted 8.0.0
-source froze its package identity before this candidate; no publication delay
-permits editing those frozen bytes. Shared 10.0.0 bytes and its semantic floor,
-Task #194 closure and Task #266 automatic progress behavior remain retained.
-Frozen first-party 1.0.0, 2.0.0, 2.0.1, 3.0.0, 3.1.0, 4.0.0, 4.1.0, 4.1.1,
-5.0.0, 6.0.0, 6.1.0, 7.0.0 and 8.0.0 registry payloads remain intact for history/rollback;
-they are not active requirements. Earlier floors and snapshots remain
-version-scoped historical facts in [the release contract](relay-guidance.md#version-and-provenance).
-Project `0.0.0` is not a Relay release identity.
+The public receipt's payload digest and native tree hash use different recipes.
+The native tree also covers the receipt. Verify the complete file set and all
+payload bytes against the accepted producer path
+`packages/development-governance`. The enclosing accepted Relay commit identifies
+its guidance release. Frozen versioned registry payloads through 9.0.0 and the
+historical Git revision preserve reproducible rollback. The project version
+`0.0.0` identifies the VibeVM consumer, while the release package has its own
+version.
 
 Another consumer can deliberately select a compatible Shared version
 with its own exact source root and reviewed lock. Assess changes to used
@@ -196,9 +179,8 @@ reads locked committed files without resolving `latest`; an open-ended lower
 bound does not guarantee arbitrary future compatibility.
 
 The historical assessments in [compatibility](relay-skill-compatibility.md)
-retain earlier migration evidence. Task 194's current update changes the product
-snapshot, release-evidence lock, requirement and payload; it is not a project-only
-update. Accepted source, external publication and installed runtime qualification
+retain earlier migration evidence. Task 273 changes the product snapshot,
+release-evidence lock, requirement and payload as well as root project policy. Accepted source, external publication and installed runtime qualification
 remain separate.
 
 The [tool pin](../toolchain/vibevm.json) selects exact VibeVM **1.0.11**, lightweight
@@ -255,7 +237,7 @@ line. Ignored `.vibe/` state and the persistent boot transaction lock are not
 runtime authority. Follow [self-adoption](self-adoption.md) for the first-party
 export and projection commands.
 
-The standalone exporter and project lock now select exact Shared 10.0.0.
+The standalone exporter and project lock now select exact Shared 12.1.0.
 The single `build-relay-guidance.py` builder reads the immutable release closure
 directly through the existing builder, preserving its source-tree input-hash
 provenance mechanism. No unselected root 5.0.0 slot is needed; frozen accepted
@@ -267,7 +249,7 @@ a runtime/policy fallback. Report actual native warnings and their impact.
 Task #199 retains the exact accepted 7.0.0 slot, and Task #194 retains the
 previous 7.0.1 slot, at their original paths as inactive history. They are absent from the root lock and generated boot;
 native readers must
-use selected 10.0.0. The verifier accepts only those exact historical bytes when
+use selected 12.1.0. The verifier accepts only those exact historical bytes when
 present and rejects a missing selected slot. Native `install` prunes inactive
 slots in disposable copies; preserving this source evidence does not require
 rewriting native output or making the historical slot a fallback. Preserve the
