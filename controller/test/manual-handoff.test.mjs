@@ -65,12 +65,14 @@ test('non-source manual admission remains compact without inventing a branch or 
 
 test('the complete prompt is open and the complete canonical JSON is folded', () => {
   const hostileText = '東京 <img src=x onerror=alert(1)> `````';
-  const e = envelope({ attemptId: 'run-47', thread: `Task 42 — Step 7 — ${hostileText}` });
+  const e = envelope({ attemptId: 'run-47',
+    thread: `Task 42 — Step 7 — ${hostileText} ${'東京'.repeat(256)}` });
   const binding = { result: { evidence: Array.from({ length: 100 }, () => hostileText) } };
   const { body, previousBody } = renderManualHandoff(e, authorityUrl, binding);
   const prompt = /^(`{6})text\n([\s\S]+?)\n\1$/m.exec(body);
   const fold = '\n<details>\n<summary>Manual Outcome binding (JSON)</summary>\n\n';
   assert.equal(prompt[2], compactManualPrompt(e, authorityUrl));
+  assert.ok(Buffer.byteLength(prompt[2]) > 2048);
   const beforePrompt = body.slice(0, prompt.index);
   assert.ok(beforePrompt.includes('Attempt: run-47'));
   assert.ok(beforePrompt.includes(authorityUrl));

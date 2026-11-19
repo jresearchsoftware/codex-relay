@@ -145,10 +145,9 @@ ordinary receiving records and result for Issue IDs, bounded corrections and
 provenance. Standing delegation needs no per-candidate permission, Task,
 Step, PR, owner amendment or advance notice.
 
-For native execution, discover at receiving-scope preparation so ordinary
-launch can freeze the selected work in the existing charter and trusted
-Decision or applicable CR. Populate the receiving authority when defining
-that scope. Writer verifies the native owner launch and snapshots its actual
+For native execution, discover while preparing the effective receiving scope.
+Use its charter and any applicable trusted Decision or CR when defining that
+scope for the ordinary launch. Writer verifies the native owner launch and snapshots its actual
 effective authority. It neither scans the backlog nor treats a label, source
 Issue or ordinary comment as scope or admission authority. If discovery comes
 after admission, respect the exact snapshot and any express exclusions. Use

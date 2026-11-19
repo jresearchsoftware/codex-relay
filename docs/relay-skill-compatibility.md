@@ -38,10 +38,14 @@ removes the redundant constant Reviewer field while retaining continuation
 authorization and actual-effect signals. [#257](https://github.com/jresearchsoftware/codex-relay/issues/257)
 puts the prompt in an open text fence and folds the exact Manual Outcome JSON.
 Existing publication reservations and recorded body hashes retain their meaning.
-Exact earlier handoffs recover without reposting. Local parser/transport and
-GitHub GFM rendering checks support the candidate. The first real Writer comment
-with the new presentation still needs Issue UI and clipboard verification before
-closing #257. [#258](https://github.com/jresearchsoftware/codex-relay/issues/258)
+Exact earlier handoffs recover without reposting. GitHub's Markdown API rendered
+the generated synthetic handoff with the prompt open and the JSON collapsed.
+The rendered code text matched the UTF-8 prompt and JSON, excluding the fence
+newline. Literal HTML remained text. The
+[existing Issue comment](https://github.com/jresearchsoftware/codex-relay/issues/217#issuecomment-6719486918)
+supplies evidence of GitHub's code-copy control on the old layout. The first
+real Writer comment with the new presentation still needs Issue UI and
+clipboard verification before closing #257. [#258](https://github.com/jresearchsoftware/codex-relay/issues/258)
 stays open and labeled for authorized lifecycle observability work that can
 instrument and qualify an ordinary fallback TEST Apply, including failure
 telemetry and secret-safe output. The branch changes neither TEST nor PROD.
