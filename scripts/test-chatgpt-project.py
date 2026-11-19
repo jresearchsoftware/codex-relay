@@ -24,7 +24,13 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py"
 SPEC = importlib.util.spec_from_file_location("shared_chatgpt_project", GENERATOR)
 PROJECTOR = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(PROJECTOR)
+# The installed slot is verified as a complete immutable file set.
+previous_bytecode_setting = sys.dont_write_bytecode
+try:
+    sys.dont_write_bytecode = True
+    SPEC.loader.exec_module(PROJECTOR)
+finally:
+    sys.dont_write_bytecode = previous_bytecode_setting
 ANCHOR = "https://github.com/jresearchsoftware/codex-relay/issues/101"
 
 
