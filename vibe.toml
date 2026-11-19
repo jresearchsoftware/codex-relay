@@ -5,13 +5,13 @@ version = "0.0.0"
 spec_format = "mixed"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = { version = "=10.0.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "20c76b3629a62f0c7629f4a8eb1a67491eb6c37d", auth = "none" }
+"org.jresearch.ai/development-governance" = { version = "=12.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "8dfe533015339e560ba923bb58961595b9e544f3", auth = "none" }
 
 "org.jresearch.ai/landscape-model-guidance" = { version = "=1.0.3", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-model-guidance.git", rev = "48432f00802f5aad106f3e1a9264e17c1edc354c", auth = "none" }
 "org.jresearch.ai/landscape-subagents" = { version = "=1.0.2", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-subagents.git", rev = "042e92884278d748502157945301dbc3f3c8318c", auth = "none" }
 
 [requires.packages."flow:org.jresearch.ai/codex-relay"]
-version = "=9.0.0"
+version = "=10.0.0"
 link = "dynamic"
 
 [[registry]]

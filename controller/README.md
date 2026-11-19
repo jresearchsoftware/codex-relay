@@ -353,6 +353,10 @@ profile, admitted branch and required starting head when present, and the minima
 instruction to read `AGENTS.md`, current authority and referenced accepted
 governance. It directs safe checkout normalization before the head gate, stops at
 a real mismatch or protected boundary, and requires one canonical Writer Outcome.
+Writer displays the complete prompt in an open text fence and puts the exact
+Manual Outcome JSON in a collapsed details section. The visible description
+identifies the JSON as the admitted submission binding. The handoff still
+preserves all prompt and binding bytes for copying and parsing.
 Selected Decision links, integrity digests, scope/policy prose and the full
 progress-bounded policy stay outside that prompt; protected admission and native
 Outcome bindings retain their exact values. Retained v3 prompts still identify

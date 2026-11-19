@@ -28,13 +28,12 @@ remain in SKILL.md and local adoption remains consumer-owned:
 - `vibevm/vibespecs/protocols/package-versioning.md`
 - `vibevm/vibespecs/protocols/self-adoption.md`
 - `vibevm/vibespecs/protocols/github-repository-governance.md`
+- `vibevm/vibespecs/protocols/human-command-interaction.md`
 
-The minimum compatible semantic contract is Shared Governance 10.0.0. Earlier
-versions retain the protocol layout, but 9.0.0 lacks RA-007's project-context
-boundary and its TH/CL routing; 8.0.0 also lacks 9.0.0's residual-defect and
-operational-evidence duties. This Skill requires those meanings, plus 7.0.0's
-on-merge versus verified-condition closure timing. The floor follows actual used
-semantics, not a package-major number or a resolver refusal. Consumers still
+The minimum compatible semantic contract is Shared Governance 12.1.0. Version
+12.0.0 supplies GH-014, and 12.1.0 supplies the adopted HC-001–003 topic.
+Both are used by this Skill, alongside earlier closure, evidence and
+project-context rules. The floor follows those semantics. Consumers still
 select their own exact reviewed version and retain product authority.
 
 The package's nested `vibe.lock` and `vibevm/vibedeps` are frozen publisher

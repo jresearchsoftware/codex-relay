@@ -1,7 +1,7 @@
 # Development Governance
 
 `org.jresearch.ai/development-governance` is one passive MIT-licensed VibeVM
-flow. One manifest version covers its conditional boot, ten protocols, optional
+flow. One manifest version covers its conditional boot, eleven protocols, optional
 operator guides and manually invoked [ChatGPT maintenance assets](tools/chatgpt/README.md).
 It has no hooks, executable capabilities, dependencies or native Codex Skills.
 Ordinary reading requires no Python, VibeVM command or external service.
@@ -11,6 +11,25 @@ obligations and migration, including the 2.7.0 → 3.0.0 transition. It is part 
 the package payload. This README is the current overview; actual acceptance and
 publication evidence remains in source Issues/PRs, workflows and distribution
 tags. Frozen historical versions retain their original bytes.
+
+Version 12.1.0 adds explicitly adopted [Human Command Interaction](vibevm/vibespecs/protocols/human-command-interaction.md):
+one requested human action and one coherent return result, safe command batching,
+and real interpretation/permission boundaries. [Bash and PowerShell examples](vibevm/vibespecs/guides/human-command-interaction.md)
+show copyback, failures and a staged service diagnostic. This is a compatible
+MINOR addition against 12.0.0: existing adopters' mandatory behavior is unchanged;
+availability is separate from adoption. It adds no fixed command count or tool.
+
+Version 12.0.0 adds the mandatory optional-setting owner decision step in
+[GH-014](vibevm/vibespecs/protocols/github-repository-governance.md#GH-014).
+New/existing-repository onboarding surfaces observed values, recommendations and
+operational impact and asks explicit Yes/No questions, including whether to allow
+merge commits and automatically delete merged PR head branches. Record owner
+answers in the existing Task/Decision chronology before resolution/application;
+preconfigured values supply no decision and unanswered choices stay unresolved
+without blocking unrelated work. Both Yes and No are valid. Configuration remains
+optional and separately authorized, preserving supported workflow exceptions.
+This is MAJOR against 11.0.0 because it adds mandatory operator work; see the
+[worked choices](vibevm/vibespecs/guides/onboarding-examples.md) and changelog.
 
 Version 7.0.0 changes the existing [TH-026 closure clause](vibevm/vibespecs/protocols/task-handoff.md#TH-026):
 `close-authorized` closes on merge of the designated completing PR; `keep-open`
@@ -52,7 +71,8 @@ approval/wait stage or topic adoption; see the 3.0.0 → 4.0.0 changelog entry.
 | [Independent review — IR](vibevm/vibespecs/protocols/independent-review.md) | Explicitly adopted assessment methodology, evidence, complete affected behavior, findings and rereview. |
 | [Contract and decision maintenance — CD](vibevm/vibespecs/protocols/contract-and-decision-maintenance.md) | Explicitly adopted material contract changes, durable decisions and same-change human guidance. |
 | [Context loading — CL](vibevm/vibespecs/protocols/context-loading.md) | Explicitly adopted decision-relevant startup, triggered complete detail and targeted mutable refresh. |
-| [Small improvements — SI](vibevm/vibespecs/protocols/small-improvements.md) | Separately adopted owning-repository Issue capture, labeled discovery and authorized inclusion in a future suitable source change. |
+| [Small improvements — SI](vibevm/vibespecs/protocols/small-improvements.md) | Separately adopted owning-repository Issue capture, labeled discovery and standing automatic inclusion at the first suitable authorized source change. |
+| [Human command interaction — HC](vibevm/vibespecs/protocols/human-command-interaction.md) | Explicitly adopted human shell/admin action and report pattern, including ordinary diagnostics/setup outside governed Tasks. |
 
 Installing/updating the package and following a cross-topic reference do not
 adopt a topic. Each consumer owns accepted human instructions, local authority,
@@ -63,13 +83,18 @@ Task Handoff requires independent assessment under project rules; consumers
 select Independent Review separately for its shared methodology. That method
 adds no universal owner-wait or publication permission rule.
 
-Version 5.2.0 adds the separately opt-in SI topic and its
+Small Improvements is a separately adopted topic with a
 [usage/migration guide](vibevm/vibespecs/guides/small-improvements.md).
-Adopters use the exact `small-improvement` label, notify the owner with candidate
-IDs while preparing suitable source-changing work, and obtain receiving scope
-authority before combined implementation/review. Unfinished Issues remain open
-and traceable. Existing topic adopters acquire no additional scan or workflow;
-CD/TH/RA keep their semantic ownership. This compatible addition is MINOR.
+In 11.0.0, explicit project adoption supplies standing authorization to include
+all reasonably implementable bounded eligible exact-label `small-improvement`
+Issues at the first suitable authorized source-changing opportunity, including
+unrelated topics. No per-candidate permission or advance notification is needed.
+Keep express owner exclusions, admitted scopes, protected actions, normal combined
+validation and independent exact-head review. Unfinished Issues remain labeled,
+open and traceable; selection does not authorize status changes or closure.
+This is a MAJOR change from the former per-candidate opt-in contract. Existing
+consumers need their own accepted adoption; installation/update alone does not
+activate the topic or override local canonical rules. CD/TH/RA retain their owners.
 
 For adopted Task Handoff, [TH-028](vibevm/vibespecs/protocols/task-handoff.md#TH-028)
 adds executor-owned Draft/Ready handoff for applicable implementation PRs: Draft

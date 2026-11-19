@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { compactManualPrompt } from '../src/manual-handoff.mjs';
+import { canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { compactManualPrompt, renderManualHandoff } from '../src/manual-handoff.mjs';
 
 const repository = 'example-org/sample-project';
 const authorityUrl = `https://github.com/${repository}/issues/42`;
@@ -60,4 +61,25 @@ test('non-source manual admission remains compact without inventing a branch or 
   assert.ok(prompt.includes(`Repository: ${repository}`));
   assert.match(prompt, /Admitted Git start: none \(source-free manual work\)/);
   assert.match(prompt, /submit_manual_outcome/);
+});
+
+test('the complete prompt is open and the complete canonical JSON is folded', () => {
+  const hostileText = '東京 <img src=x onerror=alert(1)> `````';
+  const e = envelope({ attemptId: 'run-47',
+    thread: `Task 42 — Step 7 — ${hostileText} ${'東京'.repeat(256)}` });
+  const binding = { result: { evidence: Array.from({ length: 100 }, () => hostileText) } };
+  const { body, previousBody } = renderManualHandoff(e, authorityUrl, binding);
+  const prompt = /^(`{6})text\n([\s\S]+?)\n\1$/m.exec(body);
+  const fold = '\n<details>\n<summary>Manual Outcome binding (JSON)</summary>\n\n';
+  assert.equal(prompt[2], compactManualPrompt(e, authorityUrl));
+  assert.ok(Buffer.byteLength(prompt[2]) > 2048);
+  const beforePrompt = body.slice(0, prompt.index);
+  assert.ok(beforePrompt.includes('Attempt: run-47'));
+  assert.ok(beforePrompt.includes(authorityUrl));
+  assert.doesNotMatch(beforePrompt, /<details|<img/);
+  const json = body.split(fold)[1].match(/^```json\n([\s\S]+?)\n```\n\n<\/details>$/)[1];
+  assert.equal(json, canonicalAuthorityJson(binding));
+  assert.deepEqual(JSON.parse(json), binding);
+  assert.ok(previousBody.includes('<summary>Copyable Codex prompt</summary>'));
+  assert.ok(previousBody.endsWith(`\n\n\`\`\`json\n${json}\n\`\`\``));
 });

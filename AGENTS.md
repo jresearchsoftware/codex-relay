@@ -10,21 +10,22 @@ a change.
 
 ## Shared governance and Relay routing
 
-Relay explicitly adopts all ten complete applicable Shared Governance **10.0.0**
-protocols, accepted source `c207adca23cb3c022dac9ea953dd96364097fa85`,
-distribution `20c76b3629a62f0c7629f4a8eb1a67491eb6c37d`.
+Relay explicitly adopts all eleven complete applicable Shared Governance **12.1.0**
+protocols, accepted source `e4b5b738ae0918014dd06b5616fe37a5dcb93290`,
+distribution `8dfe533015339e560ba923bb58961595b9e544f3`.
 Read each complete topic when triggered; conditional loading excludes no clauses:
 
-- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
-- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
-- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
-- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
-- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
-- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
-- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
-- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
-- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow/protection decisions, one-time adoption inspection and event-driven rechecks.
-- [Small improvements](vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/small-improvements.md): deferred candidate capture and discovery when preparing suitable source-changing Tasks, their first source-changing Step or relevant CRs; analysis-only work skips the scan.
+- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
+- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
+- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
+- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
+- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
+- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
+- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
+- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
+- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow and protection decisions, including GH-014 for relevant optional settings choices.
+- [Small improvements](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/small-improvements.md): deferred capture, discovery and standing inclusion at the first suitable source-changing opportunity. Analysis-only work skips the scan.
+- [Human command interaction](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/human-command-interaction.md): one self-contained next action and one coherent copyback when asking a person to run commands or perform administration.
 
 These are the single portable rule owners. The
 [Relay bindings](docs/relay-guidance-ownership.md) retain native authority,

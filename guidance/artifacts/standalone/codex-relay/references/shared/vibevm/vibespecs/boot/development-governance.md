@@ -7,8 +7,8 @@ For proposed security, validation or operator controls, read the full
 [proportional-controls protocol](../protocols/proportional-controls.md),
 including when assessing behaviorally free security hardening. Unrelated tasks
 do not require reading it. Apply shared guidance within the owning project's
-current scope and authority; it grants no task, publication, review or
-consumer-adoption permissions. Consumers separately review and pin updates.
+current scope and authority; it grants no authority to launch Tasks, publish,
+review or adopt guidance for another consumer. Consumers separately review and pin updates.
 
 When deciding whether an earlier requirement binds newly authorized work,
 read [requirement-authority](../protocols/requirement-authority.md) when relevant
@@ -71,13 +71,21 @@ entrypoints, contributor paths and client instruction hierarchy remain intact;
 installation/update does not activate it. It adds no runtime retrieval or boot
 command and grants no new authority.
 
-For capturing deferred small source corrections and preparing suitable
-source-changing Tasks, first source-changing Steps or relevant CRs, read
+For capturing deferred small source corrections and preparing the first suitable
+authorized source-changing Task, first source-changing Step after analysis,
+relevant CR or new source-changing PR opportunity, read
 [small improvements](../protocols/small-improvements.md) only when the owning
 project separately adopts that topic. Use its exact Issue label for discovery
-and propose inclusion to the owner; existing Task authority remains intact.
+and automatically include all bounded eligible same-repository candidates under
+that adoption's standing delegation, without per-candidate permission or advance
+notification. Topic similarity and necessity to the main goal are not eligibility
+gates. Preserve explicit current Task exclusions, protected actions and admission;
+the delegation does not launch Tasks or transfer authority to other projects.
 Installation/update, Task Handoff adoption and this route do not activate it.
 Analysis-only work skips its scan; broader accepted local planning rules remain.
+Do not scan per internal commit or disturb an already approved PR solely for
+minor additions. Use the normal combined exact-head independent review and keep
+provenance, concrete deferrals and unfinished work discoverable.
 Its [usage guide](../guides/small-improvements.md) illustrates deliberate adoption
 and separately authorized consumer deduplication. Unrelated tasks skip it.
 
@@ -85,6 +93,16 @@ When a person explicitly requests project onboarding, for example “Onboard thi
 project to Shared Governance,” read the [onboarding procedure](../guides/onboarding.md).
 Skip that detail in ordinary sessions and on package install/update alone.
 This operator aid adopts no topic and grants no configuration-change authority.
+
+When guiding a human through shell or administrative work and requesting a
+return result, read [human command interaction](../protocols/human-command-interaction.md)
+only when the owning project explicitly adopts that topic. It covers ordinary
+diagnostics/setup as well as governed work: one self-contained human action and
+one coherent report, batching safe commands while stopping at interpretation,
+choice, permission or safety boundaries. Its [Bash and PowerShell examples](../guides/human-command-interaction.md)
+illustrate copyback and failures. Installation/update, Task Handoff adoption and
+this route do not activate it or serialize autonomous agent tool calls.
+Existing local authority and stronger boundaries remain; unrelated work skips it.
 
 When external engineering or reasoning methods would materially help the current
 work, you may consult the [optional FPF guide](../guides/engineering-methods.md).

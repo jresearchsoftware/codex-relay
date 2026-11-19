@@ -1,11 +1,63 @@
 # Relay Skill and Shared Governance compatibility
 
-Relay **8.0.0** requires Shared Governance **`>=10.0.0`**. Its native delivery
-reads the consumer's reviewed lock/slot; standalone and included publisher closure
-evidence use immutable Shared 10.0.0. Root project policy independently pins
-`=10.0.0`. This is a semantic minimum for the current product contract, not a
-promise about unknown future releases. Historical compatibility evidence below
-belongs to the frozen versions it assessed and does not qualify current semantics.
+Relay **10.0.0** is the source candidate for Task #273. Its native dependency
+floor is **`>=12.1.0`** and the first-party root independently selects exact
+Shared **12.1.0**. Standalone and publisher closure evidence include the same
+frozen Shared distribution. Native product reads the consumer lock. Each
+consumer retains its own policy and compatibility review.
+
+## Task 273: Shared 10.0.0 through 12.1.0
+
+The baseline is accepted Relay main `95b374b9a575810b4253db46adbe1618b82afd89`,
+the owner squash of [PR #277](https://github.com/jresearchsoftware/codex-relay/pull/277)
+reviewed at `49853c424cb64cba258d3ab3e32d813bd5c086c1`. It selects Shared 10.0.0
+from source `c207adca23cb3c022dac9ea953dd96364097fa85` and distribution
+`20c76b3629a62f0c7629f4a8eb1a67491eb6c37d`. Task
+[#273](https://github.com/jresearchsoftware/codex-relay/issues/273) supersedes
+its incoming 11.0.0 proposal and preserves
+[Shared Task #110 / PR #111](https://github.com/jresearchsoftware/shared-governance/pull/111)
+and its [Relay adoption handoff](https://github.com/jresearchsoftware/shared-governance/blob/f8d77b16ab9e92b31ae9a9390acabd9be9e962a7/docs/task-110/step-1/relay-adoption-handoff.md).
+The exact 12.1.0 target and full payload identity are in the
+[native identity contract](vibevm.md#selected-immutable-identities). The frozen
+accepted baseline governs work and review until this candidate is integrated.
+
+| Shared delta | Relay disposition |
+| --- | --- |
+| 11.0.0 (distribution `74111e683f2b85857a4219d0e9afc738d7b78baf`) | The complete SI protocol, guide and boot replace candidate-by-candidate and related-only planning. Relay development applies standing inclusion at the first suitable authorized opportunity, with combined review and disposition. Existing native receiving authority and immutable admission, exclusions, revocations and approved PRs survive. Standalone receiving work uses its supported authorizing route. SI stays local to Relay development. |
+| 12.0.0 (distribution `0f95fcdb5b710f8ff65140e49bb884be605b619f`) | GH-014, its onboarding guide and examples add separate explicit Yes/No choices, dated observations or unknowns, and an existing chronology record. This applies at relevant onboarding/bootstrap/settings decisions. Reuse attributable choices and preserve authorized PR, direct-main, publication and retained-head paths or exceptions where applicable. Existing authority and readback govern settings writes. No settings decision is triggered by this update. |
+| 12.1.0 (distribution `8dfe533015339e560ba923bb58961595b9e544f3`) | Explicitly adopt HC-001–003 in Relay development, its ChatGPT instructions and the product Skill's own interaction scope. One safe action and coherent copyback fit Relay's existing capability, shell/failure and protected-boundary rules. Batch deterministic commands in the actual shell and stop before human judgment, choice, new permission or safety changes. The existing compact manual prompt already supplies one action. The adoption adds a complete topic route without another runtime or an obligation for unrelated consumer work. |
+| Eight unchanged protocols | Context Loading, Task Handoff, Independent Review, Contract/Decision Maintenance, Proportional Controls, Requirement Authority, Package Versioning and Self-Adoption have identical bytes across the four distributions. Retain full adoption and existing triggers, including the selected closure transition and TH-029 full-text client reconciliation. |
+
+The shared ChatGPT generator and base are byte-identical across these releases.
+The Relay overlay changes, so regenerate the entire Instructions and reconcile
+it with owner-controlled live Settings after accepted integration. A source
+check, unchanged generator or generated text does not establish application.
+
+In the complete exact-label result, [#275](https://github.com/jresearchsoftware/codex-relay/issues/275)
+removes the redundant constant Reviewer field while retaining continuation
+authorization and actual-effect signals. [#257](https://github.com/jresearchsoftware/codex-relay/issues/257)
+puts the prompt in an open text fence and folds the exact Manual Outcome JSON.
+Existing publication reservations and recorded body hashes retain their meaning.
+Exact earlier handoffs recover without reposting. GitHub's Markdown API rendered
+the generated synthetic handoff with the prompt open and the JSON collapsed.
+The rendered code text matched the UTF-8 prompt and JSON, excluding the fence
+newline. Literal HTML remained text. The
+[existing Issue comment](https://github.com/jresearchsoftware/codex-relay/issues/217#issuecomment-6719486918)
+supplies evidence of GitHub's code-copy control on the old layout. The first
+real Writer comment with the new presentation still needs Issue UI and
+clipboard verification before closing #257. [#258](https://github.com/jresearchsoftware/codex-relay/issues/258)
+stays open and labeled for authorized lifecycle observability work that can
+instrument and qualify an ordinary fallback TEST Apply, including failure
+telemetry and secret-safe output. The branch changes neither TEST nor PROD.
+
+The supported product changes and new bundled bytes require [a new MAJOR
+release](relay-guidance.md#version-and-provenance). The adjacent 12.0.0 package
+contains GH-014 but lacks the HC topic, establishing the new native semantic
+minimum independently of resolver enforcement. Native and standalone checks
+exercise both routes and retained receipt/rollback behavior. Frozen 9.0.0
+and earlier releases preserve their bytes and selected per-attempt contracts.
+Publication of the newly accepted Relay version, live client readback and any
+separate installed qualification remain distinct evidence.
 
 ## Task 266: execution-control correction from accepted 7.0.0
 

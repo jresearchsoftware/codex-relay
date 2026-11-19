@@ -66,6 +66,35 @@ Source acceptance, installation, deployment and release are separate facts and
 permissions. A route choice adds no operational or credential authority, and
 source support does not qualify installed Reviewer or GitHub connector permissions.
 
+## Human command interaction
+
+When the supported route needs a person to run a shell or administrative
+action, apply HC-001–003 through the shared protocol source. Give one
+self-contained next action and identify the one coherent result to return.
+Use the actual shell and batch related deterministic commands only inside the
+same authorized, safe action. Keep meaningful errors and overall status in the
+copyback. In PowerShell, gather and format the streams explicitly where needed
+and preserve native process failure. In Bash, group the report and propagate
+the relevant failure status. Stop before any intermediate result requires
+human judgment, a choice, new permission or a safety reassessment. Existing
+authority, shell routing and protected operation contracts still apply. Use
+the complete admitted Codex prompt for a manual launch and ask for its
+admitted result through the supported result path.
+
+## GitHub onboarding and settings decisions
+
+Use the complete GitHub repository governance protocol when onboarding or
+bootstrapping a repository on GitHub or deciding relevant settings. Under
+GH-014, show the observed value with date and scope, or unknown, and explain
+the recommendation and effect for the project's actual paths. Ask for an
+explicit Yes or No per relevant optional setting, including allowing merge
+commits and deleting merged PR heads. Record or link the attributable choice
+in the existing Task/Decision chronology. Reuse an unchanged authorized
+choice, and keep unanswered choices unresolved while unrelated authorized
+work continues. Apply only with existing settings authority and verify the
+actual value afterward. Ordinary Task execution and Skill updates alone do
+not trigger settings choices.
+
 ## Authority, actors and capabilities
 
 The canonical Task is Issue #N. For current schema v4, the Issue has exactly one
@@ -172,10 +201,12 @@ and Writer state together with that client boundary; do not report success
 without Writer publication evidence. An inferred Step or pending run is not
 a terminal handoff. Reconcile any ambiguity through the original ready
 event and run.
-The handoff retains `MANUAL_CODEX_HANDOFF_READY`; only its prompt fence may be
-folded by default, after actual GitHub expand/copy usability is qualified.
-Otherwise leave it open. Actions run names can show bounded Task/PR/route
-information but do not preallocate Step.
+The handoff retains `MANUAL_CODEX_HANDOFF_READY`. Copy the full prompt from the
+open text fence. The collapsed Manual Outcome binding carries the canonical
+JSON for later submission through `submit_manual_outcome`. Preserve both blocks
+verbatim when transporting them. Older comments keep their original presentation.
+Actions run names can show bounded Task/PR/route information but do not
+preallocate Step.
 
 ### Manual result PR Step labels
 
@@ -412,9 +443,10 @@ protected Writer retains admitted execution and publication recovery.
 After `PUBLICATION_UNCERTAIN`, reconcile the original identical Reviewer
 operation through supported replay/readback, preserving its exact intended
 body and operation identity. Do not post another review or treat an uncertain
-response as approval. Reviewer `execution_supported: false` means that the
-Reviewer itself performs no merge; it does not prevent authorized owner use of
-the GitHub connector.
+response as approval. Use the Reviewer continuation authorization and hold
+with the live exact-head and authority checks below. The Reviewer reports
+`merge_performed` and `issue_closure_performed` as false. Authorized owner
+orchestration uses the GitHub connector and verifies its actual effects.
 
 For an implementation PR, independent acceptance uses native exact-head
 `APPROVE`; genuine remediation findings use `REQUEST_CHANGES`. Another Task

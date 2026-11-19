@@ -2,7 +2,7 @@
 [package]
 group = "org.jresearch.ai"
 name = "codex-relay"
-version = "9.0.0"
+version = "10.0.0"
 kind = "flow"
 frozen = true
 license = "MIT"
@@ -15,7 +15,7 @@ category = "flow"
 link = "dynamic"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = ">=10.0.0"
+"org.jresearch.ai/development-governance" = ">=12.1.0"
 
 [[skill]]
 name = "codex-relay"

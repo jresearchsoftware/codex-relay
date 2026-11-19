@@ -428,7 +428,7 @@ contract creates no authority registry or parallel Task ledger.
 ### Closure policy authoring
 
 Portable charter, chronological amendment and completion semantics belong to
-pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/task-handoff.md).
+pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/task-handoff.md).
 Relay binds the one explicit `Issue closure policy` field to the current
 v4 charter/Task-scoped trusted Decision mechanism; a native CR cannot change
 Task-wide closure semantics. Preserve retained schema-v3/legacy charter,

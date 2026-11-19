@@ -102,7 +102,7 @@ def assemble(root=ROOT):
     source_files["scripts/build-relay-guidance.py"] = digest(read_file(root, "scripts/build-relay-guidance.py"))
     protocols = ("task-handoff", "independent-review", "contract-and-decision-maintenance",
                  "context-loading", "proportional-controls", "requirement-authority",
-                 "package-versioning", "self-adoption", "github-repository-governance")
+                 "package-versioning", "self-adoption", "github-repository-governance", "human-command-interaction")
     native_route = skill["references/shared-protocols.md"].decode()
     standalone_route = f"""# Shared protocol source: immutable standalone snapshot
 

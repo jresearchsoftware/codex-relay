@@ -21,10 +21,16 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/tools/chatgpt/project.py"
+GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py"
 SPEC = importlib.util.spec_from_file_location("shared_chatgpt_project", GENERATOR)
 PROJECTOR = importlib.util.module_from_spec(SPEC)
-SPEC.loader.exec_module(PROJECTOR)
+# The installed slot is verified as a complete immutable file set.
+previous_bytecode_setting = sys.dont_write_bytecode
+try:
+    sys.dont_write_bytecode = True
+    SPEC.loader.exec_module(PROJECTOR)
+finally:
+    sys.dont_write_bytecode = previous_bytecode_setting
 ANCHOR = "https://github.com/jresearchsoftware/codex-relay/issues/101"
 
 
@@ -318,23 +324,38 @@ class RelayChatGPTProjectTests(unittest.TestCase):
 class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
     """Compact bootstrap routes the full local policy rather than copying it."""
 
-    def test_adoption_routes_both_authored_and_generated_text_to_complete_policy(self):
+    def test_standing_inclusion_and_native_scope_are_visible_in_both_forms(self):
         for name in ("custom.md", "instructions.md"):
             text = (ROOT / "chatgpt" / name).read_text()
             with self.subTest(surface=name):
-                self.assertIn("docs/relay-guidance-ownership.md", text)
-                self.assertIn("locked Shared10", text)
-                self.assertIn("repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement", text)
-                self.assertIn("receiving Task authority precedes inclusion", text)
-                self.assertIn("no suitable candidate permits work", text)
-                self.assertIn("automatically assess/include eligible relevant candidates", text)
-                self.assertIn("authenticated receiving authority before execution", text)
+                for phrase in (
+                    "docs/relay-guidance-ownership.md", "locked Shared 12.1.0",
+                    "repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement",
+                    "first source Step after analysis, relevant CR or newly commencing PR",
+                    "Include all eligible same-repository candidates, including unrelated topics",
+                    "Freeze native scope at admission",
+                    "Honor exclusions, revocations, prior admissions, approved PRs and protected limits",
+                    "Keep unfinished work open and labeled", "Skip analysis-only and unchanged work",
+                ):
+                    self.assertIn(phrase, text)
         binding = (ROOT / "docs/relay-guidance-ownership.md").read_text()
-        self.assertIn("/10.0.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
-        for clause in ("following pagination", "receiving Task's trusted Decisions",
-                       "Analysis-only Task | Skip the SI scan", "Keep source Issues open and labelled",
-                       "Cancellation, partial delivery", "no cross-repository or periodic queue scan"):
-            self.assertIn(clause, binding)
+        self.assertIn("/12.1.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
+        self.assertIn("Include both bounded fixes", binding)
+        self.assertIn("record the protected candidate's ordinary authorized route", binding)
+
+    def test_settings_and_human_command_rules_preserve_applicability_and_copyback(self):
+        for name in ("custom.md", "instructions.md"):
+            text = (ROOT / "chatgpt" / name).read_text()
+            with self.subTest(surface=name):
+                for phrase in (
+                    "onboarding/bootstrap and relevant settings decisions",
+                    "explicit Yes or No with observed value or unknown",
+                    "Reuse unchanged attributable choices",
+                    "A package update alone triggers no settings questions or writes",
+                    "one paste-safe next action and one coherent status/error copyback for the actual shell",
+                    "Batch deterministic commands and stop before judgment, permission or safety changes",
+                ):
+                    self.assertIn(phrase, text)
 
     def test_capability_examples_share_existing_route_and_preserve_real_boundaries(self):
         workflow = (ROOT / "packages/codex-relay/skill/references/workflow.md").read_text()

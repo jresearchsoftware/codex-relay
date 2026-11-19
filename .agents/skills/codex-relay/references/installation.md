@@ -8,10 +8,14 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **8.0.0** becomes a first-party source release only on independent
-acceptance and squash merge. Repository self-adoption travels with that accepted
-source; it is not an external Skill registry/package/tag publication or proof
-that another consumer adopted it. An unmerged artifact remains a candidate.
+Version **10.0.0** is a MAJOR candidate from accepted 9.0.0. The product
+adopts GH-014 and HC-001–003, updates manual handoff presentation and removes
+the constant `post_review_continuation.execution_supported` from the Reviewer
+response. Consumers use the actual continuation authorization and effect fields.
+The native floor is `>=12.1.0` because these operator interactions use the new
+Shared rules. Standalone and publisher closure evidence carry exact 12.1.0.
+Source acceptance, external publication and installed qualification remain
+separate. Frozen 9.0.0 and earlier packages preserve their own bytes.
 The 3.0.0 major removed the native Skill's bundled Shared protocol paths and
 changed its supported dependency routing and packaging contract. It was not
 caused by the Shared package's major number. Frozen accepted earlier registry
@@ -54,10 +58,10 @@ Frozen 7.0.0 and earlier package bytes remain unchanged.
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `8.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `10.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
-standalone form includes an immutable, attributed Shared Governance 10.0.0
+standalone form includes an immutable, attributed Shared Governance 12.1.0
 snapshot for offline use. The native Skill has a real Shared dependency and no
 second protocol bundle: its generated `references/shared-protocols.md` directs
 reading through the consumer's reviewed `vibe.lock` and selected Shared slot.
@@ -65,8 +69,8 @@ The complete trees and provenance therefore differ by delivery form.
 The native package retains a nested frozen lock/slot only as publisher release
 closure evidence. It is not the consumer's lock, an active boot route or a
 protocol fallback; read only the consumer-selected Shared slot.
-Relay development adopts all ten complete topics; this product Skill adopts
-the nine listed topics through its product bindings. Small Improvements remains
+Relay development adopts all eleven complete topics. This product Skill adopts
+the ten listed topics through its product bindings. Small Improvements remains
 a separate local adoption. Another consumer selects its own adoption through
 accepted local guidance; installing files alone neither adopts topics nor
 installs services or changes settings.
@@ -119,7 +123,7 @@ Use the hash-checked VibeVM 1.0.11 binary identified in the assembled
 the Relay URL/revision with an owner-selected actual immutable distribution
 source. The template is not a claim of external package publication.
 Select an explicit immutable Shared Governance Git source root and a compatible
-consumer requirement under local authority. The template's Shared 10.0.0 source
+consumer requirement under local authority. The template's Shared 12.1.0 source
 is a reproducible example; a consumer with another deliberately selected
 compatible Shared version keeps its own reviewed source and lock. Relay's supported SemVer lower bound is
 declared in the native manifest; it does not pin consumers to the standalone

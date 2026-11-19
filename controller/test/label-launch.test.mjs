@@ -5,6 +5,8 @@ import { parseLabelLaunch, labelRunName } from '../src/launch-metadata.mjs';
 import { admitEnvelope } from '../src/live-authority.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { createPublicationBroker } from '../src/publication-broker.mjs';
+import { canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { renderManualHandoff } from '../src/manual-handoff.mjs';
 import { fixture, memoryStore } from './fixture.mjs';
 
 const labels = (...names) => names.map(name => ({ name }));
@@ -54,11 +56,33 @@ for (const remediation of [false, true]) {
     const run = () => runAttempt({ ...f, execute: () => assert.fail('manual started Codex') });
     assert.equal((await run()).status, 'handed-off'); assert.equal((await run()).status, 'handed-off');
     assert.equal(f.comments.length, 1); assert.equal(f.pushes(), 0);
-    const prompt = /```text\n([\s\S]*?)\n```/.exec(f.comments[0].body)[1];
+    const body = f.comments[0].body;
+    const [visible, collapsed] = body.split('<details>\n<summary>Manual Outcome binding (JSON)</summary>');
+    const prompt = /```text\n([\s\S]*?)\n```/.exec(visible)[1];
+    const bindingText = /^```json\n([\s\S]+?)\n```\n\n<\/details>$/m.exec(collapsed)[1];
+    const binding = JSON.parse(bindingText);
+    assert.equal(bindingText, canonicalAuthorityJson(binding));
+    assert.equal(binding.result.admission.step, 5);
+    assert.equal(binding.result.attempt, f.envelope.attemptId);
+    assert.deepEqual(binding.result.authority, f.envelope.request.authority);
     assert.match(prompt, /Task: #42; Step: 5/); assert.match(prompt, /Required starting head:/);
     assert.match(prompt, /base SHA: [a-f0-9]{40}/); assert.ok(prompt.split('\n').length <= 15);
     assert.ok(prompt.includes(`Subagents: ${remediation ? 'Off' : 'On'}`));
     assert.equal(currentStep(f.issue.labels), 5);
+
+    // An old persisted intent can recover the exact old comment without reposting.
+    const url = /^Canonical authority: (.+)$/m.exec(visible)[1];
+    const marker = `<!-- relay:${f.envelope.attemptId}:handoff -->`;
+    const oldBody = `${renderManualHandoff(f.envelope, url, binding).previousBody}\n\n${marker}`;
+    const record = await f.store.get(f.envelope.runId);
+    delete record.commentBodies.handoff;
+    record.commentIntent = { key: 'handoff', number: f.envelope.number, body: oldBody, rendererVersion: 'human-v1' };
+    await f.store.put(f.envelope.runId, record);
+    f.comments[0].body = oldBody;
+    assert.equal((await run()).status, 'handed-off');
+    assert.equal(f.comments.length, 1);
+    assert.equal(f.comments[0].body, oldBody);
+    assert.equal((await f.store.get(f.envelope.runId)).commentIntent, null);
   });
 }
 

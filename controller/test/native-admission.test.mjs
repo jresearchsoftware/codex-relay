@@ -57,7 +57,10 @@ test('manual handoff exposes exact public Outcome bindings without a private jou
   assert.deepEqual(binding.result.admission, admissionBinding(f.envelope.request));
   assert.equal(binding.result.charter_sha256, f.envelope.request.charter_sha256);
   assert.equal(binding.result.attempt, f.envelope.attemptId);
-  assert.ok(body.indexOf('Manual Outcome binding:') > body.indexOf('</details>'));
+  const fold = body.indexOf('<details>\n<summary>Manual Outcome binding (JSON)</summary>');
+  assert.ok(body.indexOf('Manual Outcome binding:') < fold);
+  assert.ok(body.indexOf('```json') > fold);
+  assert.match(body.slice(0, fold), /```text\n/);
   assert.match(body, /This binding is not an execution result/);
   assert.ok(body.includes(`Admitted branch: ${f.envelope.branch}; base SHA: ${f.envelope.historicalBase}`));
   assert.ok(body.includes(`Required starting head: ${f.envelope.startHead}`));

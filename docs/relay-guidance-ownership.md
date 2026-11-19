@@ -1,17 +1,17 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **10.0.0** as the single
+This repository deliberately adopts Shared Governance **12.1.0** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`c207adca23cb3c022dac9ea953dd96364097fa85`; the distribution is
-`20c76b3629a62f0c7629f4a8eb1a67491eb6c37d`. Root [AGENTS](../AGENTS.md)
-explicitly adopts all ten complete applicable protocols. Their conditional boot
+`e4b5b738ae0918014dd06b5616fe37a5dcb93290`; the distribution is
+`8dfe533015339e560ba923bb58961595b9e544f3`. Root [AGENTS](../AGENTS.md)
+explicitly adopts all eleven complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
 bindings below. Native delivery reads complete shared protocols from the
 consuming project's reviewed lock and selected Shared slot through its generated
 `references/shared-protocols.md`; standalone includes the attributed immutable
-10.0.0 snapshot. Consumers deliberately select and adopt their own compatible
+12.1.0 snapshot. Consumers deliberately select and adopt their own compatible
 Shared dependency. No fixed bundled native route supersedes that selection.
 The historical
 [Task #108 analysis](task-handoff-methodology-analysis.md) and earlier
@@ -122,67 +122,77 @@ component, environment and runtime entrypoints.
 
 ## Small Improvements binding
 
-Task #230's [owner Decision](https://github.com/jresearchsoftware/codex-relay/issues/230#issuecomment-6772537689)
-selects the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/small-improvements.md)
-for Relay development. Its operational use starts after normal independent
-exact-head acceptance and integration of this adoption. The selected protocol
-owns capture, discovery, eligibility, proposed inclusion and disposition;
-CD, TH and RA retain their existing semantic ownership. This local binding adds
-no product Skill requirement or adoption duty for another repository.
+Relay development adopts the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/small-improvements.md)
+through Task [#273](https://github.com/jresearchsoftware/codex-relay/issues/273),
+effective after normal independent exact-head acceptance and integration of
+this adoption. This supersedes the related-candidate and advance-notice
+practice under Tasks #230 and #244 for future opportunities. Preserve original
+admissions and explicit exclusions or revocations. The Relay product Skill
+does not adopt SI for consumers.
 
-The planner uses the existing authorized GitHub tracker path to inspect open
-Issues in this repository with the exact `small-improvement` label, for example:
+At the first genuinely suitable otherwise authorized source-changing Task,
+its first source Step after analysis, relevant CR or newly commencing PR,
+inspect all pages of open Issues matching the exact repository and label:
 
 ```text
 repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement
 ```
 
-Inspect the complete result set, following pagination when needed, and read
-relevant candidates. Task [#244](https://github.com/jresearchsoftware/codex-relay/issues/244)
-records Relay's standing owner preference to assess and include
-eligible relevant candidates automatically at the first suitable source-changing
-Task, first source-changing Step after analysis, or relevant CR. Identify selected
-Issue IDs, bounded corrections and discovery provenance in the receiving
-authenticated Task/Decision/CR authority before execution, and notify the owner
-through that existing record. No separate case-by-case selection prompt is needed
-when this standing preference and valid receiving authority cover the inclusion.
-An Issue title is not a discovery key. Check whether the label
-exists; create or apply it only through an authorized repository label path.
-Unavailable label capability or permissions must be reported; an unlabelled item
-is not queued through SI. Capture deferred corrections in ordinary Issues with
-the protocol's evidence and provenance, reusing existing Issues where suitable.
+Assess each candidate under SI-004 and automatically include all eligible
+same-repository corrections, including unrelated topics. Consider combined
+risk, ownership, compatibility, dependencies and reviewability. Use the
+ordinary receiving records and result for Issue IDs, bounded corrections and
+provenance. Standing delegation needs no per-candidate permission, Task,
+Step, PR, owner amendment or advance notice.
 
-The receiving Task's trusted Decisions and admission remain the source of scope
-authority. Record accepted Issue IDs and corrections there before implementation;
-a source Issue, label, search result or PR-specific CR grants no Task-wide scope.
-Check same-repository relevance, dependencies, conflicts and ownership under
-SI-004. Material choices and protected credential/PROD work retain their ordinary
-authorized paths and TEST/PROD boundaries. Link accepted candidates to the Task
-and PR without automatic closing keywords; preserve provenance and any remainder.
-Normal checks and one independent review assess the combined exact head.
+For native execution, discover while preparing the effective receiving scope.
+Use its charter and any applicable trusted Decision or CR when defining that
+scope for the ordinary launch. Writer verifies the native owner launch and snapshots its actual
+effective authority. It neither scans the backlog nor treats a label, source
+Issue or ordinary comment as scope or admission authority. If discovery comes
+after admission, respect the exact snapshot and any express exclusions. Use
+the existing authorized path for a genuine material scope change, or defer.
+A PR-specific CR cannot grant Task-wide authority. Standalone work exercises
+the same delegation within its otherwise authorized scope and records
+inclusions in the receiving PR or Task record. Preserve protected operations,
+actor separation and already-approved PRs.
 
-Keep source Issues open and labelled while work remains pending, including after
-scheduling. Accepted integration must be evidenced before authorized closure,
-with the receiving PR and integrated revision; the existing closure contract and
-Writer/Reviewer identities remain intact. Cancellation, partial delivery and
-deferral retain discoverability and an explicit remainder/reason. Duplicate or
-superseded disposition follows SI-008 with evidence, without claiming a fix.
-
-| Planning or disposition example | Application |
+| Receiving situation | Application |
 | --- | --- |
-| Suitable source-changing Task, first source-changing Step after analysis, or relevant CR | Inspect the exact-label open Issues once at preparation; automatically assess/include eligible related corrections under the standing preference, recording selected IDs, bounded scope and provenance in authenticated receiving authority before execution. An empty result or no suitable candidate permits the receiving work to proceed. |
-| Analysis-only Task | Skip the SI scan; do not introduce tracker access as an analytical-work prerequisite. |
-| Inner correction or later Step with unchanged scope and no new relevant information | Do not rescan solely as ceremony; refresh when the receiving scope or relevant information materially changes. |
-| Receiver cancelled, drops a candidate or delivers only part | Record the disposition and exact remaining work; keep the source Issue open and discoverable. Scheduling or tests alone do not establish accepted integration. |
+| Newly commencing PR with two bounded same-repository fixes, including an unrelated typo, and a third requiring protected deployment | Include both bounded fixes in the normal result, link the source Issues and record the protected candidate's ordinary authorized route. |
+| First source Step after analysis or relevant CR with an express exclusion | Assess the queue at preparation, honor the exclusion and record the concrete deferral. |
+| Analysis-only Task or inner correction with unchanged scope | Skip the scan. Refresh only after a material change in receiving scope or relevant information. |
+| Already admitted execution or already approved PR | Preserve its bounds. Defer ordinary additional work to the next suitable opportunity. |
+| Empty or unavailable queue | Proceed with authorized work, reporting unavailable discovery or label capability. |
 
-There is no cross-repository or periodic queue scan, automatic Task injection,
-bot, second backlog, queue-empty gate or new mandatory CI gate. The walkthrough
-and existing offline routing checks qualify guidance consistency, not actual
-model compliance, label availability or live tracker operations.
+Capture bounded deferred work through authorized Issue and label tools. Use
+`small-improvement` as the lookup key and keep unfinished or partial work open
+and discoverable. Record why each deferral remains ineligible and its next
+suitable opportunity or ordinary route. For included work, link each source
+Issue and remainder in the receiving PR and Outcome using neutral references.
+Run normal checks and one independent review of the combined exact head.
+Reconcile closure through normal authorized continuation after accepted
+integration and any separately required operational verification. A duplicate
+or superseded candidate needs evidence and a surviving reference or reason.
+
+There is no cross-repository or periodic queue scan, queue-empty gate, new
+runtime, convening of a new Task from the queue or separate approval stage.
+
+## Human command interaction binding
+
+Relay adopts the complete [HC-001–003 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/human-command-interaction.md)
+for project and product interactions asking a person to run shell commands or
+perform administrative work. The [Skill workflow](../packages/codex-relay/skill/references/workflow.md#human-command-interaction)
+binds the next action and copyback to actual capability and authority. Compose
+the action for the real shell using the existing
+[shell routing and failure rules](../CONTRIBUTING.md#execution-environment-and-shell-routing).
+Apply it to human diagnostics, setup and handoff instructions. Autonomous tool
+calls, Writer admission and independently required owner decisions keep their
+existing paths. A separate consumer-wide adoption remains the consumer's choice.
 
 ## Temporary legacy closure binding
 
-Repository development governance selects Shared 10.0.0. Relay 7.0.0 prepares
+Relay 7.0.0 under the historical Shared 10.0.0 selection prepared
 Task [#194](https://github.com/jresearchsoftware/codex-relay/issues/194)'s current
 single-field semantics: only the genuinely completing `close-authorized` PR gets
 verified native closing linkage before the protected merge; intermediate and
@@ -247,8 +257,7 @@ introduces no additional release gate. A consumer-only
 compatible or irrelevant Shared update needs no Relay release. Assess actually
 used protocol semantics, applicability, exceptions and product bindings; a change to Relay's own supported behavior, guidance, interfaces, requirements,
 packaging or shipped immutable bytes needs its own classified release (PV-018).
-The root 10.0.0 lock is outside that product; frozen standalone and included
-release-evidence snapshots use 10.0.0 in Relay 7.0.0; older frozen releases retain their snapshots and remain checked under PV-013. They never
+The root dependency is a separate project selection. Task #273 prepares Relay 10.0.0 with a 12.1.0 semantic floor and exact release evidence. Frozen releases retain their own snapshots and remain checked under PV-013. They never
 replace the native consumer's selected protocol authority (PV-015). See the
 [compatibility assessment](relay-skill-compatibility.md).
 
@@ -259,7 +268,11 @@ sandbox boundary. Structural/tool probes establish files and native discovery,
 not model compliance or production installation.
 
 Shared GitHub Governance owns workflow/protection choices, one-time adoption
-inspection and event-driven rechecks. Relay source uses PRs, exact-head public
+inspection and event-driven rechecks. At applicable onboarding/bootstrap or
+settings decisions, apply [GH-014](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/github-repository-governance.md#GH-014).
+Preserve current authorized paths and previously attributable unchanged choices.
+Adopting this update triggers no settings review or mutation on its own. Relay
+source uses PRs, exact-head public
 CI and independent native review; human contributions remain available through
 [CONTRIBUTING](../CONTRIBUTING.md). Relay's GitHub App identities, rulesets,
 workflow projections, deployment/configuration and protected settings mutations

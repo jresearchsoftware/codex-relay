@@ -90,6 +90,48 @@ release cadence, publisher, registry or maintenance-line arrangement.
 
 ## Verify what GitHub actually enforces
 
+<a id="GH-014"></a>
+**GH-014 — Explicit choices for optional settings.**
+
+During GitHub repository onboarding/bootstrap or a relevant settings decision,
+surface each relevant optional setting separately. Disclose its actual observed
+value with dated evidence and scope, or **unknown** when unavailable; give the
+recommended choice and practical impact for the project's actual working paths.
+At minimum include **“Allow merge commits? Yes or No”** (`allow_merge_commit`)
+and **“Automatically delete merged PR head branches? Yes or No”**
+(`delete_branch_on_merge`). Include other relevant optional settings, such as
+squash/rebase availability, using equally clear questions. Here Yes means enable
+the named setting and No means disable it, rather than approve/reject an
+ambiguous bundle. For PR-centric disposable branches, GH-005's usual proposal
+is No to merge commits and Yes to automatic deletion; justify a different
+recommendation where topology, tooling or retained merged-PR heads require it.
+Explain any interaction with linear history, other merge methods, branch
+protection and supported direct-main/publication paths before selection.
+
+Explicitly ask the owner for a **Yes or No for each setting** and record the
+attributable answer, date and setting in the existing onboarding Task/Decision
+chronology **before applying it or reporting that choice as resolved**. A No is
+a fully valid optional choice; do not apply a contrary recommendation instead.
+An explicit unchanged choice already recorded under current owner authority
+can be linked and reused; no second approval is needed. A preconfigured value,
+GitHub default, generic approval of onboarding or silence is not that choice.
+Do not infer past owner intent, rewrite historical Decisions or treat current
+configuration as retroactive authorization.
+
+An unanswered setting stays explicitly **unresolved**, even if its current value
+matches the recommendation. Continue unrelated authorized onboarding and report
+partial readiness without claiming that choice resolved. Missing visibility
+leaves the configuration unverified even if the owner answers; never substitute
+a desired value for an observation. Reuse existing records, consolidate the
+questions where useful and add no registry or recurring per-Task questionnaire.
+
+The owner may choose either value; this rule mandates the decision step, not a
+universal profile. A choice does not grant settings permission or waive stronger
+accepted protections: reconcile an actual conflict through existing authority.
+Apply only within already admitted settings authority and available permission,
+then read back under GH-008–GH-011; otherwise hand off the selected delta without
+mutation. Already authorized application needs no additional approval ceremony.
+
 <a id="GH-008"></a>
 **GH-008 — Verify actual host capability.**
 
@@ -157,7 +199,7 @@ and [automatic branch deletion](https://docs.github.com/en/repositories/configur
 
 | Occasion | Sufficient work |
 | --- | --- |
-| New repository onboarding or first topic adoption | Identify working paths and authority; select the proportionate profile; inspect relevant effective settings, plan/identity limits and supported writer/check/review/publication paths once. Reuse current evidence. Any application of settings needs separately admitted authority and readback. |
+| New repository onboarding or first topic adoption | Identify working paths and authority; select the proportionate profile; inspect relevant effective settings, plan/identity limits and supported writer/check/review/publication paths once. Resolve relevant optional choices through GH-014, preserving unanswered items. Reuse current evidence. Any application of settings needs separately admitted authority and readback. |
 | Relevant policy/settings/visibility/plan change, writer/check identity or trigger change, suspected drift or a denied supported operation | Recheck the affected rules and paths; resolve mismatches and exceptions through current project authority. A package update alone does not adopt a new profile. |
 | Each meaningful code/PR change | Run relevant source/tests and check exact-result authority/assessment at integration. Follow already required checks; requalify changed behavior. Repository-wide settings inspection is unnecessary absent a relevant change or drift signal. |
 | Routine reference refresh | Verify changed facts, provenance and proportionate format/link consistency. Use the accepted direct-main path; no recurring settings audit, task machinery or unrelated full suite. |
@@ -180,9 +222,13 @@ in the existing onboarding/task/PR/release records with date and evidence scope.
    reconcile shared/local duplicates in their separately reviewed adoption.
 3. Inspect effective GitHub settings and feature/identity limits with current
    access. Specify enforcement gaps and the cheapest sufficient alternative.
-4. If specifically authorized, the responsible owner/operator applies only the
+4. Follow GH-014 for each relevant optional setting: disclose observed value,
+   recommendation and impact, ask its binary question, and record the owner's
+   answer before resolution/application. Keep unanswered choices unresolved
+   while unrelated onboarding continues.
+5. If specifically authorized, the responsible owner/operator applies only the
    selected settings and reads them back; otherwise hand off the recommendation.
-5. Walk an ordinary update and applicable publication/exception path using
+6. Walk an ordinary update and applicable publication/exception path using
    available evidence. Keep the concise path/exception and event-recheck rule in
    existing guidance; report unqualified paths without claiming enforcement.
 

@@ -1,18 +1,20 @@
 # Governed Codex CLI integration
 
-Relay qualifies an exact **0.169.0** installation, selected by the product
+Relay qualifies an exact **0.170.0** installation, selected by the product
 deployment contract. Installation still uses `--release` and verifies the exact
 version. Runtime and installation never follow a floating latest or self-update.
 Routine source maintenance follows the separate development policy below.
 
-The Task 57 maintenance check selected official stable 0.169.0 (2026-11-14).
-The official installer and all six credential-free loopback cases passed under
-an ordinary Linux UID, covering production argv, native JSONL/usage, schema and
-semantic validation, stdin, isolated home, permission policy, failed provider and
-optional MCP refusal. The installer emitted temporary-directory PATH-alias and
-old-release-cleanup warnings; direct execution passed and no existing release
-was modified. This is compatibility evidence, not a capability review or an
-installed-service update. Historical evidence below retains its original pins.
+Task #273 selected official stable [0.170.0](https://github.com/openai/codex/releases/tag/rust-v0.170.0)
+on 2026-11-19. The [release comparison](https://github.com/openai/codex/compare/rust-v0.169.0...rust-v0.170.0)
+includes oversized-WebSocket fallback and MCP OAuth cleanup fixes. The exact
+official installer and all deterministic loopback cases passed under an ordinary
+Linux UID, covering production argv, stdin, schema/result handling, JSONL,
+usage, permission policy, provider failures and optional MCP refusal. The
+installer warned that temporary-directory PATH aliases were unavailable. The
+probe invoked the exact binary directly. This establishes bounded compatibility
+for the pin and leaves the capability-review baseline and installed version as
+separately verified facts. Historical evidence retains its original pins.
 
 ## Relay development maintenance policy
 
@@ -72,7 +74,7 @@ every technical upgrade. Maintain these distinct facts in their existing owners:
 
 | Fact | Current evidence and owner |
 | --- | --- |
-| Selected/qualified CLI dependency | Exact **0.169.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
+| Selected/qualified CLI dependency | Exact **0.170.0**, selected by `relay_codex_cli_version` in the deployment variables linked above; the historical integration evidence and qualification limits below describe what was checked. |
 | Capabilities reviewed through version X | **Unknown / not yet established.** The accepted integration evidence below establishes bounded compatibility and selected capability decisions, not a complete historical review interval. No evidenced reviewed-through version or review date is established here. |
 | Installed-host version | A separate observed fact from the specific host's installation/version evidence; neither source selection nor capability review proves it. |
 

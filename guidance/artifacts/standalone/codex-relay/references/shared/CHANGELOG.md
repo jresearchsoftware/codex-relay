@@ -1,5 +1,72 @@
 # Development Governance changelog
 
+## 12.1.0
+
+MINOR: adds the separately adopted [Human Command Interaction topic](vibevm/vibespecs/protocols/human-command-interaction.md#HC-001)
+and [Bash/PowerShell examples](vibevm/vibespecs/guides/human-command-interaction.md).
+HC-002 owns one requested human action and one coherent return result, allowing
+many safe commands in one script/block while stopping at interpretation, choice,
+permission or safety boundaries. HC-003 owns shell-appropriate copyback,
+meaningful failures and exit/result status. It adds no fixed command count,
+operator tool, gate, state ledger or artificial Task/Step.
+
+This availability does not adopt the topic for existing consumers or change their
+mandatory behavior. PC-001/006/010, Task Handoff and all ten existing protocol
+semantics remain unchanged. Local canonical rules and stronger protections stay
+binding until separately reviewed consumer adoption reconciles duplicates.
+The dependency-free passive package includes both new files and the conditional
+boot route; Bash/PowerShell are example environments, not package prerequisites.
+
+## 12.0.0
+
+MAJOR: [GH-014](vibevm/vibespecs/protocols/github-repository-governance.md#GH-014)
+adds an explicit owner Yes/No decision step for relevant optional GitHub settings
+at new/existing-repository onboarding or bootstrap. Show actual observed values,
+recommendations and operational impact; ask at least about allowing merge commits
+and deleting merged PR head branches. Record each attributable answer in the
+existing Task/Decision chronology before resolving or applying it. Current values
+are observations, not owner choices. An explicit No is valid; an unavailable
+answer remains unresolved while unrelated onboarding continues.
+
+This adds mandatory operator work against 11.0.0, even when current settings
+already match the recommendation; it is not a PATCH or an additive MINOR change.
+GH owns the rule; onboarding routes and worked examples apply it without a
+second normative owner. Optional configuration remains opt-in, with PR, direct-main,
+publication, retained-branch and host/access exceptions preserved. Existing
+settings-change authority/readback and least-friction application remain intact;
+no universal profile, new service, automatic settings write or second authorization
+for an already permitted action is introduced.
+
+Consumers deliberately review/adopt the changed workflow under their own authority.
+Package installation does not adopt GitHub governance or change existing local
+policy. The other nine protocols, topic routing, public inventory, license,
+ChatGPT tools and frozen versions retain their bytes and meaning. No Chat-to-Work
+control or fallback is introduced by this version; client access controls and
+consumer settings remain separately owned.
+
+## 11.0.0
+
+MAJOR: SI-001–SI-008 replace per-candidate opt-in with standing opportunistic
+implementation delegation for projects that explicitly adopt Small Improvements.
+At the first suitable authorized source-changing Task/Step/CR or newly commencing
+PR opportunity, automatically include all reasonably implementable bounded safe
+same-repository candidates, even on unrelated topics. No separate Task, Step, PR,
+scope amendment, per-candidate permission or advance notification is required.
+This changes the binding execution/scope contract and mandatory inclusion work;
+it is not an editorial repair or a compatible optional addition.
+
+Preserve express owner exclusions/revocations, already-admitted scopes, protected
+and native trust boundaries, analysis-only exemption, proportionate scan timing,
+already approved PRs, combined validation and independent exact-head review.
+Concrete exceptions retain pending/partial/cancelled discovery and accepted
+integration/authorized tracker disposition. The guide and compact route follow
+this contract. RA-006 and Task Handoff retain authority and lifecycle ownership;
+the other nine protocols and ChatGPT tools retain their bytes and meaning.
+
+Producer-local adoption does not migrate other consumers or rewrite earlier
+admissions. Existing consumers require their own reviewed adoption and binding;
+package availability, source acceptance and publication are distinct.
+
 ## 10.0.0
 
 MAJOR: [RA-007](vibevm/vibespecs/protocols/requirement-authority.md#RA-007)

@@ -265,8 +265,8 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(builder.inventory(root / "vibevm/vibedeps"), native_before)
         self.assertFalse(old_slot.exists())
         provenance = json.loads(artifacts_before["standalone/codex-relay/PROVENANCE.json"])
-        self.assertEqual(provenance["shared_version"], "10.0.0")
-        self.assertEqual(provenance["shared_requirement"], ">=10.0.0")
+        self.assertEqual(provenance["shared_version"], "12.1.0")
+        self.assertEqual(provenance["shared_requirement"], ">=12.1.0")
         self.assertEqual(provenance["source_files"]["scripts/build-relay-guidance.py"],
                          hashlib.sha256((root / "scripts/build-relay-guidance.py").read_bytes()).hexdigest())
 
@@ -292,7 +292,7 @@ class GeneratedTests(unittest.TestCase):
     def test_project_builder_rejects_changed_frozen_shared_input(self):
         root = self.build_fixture()
         snapshot = root / ("guidance/dependency-closure/vibevm/vibedeps/"
-                           "org.jresearch.ai.development-governance/10.0.0/README.md")
+                           "org.jresearch.ai.development-governance/12.1.0/README.md")
         before = builder.inventory(root / "guidance/artifacts")
         snapshot.write_bytes(snapshot.read_bytes() + b"\nChanged snapshot\n")
         with self.assertRaisesRegex(ValueError, "Shared distribution bytes differ"):
@@ -329,13 +329,13 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(old_info["shared_version"], "5.0.0")
         self.assertIn("including a later expressly authorized Apply", old_workflow)
         self.assertIn("Closure requires effective `close-authorized`", old_workflow)
-        shared = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0"
+        shared = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0"
         handoff = " ".join((shared / "vibevm/vibespecs/protocols/task-handoff.md").read_text().split())
         self.assertIn("closure on successful merge of the designated completing PR", handoff)
         self.assertIn("no new owner-choice prompt, policy-change Decision", handoff)
         current = json.loads((ROOT / "guidance/source.json").read_text())
         self.assertEqual((current["version"], current["shared_requirement"], current["shared_version"]),
-                         ("9.0.0", ">=10.0.0", "10.0.0"))
+                         ("10.0.0", ">=12.1.0", "12.1.0"))
         workflow = " ".join((ROOT / "packages/codex-relay/skill/references/workflow.md").read_text().split())
         self.assertIn("required publication or owner-run Apply after merge uses this policy", workflow)
         self.assertIn("No new owner-choice prompt, policy-change Decision or conversion", workflow)

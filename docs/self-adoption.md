@@ -2,22 +2,21 @@
 
 Relay authors and consumes its product Skill. Portable producer/candidate
 semantics belong to the complete adopted pinned
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/10.0.0/vibevm/vibespecs/protocols/self-adoption.md).
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md).
 This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **9.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **10.0.0** candidate uses the
 native export. Registry, slot, lock, boot index and projected native Skill travel
-together. Root [AGENTS](../AGENTS.md) adopts Shared **10.0.0**, independently
+together. Root [AGENTS](../AGENTS.md) adopts Shared **12.1.0**, independently
 pinned at the exact Git identity in [the identity contract](vibevm.md#selected-immutable-identities).
-The native product requires `>=10.0.0` for its actual RA-007/TH/CL and TH/IR
-semantics; standalone and publisher evidence use immutable Shared 10.0.0.
-[Release classification](relay-guidance.md#version-and-provenance) explains the
-MAJOR change from accepted 8.0.0 and [compatibility](relay-skill-compatibility.md)
-distinguishes that semantic floor from historical layout proof. Frozen accepted
-1.0.0 through 8.0.0 registry payloads remain unchanged. Source acceptance does not
-imply external publication, installed activation or another consumer's adoption.
+The native product's `>=12.1.0` floor covers GH-014 and HC-001–003. Standalone
+and publisher evidence include exact 12.1.0. The
+[release classification](relay-guidance.md#version-and-provenance) explains
+the MAJOR from accepted 9.0.0. Frozen 9.0.0 and earlier registry payloads
+preserve their bytes. Source acceptance, publication, installed activation
+and consumer adoption remain separate.
 
 ## Accepted-source binding and ordinary use
 
@@ -51,6 +50,12 @@ immutable. The candidate adds protected causal diagnostics and live lifecycle
 progress, and changes terminal `BLOCKED` Actions results to fail visibly; it does
 not activate that candidate guidance in the implementing session.
 
+Task #273 freezes accepted PR #277's integrated guidance at
+`95b374b9a575810b4253db46adbe1618b82afd89` before reading 12.1.0 candidate routes.
+Its generated 10.0.0 package remains a candidate until independent acceptance
+and integration. Historical and admitted guidance stay at their selected
+revisions.
+
 Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
@@ -81,19 +86,19 @@ closure. Its installed boot/AGENTS routes remain candidate data until accepted;
 continue under the independently frozen admitted guidance. Native root install
 produces its lock, complete slots/receipts and INDEX together without requiring
 another Skill projection or startup command.
-The single `build-relay-guidance.py` builder reads the pinned Shared 10.0.0
+The single `build-relay-guidance.py` builder reads the pinned Shared 12.1.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
 disposable input adapter or unselected root slot. This retains the accepted
-builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph selects Shared 10.0.0.
+builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph selects Shared 12.1.0.
 The verifier
 compares the complete standalone snapshot with its own accepted distribution
-and separately validates the root consumer lock/slot. Native install prunes the
-obsolete unselected root 5.0.0 slot; frozen registry payloads remain intact.
+and separately validates the root consumer lock/slot. Native install prunes retired active slots. Git and the frozen registry
+retain the previous selected payloads.
 
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v9.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v10.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0`, `v6.1.0`, `v7.0.0` or `v8.0.0` bytes. Native VibeVM
+not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0`, `v6.1.0`, `v7.0.0`, `v8.0.0` or `v9.0.0` bytes. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

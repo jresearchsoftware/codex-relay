@@ -669,7 +669,7 @@ async fn typed_charter_rejects_legacy_cr_writer_but_preserves_native_approve() {
     assert_eq!(plan["merge_method"], "squash");
     assert_eq!(plan["required_native_checks"], "must_pass_for_exact_head");
     assert!(plan.get("close_issue_authorized").is_none());
-    assert_eq!(plan["execution_supported"], false);
+    assert!(plan.get("execution_supported").is_none());
     assert!(!state
         .requests
         .lock()
@@ -846,7 +846,7 @@ async fn native_approve_continuation_binds_current_writer_result_and_respects_ex
         assert_eq!(plan["task_complete"], true);
         assert_eq!(plan["close_issue_authorized"], false);
         assert_eq!(plan["request_authority"]["outcome"]["id"], 2000);
-        assert_eq!(plan["execution_supported"], false);
+        assert!(plan.get("execution_supported").is_none());
         assert!(!state
             .requests
             .lock()
@@ -1996,7 +1996,7 @@ async fn v4_exact_native_approve_returns_conditional_closure_authority_without_i
     );
     assert!(continuation.get("task_complete").is_none());
     assert!(continuation.get("close_issue_authorized").is_none());
-    assert_eq!(continuation["execution_supported"], false);
+    assert!(continuation.get("execution_supported").is_none());
     assert_eq!(
         continuation["request_authority"]["admission"]["attempt"],
         "run-10"
@@ -3600,7 +3600,7 @@ async fn source_pr_retained_direct_manual_result_approves_and_replays_without_in
         assert_eq!(plan["required_native_checks"], "must_pass_for_exact_head");
         assert_eq!(plan["mergeability"], "must_be_verified");
         assert_eq!(plan["unresolved_checks"], "block_continuation");
-        assert_eq!(plan["execution_supported"], false);
+        assert!(plan.get("execution_supported").is_none());
         assert_eq!(plan["merge_performed"], false);
         assert_eq!(plan["issue_closure_performed"], false);
         assert!(plan.get("close_issue_authorized").is_none());
@@ -3909,6 +3909,7 @@ async fn assert_retained_approval_without_source_continuation(
         let plan = &approved["result"]["structuredContent"]["post_review_continuation"];
         assert_eq!(plan["error_code"], expected_error, "{approved}");
         assert_eq!(plan["automatic_continuation_authorized"], false);
+        assert!(plan.get("execution_supported").is_none());
         assert_eq!(plan["merge_performed"], false);
         assert_eq!(plan["issue_closure_performed"], false);
         assert!(!plan["request_authority"]["source_pr"].is_object());
