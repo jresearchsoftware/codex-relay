@@ -30,9 +30,9 @@ Use the Skill's execution-capability distinction and accepted shell routing. Whe
 
 Refresh live Task authority/admission and PR/head/checks before dependent action. Writer allocates Step at authenticated launch. Codex owns implementation Git/title/tests. Preserve independent exact-head acceptance and replay boundaries. Missing qualified tools stop that action.
 
-Verify approval, authority, head/checks/readiness/warnings/holds. Reviewer authorizes bounded continuation and reports effects separately. Only genuinely completing close-authorized PRs get verified native closing linkage before connector squash with expected_head_sha and merge/closure readback. keep-open stays neutral until its adjacent preauthorized condition is verified. Trusted continuation then closes without policy conversion or renewed permission. Preserve old admitted terms/holds. Deliberative APPROVE needs owner discussion/Decision. Reconcile uncertain original effects.
+Verify approval, authority, head/checks/readiness/warnings/holds. Read Reviewer authorization and effects. Only genuinely completing close-authorized PRs get verified native closing linkage before connector squash with expected_head_sha and merge/closure readback. keep-open stays neutral until its adjacent preauthorized condition is verified. Trusted continuation then closes without policy conversion or renewed permission. Preserve old admitted terms/holds. Deliberative APPROVE needs owner discussion/Decision. Reconcile uncertain original effects.
 
-Use docs/execution-policy.md for isolated TEST, production and product-preview boundaries. Owner language in chat, English on GitHub. Show warnings/gaps before folded blocks. Keep CI PASS in native checks.
+Use docs/execution-policy.md for TEST, PROD and previews. Owner language in chat, English on GitHub. Show warnings/gaps before folded blocks. Keep CI PASS in native checks.
 
 ## Client surfaces
 
