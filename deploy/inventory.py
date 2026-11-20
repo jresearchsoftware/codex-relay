@@ -454,6 +454,47 @@ def _protected_state(probe, config):
     return result
 
 
+def _runner_policy(config, repository):
+    consumer, environment = config['consumer'], config['environment']
+    general = environment['generalRunner']
+    scope = general.get('scope', 'repository')
+    organization = repository.split('/')[0]
+    # Keep the standalone report bounded by listing the shared routing and
+    # recovery paths and ref once, regardless of the number of repositories.
+    automatic = {'repositories': consumer.get('repositories', [repository]),
+                 'ref': 'refs/heads/' + consumer['baseBranch'],
+                 'routingWorkflow': consumer['routingWorkflow'],
+                 'recoveryWorkflow': consumer['recoveryWorkflow']}
+    local_apply = environment['localApply']
+    lifecycle = '/.github/workflows/manual-main-production-deploy.yml'
+    lifecycle_ref = None
+    if local_apply.get('source') == 'git':
+        lifecycle_ref = local_apply['repository'] + lifecycle + '@refs/heads/main'
+    elif local_apply.get('source') == 'installed':
+        lifecycle_ref = repository + lifecycle + '@' + automatic['ref']
+    return {
+        'name': 'github-runner-registration-and-policy', 'status': 'unavailable',
+        'registrationSettings': 'https://github.com/' + repository + '/settings/actions/runners',
+        'groupSettings': 'https://github.com/organizations/' + organization + '/settings/actions/runner-groups',
+        'aclTarget': 'undetermined',
+        'production': {'group': environment['runner']['group'],
+                       'verification': 'verify the separate Production group against its reviewed policy. '
+                                       'Exclude General routing, recovery and projected owner lifecycle refs'},
+        'general': {'scope': scope, 'group': general.get('group'),
+                    'configuredRoutingAndRecovery': automatic,
+                    'configuredLifecycleWorkflowRef': lifecycle_ref},
+        'next': 'owner-admin reads back live GitHub registrations, selected repositories and exact workflow refs '
+                'before any organization settings write. Compare with reviewed consumer policy and, for a '
+                'managed pool, eligibility evidence including independently qualified consumers. The config '
+                'refs are scoped verification inputs. A complete ACL requires live organization and consumer '
+                'evidence. Preserve independently qualified selections. Require selected repositories, '
+                'trusted exact workflow refs and external isolation from untrusted PR and candidate code '
+                'on both runner roles. Repository-scoped '
+                'General runners need equivalent external isolation. Labels and workflow conditions are '
+                'insufficient. Keep runners inactive until independently qualified',
+    }
+
+
 def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None, git_desired=False,
             allowed_stage_operation=None):
     """Inventory is observation only, never decommission/installation authority.
@@ -497,11 +538,6 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
     blockers.extend('protected-state-' + row['name'] + '-invalid' for row in protected if row['status'] == 'invalid')
     consumer = config['consumer']
     repository = config['environment'].get('repository', consumer.get('repository'))
-    organization = repository.split('/')[0]
-    workflow_ref = '@refs/heads/' + consumer['baseBranch']
-    production_workflow = repository + '/.github/workflows/manual-main-production-deploy.yml' + workflow_ref
-    general_workflows = [repository + '/' + consumer[field] + workflow_ref
-                         for field in ['routingWorkflow', 'recoveryWorkflow']]
     return {'schemaVersion': 1, 'readOnly': True, 'mutationAuthorized': False,
             'status': 'blocked' if blockers else 'observed', 'installed': installed,
             'configuration': configuration, 'runners': runners, 'protectedState': protected,
@@ -511,17 +547,7 @@ def inspect(config, *, root=Path('/'), owner_uid=0, boundary=None, user_ids=None
                  'settings': 'https://github.com/' + repository + '/settings/installations',
                  'next': 'owner-admin verifies configured distinct Writer and Reviewer App installation IDs, '
                          'permissions and repository access against consumer.writerApp and consumer.reviewerApp'},
-                {'name': 'github-runner-registration-and-policy', 'status': 'unavailable',
-                 'registrationSettings': 'https://github.com/' + repository + '/settings/actions/runners',
-                 'groupSettings': 'https://github.com/organizations/' + organization + '/settings/actions/runner-groups',
-                 'production': {'group': config['environment']['runner']['group'],
-                                'onlyRepository': repository, 'onlyWorkflowRefs': [production_workflow]},
-                 'general': {'scope': config['environment']['generalRunner'].get('scope', 'repository'),
-                             'group': config['environment']['generalRunner'].get('group'),
-                             'onlyRepository': repository, 'onlyWorkflowRefs': general_workflows},
-                 'next': 'owner-admin verifies registrations and saved isolated group restrictions; '
-                         'repository-scoped general runners need equivalent external scheduling isolation; '
-                         'labels and workflow conditions are insufficient; keep inactive until independently qualified'},
+                _runner_policy(config, repository),
                 {'name': 'dns-and-ingress', 'status': 'unavailable',
                  'next': 'owner verifies configured public DNS/ingress; run tls-check for protected TLS validation'},
             ] + ([{'name': 'installed-environment-intent', 'status': 'unavailable',

@@ -463,19 +463,40 @@ def test_remote_probe_transmits_only_explicit_prepared_stage_operation(target, m
     assert calls[0][-3:] == ['--git-desired', '--allow-prepared-stage-operation', operation]
 
 
-def test_admin_handoff_binds_exact_consumer_workflow_refs_and_settings(target):
+def test_isolated_consumer_admin_handoff_scopes_exact_refs_without_an_acl_target(target):
     target.config['consumer']['baseBranch'] = 'stable'
     target.config['consumer']['routingWorkflow'] = '.github/workflows/custom-routing.yml'
     target.config['environment']['generalRunner'].update(scope='organization', group='isolated-general')
-    admin = {row['name']: row for row in observe(target)['ownerAdmin']}
+    report = observe(target)
+    admin = {row['name']: row for row in report['ownerAdmin']}
     row = admin['github-runner-registration-and-policy']
     assert row['groupSettings'] == 'https://github.com/organizations/example-org/settings/actions/runner-groups'
-    assert row['production']['onlyWorkflowRefs'] == [
-        'example-org/sample-project/.github/workflows/manual-main-production-deploy.yml@refs/heads/stable']
-    assert row['general']['onlyWorkflowRefs'] == [
-        'example-org/sample-project/.github/workflows/custom-routing.yml@refs/heads/stable',
-        'example-org/sample-project/.github/workflows/manual-writer-publication-recovery.yml@refs/heads/stable']
+    assert row['production']['group'] == target.config['environment']['runner']['group']
     assert row['general']['group'] == 'isolated-general'
+    assert row['general']['configuredRoutingAndRecovery'] == {
+        'repositories': ['example-org/sample-project'],
+        'ref': 'refs/heads/stable',
+        'routingWorkflow': '.github/workflows/custom-routing.yml',
+        'recoveryWorkflow': '.github/workflows/manual-writer-publication-recovery.yml',
+    }
+    assert row['general']['configuredLifecycleWorkflowRef'] is None
+    assert row['status'] == 'unavailable' and row['aclTarget'] == 'undetermined'
+    assert report['readOnly'] is True and report['mutationAuthorized'] is False
+    assert 'onlyRepository' not in json.dumps(row) and 'onlyWorkflowRefs' not in json.dumps(row)
+    assert 'reads back live GitHub' in row['next']
+    assert 'before any organization settings write' in row['next']
+
+
+def test_installed_source_lifecycle_is_reported_on_general_for_its_anchor(target):
+    repository = target.config['consumer']['repository']
+    target.config['source']['repository'] = 'https://github.com/' + repository + '.git'
+    target.config['environment']['localApply'] = {'source': 'installed'}
+    row = next(row for row in observe(target)['ownerAdmin'] if
+               row['name'] == 'github-runner-registration-and-policy')
+    lifecycle = repository + '/.github/workflows/manual-main-production-deploy.yml@refs/heads/main'
+    assert row['general']['configuredLifecycleWorkflowRef'] == lifecycle
+    assert lifecycle == managed_pool.pool_contract(target.config)['workflowRefsByRepository'][repository][-1]
+    assert lifecycle not in json.dumps(row['production'])
 
 
 def test_tls_source_group_readable_private_key_retains_supported_contract(target):
