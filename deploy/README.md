@@ -425,12 +425,15 @@ Repository labels and a workflow's `if` expression cannot establish that policy.
 
 Before installation, prepare the distinct App installations and repository
 permissions listed in the integration reference, record the intended production
-and general runner groups, and restrict scheduling outside candidate-controlled
-YAML to the configured trusted workflows at `refs/heads/<baseBranch>`. Include
-the supported production deployment workflow in the production group's policy.
-Keep candidate validation on disposable runners. Place owner-provisioned App
-keys and the Codex token at the protected references in the durable config;
-registration tokens are supplied later only for missing runners. Configure the
+and General runner groups, and restrict scheduling outside candidate-controlled
+YAML to selected repositories and trusted exact workflow refs. Routing and
+publication recovery use the configured base branch on General. The Git-managed
+owner lifecycle uses its deployment repository's exact `main` workflow ref on
+General. The opt-in installed-source lifecycle also runs on General, from its
+installation anchor. Verify the separate Production group's isolation under
+its reviewed policy. Keep candidate validation on disposable runners. Place
+owner-provisioned App keys and the Codex token at the protected references in
+the durable config. Supply registration tokens later for missing runners. Configure the
 public DNS address set and the owner-controlled ingress before TLS issuance.
 
 `validate` reports invalid local schema/identity/path prerequisites. The
@@ -542,6 +545,17 @@ registration. Protected credential/TLS results are metadata observations;
 scoped credential, TLS and live App qualification still verify their contents
 and remote identity. `ownerAdmin` lists the separate GitHub and ingress
 verification handoffs. A successful observation grants no mutation authority.
+
+The runner-policy handoff shows the repositories, workflow paths and base ref
+for General routing and recovery, plus the exact owner lifecycle ref when
+configured. Those refs scope verification.
+They may omit independently qualified consumers of the same General group,
+and the configured refs may include workflows awaiting adoption. The complete
+ACL is undetermined. Before any organization settings write, the owner-admin
+reads back live GitHub registrations and group restrictions and compares the
+selected repositories and exact workflow refs with reviewed consumer policy and
+managed-pool eligibility. Preserve other independently qualified selections and
+the separate Production group's scheduling isolation.
 
 `bootstrap` runs inventory and derives deterministic workflow artifacts from
 the selected exact source and configuration. If the consumer does not yet

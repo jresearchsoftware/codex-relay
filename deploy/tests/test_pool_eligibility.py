@@ -11,8 +11,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'deploy'))
+import config as deployment_config
+import inventory
 import pool_eligibility as eligibility
-from managed_pool import GitHub, PoolError
+from managed_pool import GitHub, PoolError, pool_contract
 
 pytestmark = pytest.mark.skipif(sys.platform != 'linux', reason='native Linux protected filesystem')
 HEAD = 'a' * 40
@@ -606,6 +608,50 @@ def test_native_protected_two_repository_map_qualifies_without_acl_mutation(tmp_
     fixture = native_group(tmp_path, contract)
     assert fixture.github.qualify(contract, fixture.eligible) == 7
     assert len(fixture.calls) == 3
+    assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
+
+
+def test_inventory_scopes_git_lifecycle_without_replacing_qualified_shared_acl(tmp_path):
+    config = deployment_config.load(ROOT / 'deploy/example.json', ROOT)
+    anchor = config['consumer'].pop('repository')
+    other = 'example-org/configured'
+    deployment = 'example-org/private-deployment'
+    config['consumer']['repositories'] = [anchor, other]
+    config['environment'].update(repository=anchor, localApply={
+        'source': 'git', 'repository': deployment, 'configPath': 'relay.json'})
+    deployment_config.validate(config, ROOT)
+    contract = pool_contract(config)
+    fixture = native_group(tmp_path, contract)
+    fixture.selected[:] = list(fixture.eligible)
+    fixture.group['selected_workflows'] = [ref for values in fixture.eligible.values() for ref in values]
+    saved_workflows = fixture.group['selected_workflows'][:]
+
+    report = inventory.inspect(config, root=tmp_path, owner_uid=os.getuid())
+    row = next(row for row in report['ownerAdmin'] if row['name'] == 'github-runner-registration-and-policy')
+    automatic = row['general']['configuredRoutingAndRecovery']
+    lifecycle = row['general']['configuredLifecycleWorkflowRef']
+    assert automatic['repositories'] == [anchor, other]
+    assert lifecycle == lifecycle_ref(deployment)
+    configured = {repository: [
+        f"{repository}/{automatic[key]}@{automatic['ref']}" for key in ['routingWorkflow', 'recoveryWorkflow']]
+        for repository in automatic['repositories']}
+    configured[deployment] = [lifecycle]
+    assert configured == contract['workflowRefsByRepository']
+    assert lifecycle_ref(anchor) not in json.dumps(row)
+    assert lifecycle_ref(deployment) not in json.dumps(row['production'])
+    assert row['status'] == 'unavailable' and row['aclTarget'] == 'undetermined'
+    assert report['mutationAuthorized'] is False
+    assert 'onlyRepository' not in json.dumps(row) and 'onlyWorkflowRefs' not in json.dumps(row)
+    assert 'Preserve independently qualified selections' in row['next']
+    assert not fixture.calls
+
+    assert len(fixture.selected) == 5 and len(saved_workflows) == 9
+    assert fixture.github.qualify(contract, fixture.eligible) == 7
+    assert fixture.group['selected_workflows'] == saved_workflows
+    assert refs(fixture.first.config)[0] in saved_workflows and refs(fixture.second.config)[0] in saved_workflows
+    fixture.group['selected_workflows'].append(lifecycle_ref(deployment, 'candidate'))
+    with pytest.raises(PoolError, match='GROUP_UNTRUSTED_WORKFLOW_REF'):
+        fixture.github.qualify(contract, fixture.eligible)
     assert all(method == 'GET' and body is None for method, _, body in fixture.calls)
 
 
