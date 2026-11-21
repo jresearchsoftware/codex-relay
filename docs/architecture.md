@@ -159,7 +159,13 @@ introduced blobs (including later-deleted secrets), rechecks live authority,
 and performs an ordinary non-force push.
 
 Useful task commits can be published even if execution returned blocked or a
-later readiness check failed. A successful contained result, complete worktree
+later readiness check failed. The protected runner journal keeps the full
+validated semantic result before collection and publication. For a successful
+summary that exceeds the Outcome display limit, Writer publishes and reads
+back a [report on the same native target](../controller/README.md#full-automatic-execution-reports).
+The report uses the target's repository visibility and is bound to the Outcome
+by native ID and digest. Protected runner journals and diagnostic streams stay
+within their existing host boundary. A successful contained result, complete worktree
 observation, verified publication and observed exact PR head permit one successful terminal Outcome. After the protected controller
 receipt proves execution handoff, Writer verifies native Ready for that exact
 PR/head. Draft/Ready follows execution ownership; integration observations

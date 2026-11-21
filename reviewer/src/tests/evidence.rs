@@ -44,6 +44,18 @@ fn comment(id: u64, actor: &str, body: &str) -> Value {
     json!({"id": id, "user": {"login": actor}, "body": body, "html_url": "https://unrelated.example/never-follow"})
 }
 
+fn report_comment() -> Value {
+    let body = format!(
+        "## Codex execution report\n\nTask 56 — Step 1\nAttempt: run-41\nResult head: {SHA}\n\n```text\n| Full report marker é😀\n```\n\n<!-- relay:run-41:report -->"
+    );
+    let mut native = comment(60, WRITER, &body);
+    native["user"] = json!({"login":WRITER,"type":"Bot","id":3});
+    native["issue_url"] = json!(format!(
+        "https://api.github.com/repos/{REPOSITORY}/issues/56"
+    ));
+    native
+}
+
 async fn handler(
     State(mock): State<MockEvidence>,
     method: Method,
@@ -267,6 +279,21 @@ async fn handler(
         }
         return Json(json!([])).into_response();
     }
+    if uri.path() == format!("/repos/{REPOSITORY}/issues/comments/60") {
+        let mut native = report_comment();
+        match mock.mode {
+            "typedoutcomereportdenied" => return StatusCode::FORBIDDEN.into_response(),
+            "typedoutcomereportmissing" => return StatusCode::NOT_FOUND.into_response(),
+            "typedoutcomereportchanged" => native["body"] = json!("Modified report."),
+            "typedoutcomereportwrongparent" => {
+                native["issue_url"] = json!(format!(
+                    "https://api.github.com/repos/{REPOSITORY}/issues/25"
+                ));
+            }
+            _ => {}
+        }
+        return Json(native).into_response();
+    }
     if uri.path() == format!("/repos/{REPOSITORY}/issues/56/comments") {
         if mock.mode == "runtime403" {
             return StatusCode::FORBIDDEN.into_response();
@@ -301,6 +328,14 @@ async fn handler(
             if let Some(warnings) = &mock.outcome_warnings {
                 record["warnings"] = json!(warnings);
             }
+            if mock.mode.starts_with("typedoutcomereport") {
+                let report = report_comment();
+                record["result"]["identities"] = json!([{"kind":"github-report-comment","id":format!(
+                    "60:{}", crate::task_authority::hash(report["body"].as_str().unwrap()))}]);
+                if mock.mode == "typedoutcomereportinvalidref" {
+                    record["result"]["identities"][0]["id"] = json!("60:not-a-digest");
+                }
+            }
             let mut native = comment(61, WRITER, &crate::task_authority::render(&record));
             native["user"]["type"] = json!(if mock.mode == "typedoutcomeowner" {
                 "User"
@@ -314,7 +349,11 @@ async fn handler(
                     native["body"].as_str().unwrap()
                 ));
             }
-            return Json(json!([native])).into_response();
+            return if mock.mode.starts_with("typedoutcomereport") {
+                Json(json!([report_comment(), native])).into_response()
+            } else {
+                Json(json!([native])).into_response()
+            };
         }
         let attempt = if mock.mode.starts_with("execution") && mock.mode != "executionpartial" {
             "Attempt: run-41\n"
@@ -865,6 +904,70 @@ async fn folded_typed_outcomes_preserve_exact_head_execution_warning_and_bot_pro
         assert_eq!(evidence["required_surfaces_complete"], false);
         assert_eq!(evidence["warning_observation"], "unknown");
     }
+}
+
+#[tokio::test]
+async fn typed_outcome_report_evidence_checks_native_access_identity_and_exact_body() {
+    for (mode, availability, reason) in [
+        ("typedoutcomereport", "available", None),
+        (
+            "typedoutcomereportdenied",
+            "permission_denied",
+            Some("GITHUB_PERMISSION_DENIED"),
+        ),
+        (
+            "typedoutcomereportmissing",
+            "unavailable",
+            Some("GITHUB_NOT_FOUND_OR_NOT_VISIBLE"),
+        ),
+        (
+            "typedoutcomereportchanged",
+            "unavailable",
+            Some("AUTHORITY_REPORT_CHANGED"),
+        ),
+        (
+            "typedoutcomereportwrongparent",
+            "unavailable",
+            Some("AUTHORITY_REPORT_CHANGED"),
+        ),
+    ] {
+        let (evidence, calls) = acquire(mode).await;
+        let evidence = evidence.unwrap();
+        let outcomes = surface(&evidence, "github_relay_execution_outcomes");
+        assert_eq!(outcomes["items"].as_array().unwrap().len(), 1, "{mode}");
+        let report = &outcomes["items"][0]["report"];
+        assert_eq!(report["availability"], availability, "{mode}");
+        assert_eq!(report["reason"], json!(reason), "{mode}");
+        assert_eq!(report["comment_id"], 60);
+        assert_eq!(
+            report["native_url"],
+            format!("https://github.com/{REPOSITORY}/issues/56#issuecomment-60")
+        );
+        assert_eq!(
+            report["sha256"],
+            crate::task_authority::hash(report_comment()["body"].as_str().unwrap())
+        );
+        assert_eq!(outcomes["availability"], availability, "{mode}");
+        if reason.is_some() {
+            assert_eq!(evidence["required_surfaces_complete"], false, "{mode}");
+        }
+        assert!(!evidence.to_string().contains("Full report marker"));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call["path"] == format!("/repos/{REPOSITORY}/issues/comments/60"))
+                .count(),
+            1
+        );
+    }
+    let (evidence, calls) = acquire("typedoutcomereportinvalidref").await;
+    assert_eq!(
+        surface(&evidence.unwrap(), "github_relay_execution_outcomes")["reason"],
+        "AUTHORITY_REPORT_REFERENCE_INVALID"
+    );
+    assert!(!calls
+        .iter()
+        .any(|call| call["path"] == format!("/repos/{REPOSITORY}/issues/comments/60")));
 }
 
 #[tokio::test]
