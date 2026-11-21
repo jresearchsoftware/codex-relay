@@ -224,7 +224,11 @@ export async function fixture(t, options = {}) {
         for (const name of body.labels) if (!subject.labels.some(label => label.name === name)) subject.labels.push({ name });
         return copy(subject.labels);
       }
-      if (path.endsWith('/comments')) { const c = { id: nextComment++, user: { login: WRITER }, body: body.body }; comments.push(c); return copy(c); }
+      if (path.endsWith('/comments')) {
+        const c = { id: nextComment++, user: { login: WRITER, type: 'Bot' }, body: body.body,
+          issue_url: 'https://api.github.com/repos/' + REPOSITORY + path.slice(0, -'/comments'.length) };
+        comments.push(c); return copy(c);
+      }
       throw new Error(`Unexpected POST ${path}`);
     },
     async delete(path) {

@@ -5,7 +5,7 @@ function replaceExact(text, value, replacement) {
   return text.split(value).join(replacement);
 }
 
-export function redactDiagnosticText(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], preserveNewlines = false, inputTruncated = false } = {}) {
+export function redactSecrets(value, { codexAccessToken = "", githubToken = "", knownSecrets = [], inputTruncated = false } = {}) {
   let text = String(value ?? "");
   if (inputTruncated) for (const secret of [codexAccessToken, githubToken, ...knownSecrets]) {
     if (typeof secret !== 'string' || !secret) continue;
@@ -24,7 +24,11 @@ export function redactDiagnosticText(value, { codexAccessToken = "", githubToken
   text = text.replace(/\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{12,}/g, "[REDACTED_API_KEY]");
   text = text.replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, '$1[REDACTED_CREDENTIAL]@');
   text = text.replace(/\b(?:password|passwd|secret|token|api[_-]?key|access[_-]?token)\b\s*[:=]\s*[^\s,;"'\\}]+/gi, match => `${match.split(/[:=]/, 1)[0]}=[REDACTED_SECRET]`);
-  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, character => preserveNewlines && ["\n", "\r"].includes(character) ? character : " ");
+  return text;
+}
+
+export function redactDiagnosticText(value, { preserveNewlines = false, ...secrets } = {}) {
+  return redactSecrets(value, secrets).replace(/[\u0000-\u001f\u007f-\u009f]/g, character => preserveNewlines && ["\n", "\r"].includes(character) ? character : " ");
 }
 
 export function boundedDiagnosticText(value, maxBytes, secrets = {}) {

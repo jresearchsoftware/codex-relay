@@ -4,14 +4,23 @@ import { normalizeCodexUsage } from './codex-usage.mjs';
 import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { admissionBinding, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
+import { isReportFailure, SUMMARY_DISPLAY_BYTES } from './worker-report.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
 const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
 
-export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift } = {}) {
+function workerReportLimitation(code) {
+  if (!isReportFailure(code)) return null;
+  return code === 'WORKER_REPORT_UNSAFE'
+    ? 'The complete worker report failed publication safety checks and its text was withheld.'
+    : 'Writer could not verify a published copy of the complete worker report on this target.';
+}
+
+export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift, workerReport, terminalCode } = {}) {
   if (!e.request || !e.requestReference) return body;
+  const reportLimitation = workerReportLimitation(terminalCode);
   const warningSources = [...(e.admission?.warnings ?? []).map(warning => warning.code), ...executionWarnings];
   const warnings = [...new Set(warningSources)].map(source => ({ source: `Attempt ${e.attemptId}: ${source}`,
     impact: executionWarningSummary([source]) || 'Admission selected a safe default; inspect the canonical authority before acceptance.',
@@ -24,8 +33,10 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
       ...(authorityDrift && authorityDrift.current_authority.sha256 !== e.request.authority.sha256
         ? { authority_drift: authorityDrift } : {}), attempt: e.attemptId, status,
     result: { kind: exactSha(head) && head !== e.startHead ? 'git' : 'no-change',
-      revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) }] },
-    warnings, limitations: ['Native exact-head checks and independent acceptance remain separate.',
+      revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) },
+        ...(workerReport ? [{ kind: 'github-report-comment', id: `${workerReport.commentId}:${workerReport.bodySha256}` }] : [])] },
+    warnings, limitations: [...(reportLimitation ? [reportLimitation] : []),
+      'Native exact-head checks and independent acceptance remain separate.',
       'Execution and publication grant no deployment, credential, release, merge or Issue-closure authority.'],
     summary: status === 'implemented' ? 'The admitted execution completed; independent review remains required.' : 'The admitted execution stopped; useful durable work and its boundary are recorded above.' };
   const source = `Authority source native ID: ${e.requestReference.id}\nAuthority digest: ${e.request.authority.sha256}\nAdmission digest: ${record.admission.sha256}`;
@@ -102,17 +113,20 @@ export function blockedOutcomeToken(e) {
   return e?.target === 'pull_request' ? 'REMEDIATION_BLOCKED' : 'IMPLEMENTATION_BLOCKED';
 }
 
-export function workerOutcomeClaims(result) {
+export function workerOutcomeClaims(result, { reportLink, secrets } = {}) {
   const claim = (value, maxBytes) => {
     if (typeof value !== 'string' || !value.trim()) return 'UNAVAILABLE';
-    const bounded = boundedDiagnosticText(value, maxBytes);
+    const bounded = boundedDiagnosticText(value, maxBytes, secrets);
     const escaped = safePublicationText(bounded.text);
     const rendered = boundedDiagnosticText(escaped, maxBytes);
     return rendered.text + (bounded.truncated || rendered.truncated ? ' [TRUNCATED]' : '');
   };
   const validations = Array.isArray(result?.validation) ? result.validation.slice(0, 64) : [];
   return [
-    `Worker summary (claim): ${claim(result?.summary, 16 * 1024)}`,
+    ...(reportLink ? [
+      `[Complete worker report](${reportLink}) verified by Writer for this attempt.`, '',
+      `Worker report preview (shortened claim): ${safePublicationText(boundedDiagnosticText(result.summary, 2048, secrets).text)}`,
+    ] : [`Worker summary (claim): ${claim(result?.summary, SUMMARY_DISPLAY_BYTES)}`]),
     '',
     'Worker validation (claims; independent native checks remain required):',
     '',
@@ -174,8 +188,13 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
     ...(store ? [`Primary diagnostics: ${store.status}; reference: ${store.executionId ?? 'UNAVAILABLE'}${store.storeCode ? `; store cause: ${store.storeCode}` : ''}`] : []),
     ...(fallback ? [`Fallback diagnostics: ${fallback.status}; reference: ${fallback.executionId ?? 'UNAVAILABLE'}${Number.isInteger(fallback.slot) ? `; slot: ${fallback.slot}` : ''}${fallback.code ? `; cause: ${fallback.code}` : ''}`] : []),
-    ...(d.taskSummary || d.validation ? [workerOutcomeClaims({ summary: d.taskSummary, validation: d.validation })] : []),
-    ...(d.blockerSummary ? [`Worker blocker (claim): ${safePublicationText(boundedDiagnosticText(d.blockerSummary, 16 * 1024).text)}`] : []),
+    ...(isReportFailure(terminalCode) ? [
+      `Review evidence blocked: ${workerReportLimitation(terminalCode)}`,
+      'Inspect the original attempt’s protected evidence and publication state before choosing a continuation.'
+    ] : [
+      ...(d.taskSummary || d.validation ? [workerOutcomeClaims({ summary: d.taskSummary, validation: d.validation })] : []),
+      ...(d.blockerSummary ? [`Worker blocker (claim): ${safePublicationText(boundedDiagnosticText(d.blockerSummary, 16 * 1024).text)}`] : []),
+    ]),
     `Result class: ${d.orchestration === 'COMPLETED' ? 'DOMAIN_BLOCKED (task remains incomplete)' : 'ORCHESTRATION_FAILURE_OR_UNCONFIRMED'}`,
     `Next action: ${next}`,
     `Admission status: ${admissionStatus}`,

@@ -308,9 +308,9 @@ def native_stage(monkeypatch):
             read_binding=lambda *_args: (context['binding'], manifest, context['sourceIdentity'], {})))
         monkeypatch.setitem(sys.modules, 'source_upgrade_packages',
                             SimpleNamespace(prepare_reference=lambda *_args: {
-                                'schemaVersion': 1, 'operation': fixture_module.OP, 'version': '0.170.0',
+                                'schemaVersion': 1, 'operation': fixture_module.OP, 'version': '0.171.0',
                                 'payloadTreeSha256': 'e' * 64, 'installerSha256': 'f' * 64},
-                                verify_reference=lambda *_args: {'version': '0.170.0', 'referenceTreeSha256': 'e' * 64},
+                                verify_reference=lambda *_args: {'version': '0.171.0', 'referenceTreeSha256': 'e' * 64},
                                 verify_packages=lambda *_args: reference_proof))
         monkeypatch.setattr(upgrade, 'stage_helper', lambda _source: fixture_module.stage)
         monkeypatch.setattr(upgrade, 'candidate_checks', lambda _root, _repository: None)

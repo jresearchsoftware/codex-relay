@@ -488,6 +488,88 @@ fn source_binding(repository: &str, source: &Value, reference: &Value) -> Result
     Ok(())
 }
 
+pub(crate) const EXECUTION_REPORT_HEADING: &str = "## Codex execution report\n";
+
+pub(crate) fn execution_report_reference(outcome: &Value) -> Result<Option<Value>, &'static str> {
+    if outcome["schema_version"] != "4.0" || outcome["kind"] != "outcome" {
+        return Ok(None);
+    }
+    let mut reports = outcome["result"]["identities"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|identity| identity["kind"] == "github-report-comment");
+    let Some(report) = reports.next() else {
+        return Ok(None);
+    };
+    let (id, digest) = report["id"]
+        .as_str()
+        .and_then(|id| id.split_once(':'))
+        .ok_or("AUTHORITY_REPORT_REFERENCE_INVALID")?;
+    let id = id
+        .parse::<u64>()
+        .ok()
+        .filter(|value| (1..=9_007_199_254_740_991).contains(value) && value.to_string() == id)
+        .ok_or("AUTHORITY_REPORT_REFERENCE_INVALID")?;
+    if reports.next().is_some()
+        || digest.len() != 64
+        || !digest
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("AUTHORITY_REPORT_REFERENCE_INVALID");
+    }
+    Ok(Some(
+        json!({"kind":"issue-comment","id":id,"parent":outcome["parent"],"sha256":digest}),
+    ))
+}
+
+pub(crate) fn verify_execution_report(
+    repository: &str,
+    outcome: &Value,
+    reference: &Value,
+    report: &Value,
+    writer: &Value,
+) -> Result<(), &'static str> {
+    let attempt = outcome["attempt"].as_str().unwrap();
+    let head = outcome["result"]["revision"].as_str().unwrap_or("");
+    let header = format!(
+        "{EXECUTION_REPORT_HEADING}\nTask {} — Step {}\nAttempt: {attempt}\nResult head: {head}\n",
+        outcome["task"], outcome["step"]
+    );
+    let marker = format!("<!-- relay:{attempt}:report -->");
+    if source_binding(repository, report, reference).is_err()
+        || !trusted_user(&report["user"], writer)
+        || !report["body"]
+            .as_str()
+            .is_some_and(|body| body.starts_with(&header) && body.ends_with(&marker))
+    {
+        return Err("AUTHORITY_REPORT_CHANGED");
+    }
+    Ok(())
+}
+
+async fn require_execution_report(
+    app: &RepositoryTarget<'_>,
+    state: &NativeAuthority,
+    outcome: &Value,
+) -> Result<(), &'static str> {
+    let Some(reference) = execution_report_reference(outcome)? else {
+        return Ok(());
+    };
+    let report = app
+        .github
+        .authority_source(
+            &app.repository,
+            "issue-comment",
+            outcome["parent"]["number"].as_u64().unwrap(),
+            reference["id"].as_u64().unwrap(),
+        )
+        .await
+        .map_err(|error| crate::diagnostics::failure("AUTHORITY_REPORT_UNAVAILABLE", error))?;
+    verify_execution_report(&app.repository, outcome, &reference, &report, &state.writer)
+}
+
 struct NativeAuthority {
     issue: Value,
     publisher: Value,
@@ -1290,6 +1372,11 @@ async fn validate_v4_live(
             {
                 return Err("AUTHORITY_APPROVAL_RESULT_MISMATCH");
             }
+            // A negative review can identify missing evidence. Positive
+            // acceptance requires the complete exact linked result.
+            if record["kind"] == "task-approval" {
+                require_execution_report(app, state, &outcome).await?;
+            }
             let existing_pr = if outcome["parent"]["kind"] == "pull_request" {
                 outcome["parent"]["number"].as_u64()
             } else {
@@ -1867,6 +1954,7 @@ pub(crate) fn error(code: &str) -> Value {
         "CURRENT_PROTOCOL_REQUIRED" => Some("Use publish_task_authority with a schema_version 4.0 Decision or Change Request for new work. Do not create a schema-v3 Decision/Request/CR or legacy CR as a fallback. Preserve the original payload for an already reserved operation."),
         "CURRENT_PROTOCOL_CAPABILITY_REQUIRED" => Some("Stop new authority publication until the paired Reviewer/controller installation is qualified and githubNativeAuthorityEnabled is enabled. Refresh the supported typed capability; do not fall back to schema-v3 or legacy publication."),
         "MANUAL_OUTCOME_CAPABILITY_DISABLED" | "WRITER_CAPABILITY_UNAVAILABLE" => Some("For a new schema-v4 result, stop publication until the qualified owner-connected submit_manual_outcome Writer capability is available. Preserve the admitted result and original operation; do not replace it with an owner-authored result comment or a legacy transport fallback. Already-admitted older attempts retain their exact original qualified transport and bindings."),
+        "AUTHORITY_REPORT_UNAVAILABLE" | "AUTHORITY_REPORT_CHANGED" | "AUTHORITY_REPORT_REFERENCE_INVALID" => Some("Open the full execution report linked by the canonical Writer Outcome with repository access and verify its native comment identity and SHA-256. Report missing or changed bytes as a review evidence gap before accepting the result."),
         _ => None,
     };
     if let Some(guidance) = guidance {
@@ -2418,16 +2506,19 @@ pub(crate) async fn approved_continuation(
             };
             let old_continuation = &compatibility["continuation"];
             let continuation=amendments.get("continuation").cloned().unwrap_or_else(|| json!({"hold":old_continuation["hold"]==true,"next": if old_continuation["next"]["direction"].is_object() {json!({"task":old_continuation["next"]["task"],"direction":old_continuation["next"]["direction"]})} else {Value::Null}}));
-            v4_outcomes.push(json!({"schema_version":"4.0","authority":authority,"original_authority":outcome["authority"],"authority_drift":drift,"admission":outcome["admission"],"outcome":reference,"continuation":continuation,
-                "issue_closure_policy":closure,"warnings":warnings,"completion_conditions":"trusted-owner-canonical-state-required"}));
+            let candidate = json!({"schema_version":"4.0","authority":authority,"original_authority":outcome["authority"],"authority_drift":drift,"admission":outcome["admission"],"outcome":reference,"continuation":continuation,
+                "issue_closure_policy":closure,"warnings":warnings,"completion_conditions":"trusted-owner-canonical-state-required"});
+            v4_outcomes.push((candidate, outcome));
         }
     }
-    v4_outcomes.retain(|result| result["admission"]["step"].as_u64() == Some(latest_result_step));
+    v4_outcomes
+        .retain(|(result, _)| result["admission"]["step"].as_u64() == Some(latest_result_step));
     if v4_outcomes.len() > 1 {
         return Err("AUTHORITY_EXACT_OUTCOME_REQUIRED");
     }
-    if let Some(outcome) = v4_outcomes.pop() {
-        return Ok(outcome);
+    if let Some((candidate, outcome)) = v4_outcomes.pop() {
+        require_execution_report(app, &state, &outcome).await?;
+        return Ok(candidate);
     }
     let records = execution_records(app, &state, &hint).await?;
     if let Some(source) = source_pr_continuation(
