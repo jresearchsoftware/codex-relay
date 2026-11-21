@@ -14,8 +14,11 @@ const literals = { '\\': '\\\\', '\r': '\\r', '\u2028': '\\L', '\u2029': '\\P',
 export const isReportFailure = code => ['WORKER_REPORT_UNSAFE', 'WORKER_REPORT_UNAVAILABLE', 'WORKER_REPORT_CHANGED'].includes(code);
 
 export function needsWorkerReport(summary, secrets) {
-  return typeof summary === 'string' && (Buffer.byteLength(summary) > SUMMARY_DISPLAY_BYTES
-    || Buffer.byteLength(safePublicationText(redactDiagnosticText(summary, secrets))) > SUMMARY_DISPLAY_BYTES);
+  if (typeof summary !== 'string') return false;
+  if (Buffer.byteLength(summary) > SUMMARY_DISPLAY_BYTES) return true;
+  const escaped = safePublicationText(redactDiagnosticText(summary, secrets));
+  return Buffer.byteLength(escaped) > SUMMARY_DISPLAY_BYTES
+    || Buffer.byteLength(redactDiagnosticText(escaped)) > SUMMARY_DISPLAY_BYTES;
 }
 
 function reportBody(e, head, summary, secrets) {
@@ -24,6 +27,8 @@ function reportBody(e, head, summary, secrets) {
   if (!summary.trim() || [...summary].length > MAX_SUMMARY_CHARACTERS || !summary.isWellFormed()
     || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(summary)
     || redactSecrets(summary, secrets) !== summary) fail('WORKER_REPORT_UNSAFE');
+  const display = redactDiagnosticText(summary, secrets);
+  if (redactSecrets(display, secrets) !== display) fail('WORKER_REPORT_UNSAFE');
   try { secretFree(summary); }
   catch (cause) { throw reportError('WORKER_REPORT_UNSAFE', cause); }
   // A fixed fenced block displays the report as inert text. The prefix keeps

@@ -97,6 +97,16 @@ test('Markdown expansion publishes a report on the exact PR without interpreting
   assertReport(f, summary, 43, result.head);
 });
 
+test('display redaction expansion cannot turn screened report evidence into a successful clipped claim', async t => {
+  const f = await fixture(t);
+  const summary = 'bearer\u0084x\n'.repeat(1000);
+  assert.ok(Buffer.byteLength(summary) < 16 * 1024);
+  await assert.rejects(runAttempt(execution(f, summary)), { code: 'WORKER_REPORT_UNSAFE' });
+  assert.equal(f.comments.length, 1);
+  assert.match(f.comments[0].body, /Review evidence blocked: .*safety checks/);
+  assert.equal(extractAuthorityRecord(f.comments[0].body).status, 'blocked');
+});
+
 test('a lost report POST response is reconciled by exact readback without duplicate publication', async t => {
   const f = await fixture(t);
   const post = f.api.post;
