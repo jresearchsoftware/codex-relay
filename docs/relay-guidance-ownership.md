@@ -120,6 +120,48 @@ manual/component contracts and old-attempt compatibility. Shared Context Loading
 owns startup/JIT/completeness/refresh; AGENTS retains concrete architecture,
 component, environment and runtime entrypoints.
 
+## Temporary cross-system responsibility binding
+
+Pending a separately accepted and Relay-adopted common rule proposed in
+[Shared Governance #124](https://github.com/jresearchsoftware/shared-governance/issues/124),
+this is the Relay-local rule for Task authoring, design, implementation,
+tests and independent review. It does not amend an already admitted Step,
+a product runtime, another project's authority or an installed consumer.
+
+**Enforce the contract owned by this component, not another component's
+contract on its behalf.** At an integration boundary, validate the inputs,
+supported interface, caller authority and result obligations belonging to
+Relay. Then invoke the receiving system through its supported interface and
+handle the *observed* success, rejection, error or uncertain partial effect.
+Do not reproduce the recipient's internal validation, anticipate its Git or
+runtime behavior through speculative preflight, poll its deployment state to
+prove its own delivery obligation, or add another check merely because the
+recipient might fail. This applies equally to Git/GitHub, Codex, Writer and
+Reviewer inside Relay, CI/Distribution, databases, networks and other
+dependencies. For example, validate a generated workflow against its agreed
+format and requirements, while Distribution owns propagation if that is its
+contract; routine working-branch creation/reuse belongs to the executor, not
+to a rigid branch-existence gate invented by its launcher.
+
+An additional cross-system check needs an identified **Relay-owned** invariant,
+an explicit accepted caller requirement not supplied by the provider contract,
+or a concrete demonstrated trust/security gap. Explain why the supported
+provider call plus handling its actual result is insufficient, and prefer the
+least costly correction at the owning boundary. Do not assume that an external
+guarantee exists when its contract or relevant configuration does not supply
+it. Preserve actual owner authorization, permitted scope, secret isolation,
+unique execution/result identity, safety of uncertain trusted writes and
+independent acceptance **only to the extent Relay owns those obligations**;
+do not use that illustrative list to preserve an unnecessary duplicate
+implementation.
+
+Apply this judgment inside ordinary design, testing and review. It introduces
+no universal checklist, architecture gate, external compliance probe, extra
+owner command, monitoring service or additional proof record. Once a relevant
+Shared Governance version is independently accepted and deliberately adopted
+by Relay, reconcile the wording and remove this temporary duplicate; Shared
+publication alone does not change local source or active installations.
+
 ## Small Improvements binding
 
 Relay development adopts the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/small-improvements.md)
