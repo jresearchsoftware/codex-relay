@@ -1,5 +1,7 @@
 """One real quiet child stays observable without exposing private output."""
 import io
+import importlib.util
+from contextlib import nullcontext
 import os
 from pathlib import Path
 import subprocess
@@ -13,6 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import lifecycle_process as children
+import lifecycle
 import owner_lifecycle as owner
 import source_upgrade as upgrade
 
@@ -303,7 +306,7 @@ def test_reader_startup_failure_still_stops_launched_child(monkeypatch):
     assert spawned[0].poll() is not None
 
 
-@pytest.mark.parametrize('kind', [RuntimeError, AssertionError])
+@pytest.mark.parametrize('kind', [RuntimeError, AssertionError, ValueError])
 def test_owner_unexpected_failure_keeps_private_cause_behind_safe_terminal(monkeypatch, capsys, kind):
     original = kind('private-unexpected-cause')
     recorded = []
@@ -314,8 +317,76 @@ def test_owner_unexpected_failure_keeps_private_cause_behind_safe_terminal(monke
     assert owner.main(['fixture']) == 1
     assert recorded == [(original, 'owner-lifecycle')]
     output = capsys.readouterr()
-    assert output.err == 'RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;inspect-state-and-protected-deployment-log\n'
+    assert 'Owner Relay lifecycle operation failed. Last verified boundary was input selection.' in output.err
+    assert 'The cause at the failed boundary is unconfirmed.' in output.err
+    assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;inspect-state-and-protected-deployment-log' in output.err
     assert 'private-unexpected-cause' not in output.out + output.err
+
+
+def test_owner_apply_reports_malformed_accepted_main_with_stable_code(monkeypatch, capsys):
+    private = b'private-accepted-main-response'
+    requests = []
+    def github(method, path, _headers, **_options):
+        requests.append((method, path))
+        return private, 1
+    def no_target_call(*args, **kwargs):
+        pytest.fail('Apply touched the target after losing accepted main evidence')
+    monkeypatch.setattr(owner.git_intent, 'github_response', github)
+    monkeypatch.setattr(owner.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(owner, 'installed_config', lambda *_:
+        ({'source': {'repository': 'https://github.com/example/product'}}, None, None))
+    monkeypatch.setattr(owner, 'compile_inputs', lambda _:
+        {'relay_install_root': '/fixture', 'relay_namespace': 'fixture'})
+    monkeypatch.setattr(owner, 'deployment_repository', lambda _: 'example/product')
+    monkeypatch.setattr(owner, 'acquire', lambda _: nullcontext())
+    monkeypatch.setattr(owner, 'run_child', no_target_call)
+    monkeypatch.setattr(owner, 'report_failure', lambda *_: {'status': 'unavailable'})
+
+    assert owner.main(['apply:' + 'a' * 40 + ':' + 'b' * 40]) == 1
+    assert requests == [('GET', '/repos/example/product/git/ref/heads/main')]
+    output = capsys.readouterr()
+    assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=accepted-main-unavailable;' in output.err
+    assert 'Last verified boundary was original installed identity.' in output.err
+    assert 'GitHub GET (Git refs or objects)' in output.err and 'HTTP 200' in output.err
+    assert '1 request attempt (0 retries)' in output.err
+    assert 'Next action: Verify the selected repository’s trusted main commit through GitHub.' in output.err
+    assert private.decode() not in output.out + output.err
+
+
+@pytest.mark.parametrize(('error', 'code'), [
+    (None, 'lifecycle-verification-unproven'),
+    (ValueError('private-check-details'), 'ValueError'),
+    (ValueError('INVALID_DEPLOYMENT_CONFIG:private-check-details'), 'ValueError'),
+])
+def test_deployment_terminal_keeps_typed_check_code_and_excludes_private_detail(monkeypatch, capsys, error, code):
+    spec = importlib.util.spec_from_file_location('relay_deploy_terminal_test', Path(owner.__file__).with_name('relay-deploy.py'))
+    deployment = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(deployment)
+    calls = []
+    def gate(action, *args):
+        calls.append((action, *args))
+        return {'drained': True} if action == 'drain' else {}
+    def fail(_args):
+        if error is None:
+            lifecycle.execute(gate, 'a' * 40, lambda: calls.append(('apply',)), lambda *_: False)
+            pytest.fail('unverified Apply reported success')
+        lifecycle.observe_failure_state(boundary='drained', admission='closed')
+        lifecycle.observe_target_mutation()
+        raise error
+    monkeypatch.setattr(deployment, 'arguments', lambda: SimpleNamespace(phase='apply'))
+    monkeypatch.setattr(deployment, 'run', fail)
+    monkeypatch.setattr(deployment, 'report_failure', lambda *_: {'status': 'unavailable'})
+
+    assert deployment.main() == 1
+    output = capsys.readouterr()
+    assert f'RELAY_DEPLOYMENT_BLOCKED={code}\n' in output.err
+    assert 'Last verified boundary was admission drain.' in output.err
+    assert 'The last acknowledged gate state was closed.' in output.err
+    assert 'Next action: Run the supported read-only deployment diagnostic for the same target' in output.err
+    assert 'private-check-details' not in output.out + output.err
+    if error is None:
+        assert [call[0] for call in calls] == ['quiesce', 'drain', 'phase', 'apply', 'phase']
+        assert calls[-1][-1] == 'recovery-required'
 
 
 @pytest.mark.parametrize('kind', ['workflow', 'pool', 'source-admission', 'candidate-imports', 'selected-config'])

@@ -475,7 +475,8 @@ test('quiesced routing warning reports known absence of a worker without inventi
   const output = []; const warnings = [];
   assert.equal(await reportRoutingResult(async () => ({ status: 'BLOCKED', code: 'ADMISSION_QUIESCED' }),
     { write: value => output.push(value), writeError: value => warnings.push(value) }), 1);
-  assert.match(warnings[0], /Automatic admission is quiesced; no worker started/);
+  assert.match(warnings[0], /admission gate is closed/);
+  assert.match(warnings[0], /Codex child did not start/);
   assert.doesNotMatch(warnings[0], /terminal Outcome/);
   assert.equal(JSON.parse(output[0]).code, 'ADMISSION_QUIESCED');
 });

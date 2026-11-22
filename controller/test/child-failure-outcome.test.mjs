@@ -106,7 +106,14 @@ for (const example of [
   if (!example.storeFails) assert.equal(primary[0].process.exitCode, 64);
   const replay = { ...args, execute: () => assert.fail('replay must not execute'), prepare: () => assert.fail('replay must not prepare'), collect: () => assert.fail('replay must not collect') };
   if (example.missing || example.storeFails || example.notStarted) await assert.rejects(runAttempt(replay), { code: terminalCode });
-  else assert.deepEqual(await runAttempt(replay), saved.outcome);
+  else {
+    const { diagnostic, code, runId, target, ...receipt } = await runAttempt(replay);
+    assert.deepEqual(receipt, saved.outcome);
+    assert.deepEqual(diagnostic, saved.diagnostic);
+    assert.equal(code, terminalCode);
+    assert.equal(runId, f.envelope.runId);
+    assert.equal(target.number, f.envelope.number);
+  }
   assert.equal(launches, 1); assert.equal(f.comments.length, 1); assert.equal(f.comments[0].body, body);
 });
 

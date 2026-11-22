@@ -5,12 +5,13 @@ import { fileURLToPath } from 'node:url';
 import { createLocalWriterAdapter } from './local-writer.mjs';
 import { createOnDemandDispatchAdapter } from './github.mjs';
 import { createAttemptStore } from './attempt-store.mjs';
-import { runAttempt } from './attempt.mjs';
+import { runAttempt, describePostOutcomeFailure } from './attempt.mjs';
 import { prepareCheckout } from './attempt-runtime.mjs';
-import { REPOSITORY, OWNER, causalEvidence, fail } from './execution-contract.mjs';
+import { REPOSITORY, OWNER, causalEvidence, fail, positive } from './execution-contract.mjs';
 import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
 import { persistAttemptFailureDiagnostic } from './attempt-diagnostic.mjs';
+import { failureExplanation, failureFacts } from './failure-report.mjs';
 import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 import { randomUUID } from 'node:crypto';
 import { traceRuntimeOperation } from './transition-timing.mjs';
@@ -18,23 +19,31 @@ import { traceRuntimeOperation } from './transition-timing.mjs';
 export async function main(options = {}) {
   const cancellation = new AbortController();
   const progress = { workerPossible: false };
+  const runId = Number((options.env ?? process.env).GITHUB_RUN_ID);
   const cancel = () => cancellation.abort();
   // Hold both native cancellation signals through the terminal Writer receipt,
   // not only until the dispatcher returns. A later force kill remains unknown.
   process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
   try { return await runRouting({ ...options, signal: cancellation.signal, progress }); }
   catch (error) {
+    error.details = { ...error.details,
+      runId, target: error.details?.target ?? progress.target,
+      routingStage: progress.workerPossible ? 'finalization' : 'authority',
+      lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? progress.lastSuccessfulBoundary ?? 'controller-start',
+      ...(!progress.workerPossible ? { childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' } : {}) };
     if (!error.details?.diagnosticStore && !error.details?.fallbackReference) {
       const env = options.env ?? process.env;
       const run = /^[1-9][0-9]{0,15}$/.test(env.GITHUB_RUN_ID ?? '') ? env.GITHUB_RUN_ID : 'unknown';
-      if (!progress.workerPossible) error.details = { ...error.details, childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' };
-      const durable = await (options.persistRoutingFailure ?? options.persistFailure ?? persistAttemptFailureDiagnostic)({
-        executionId: `routing-${run}-${randomUUID()}`, error, stage: progress.workerPossible ? 'finalization' : 'authority',
-        lastSuccessfulBoundary: progress.lastSuccessfulBoundary ?? 'controller-start' });
-      error.details = { ...error.details, ...durable };
+      try {
+        const durable = await (options.persistRoutingFailure ?? options.persistFailure ?? persistAttemptFailureDiagnostic)({
+          executionId: `routing-${run}-${randomUUID()}`, error, stage: error.details.routingStage,
+          lastSuccessfulBoundary: error.details.lastSuccessfulBoundary });
+        error.details = { ...error.details, ...durable };
+      } catch { error.details.diagnosticRecorderFailed = true; }
     }
     if (error.code === 'OWNER_EVENT_REQUIRED') return { status: 'BLOCKED', code: error.code,
-      phase: 'pre-worker-admission', worker: 'not_started', reason: error.reason,
+      phase: 'pre-worker-admission', worker: 'not_started', reason: error.reason, ...failureFacts(error),
+      ...(Number.isSafeInteger(runId) && runId > 0 ? { runId } : {}),
       diagnosticStore: error.details?.diagnosticStore, fallbackReference: error.details?.fallbackReference };
     throw error;
   }
@@ -47,7 +56,9 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
   persistFailure = persistAttemptFailureDiagnostic, prepare = prepareCheckout, collect, signal, progress = {} } = {}) {
   const rawEvent = await readEvent(env.GITHUB_EVENT_PATH);
   progress.lastSuccessfulBoundary = 'event-read';
-  const event = JSON.parse(rawEvent);
+  let event;
+  try { event = JSON.parse(rawEvent); }
+  catch (cause) { throw Object.assign(new Error('EVENT_PAYLOAD_INVALID', { cause }), { code: 'EVENT_PAYLOAD_INVALID' }); }
   progress.lastSuccessfulBoundary = 'event-parse';
   for (const [check, expected, observed, valid] of [
     ['repository', REPOSITORY, event?.repository?.full_name, event?.repository?.full_name === REPOSITORY],
@@ -81,18 +92,23 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
       const reason = ownerRunRejectionReason(error.code, error.details?.reason);
       if (!error.details?.diagnosticStore) {
         error.details = { ...error.details, childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' };
-        const durable = await persistFailure({ executionId: `routing-${randomUUID()}`, error, stage: 'authority', lastSuccessfulBoundary: 'owner-event' });
-        error.details = { ...error.details, ...durable };
+        try {
+          const durable = await persistFailure({ executionId: `routing-${randomUUID()}`, error, stage: 'authority', lastSuccessfulBoundary: 'owner-event' });
+          error.details = { ...error.details, ...durable };
+        } catch { error.details.diagnosticRecorderFailed = true; }
       }
       return { status: 'BLOCKED', code: error.code, phase: 'pre-worker-admission', worker: 'not_started',
         ...(Number.isSafeInteger(Number(env.GITHUB_RUN_ID)) && Number(env.GITHUB_RUN_ID) > 0 ? { runId: Number(env.GITHUB_RUN_ID) } : {}),
-        diagnosticStore: error.details?.diagnosticStore, fallbackReference: error.details?.fallbackReference, ...(reason ? { reason } : {}) };
+        diagnosticStore: error.details?.diagnosticStore, fallbackReference: error.details?.fallbackReference,
+        ...failureFacts(error), ...(error.details?.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}), ...(reason ? { reason } : {}) };
     }
     throw error;
   }
   progress.lastSuccessfulBoundary = 'admission';
+  const envelope = admitted.envelope;
+  progress.target = { kind: envelope?.target, number: envelope?.number };
   const warning = admitted.envelope?.admission?.warnings ?? admitted.envelope?.warnings;
-  if (admitted.status === 'BLOCKED') { emitAdmissionWarnings(warning); return { ...admitted, phase: 'pre-worker-admission', worker: 'not_started' }; }
+  if (admitted.status === 'BLOCKED') { emitAdmissionWarnings(warning); return { ...admitted, runId: Number(env.GITHUB_RUN_ID), phase: 'pre-worker-admission', worker: 'not_started' }; }
   let failure;
   let result;
   try {
@@ -112,9 +128,11 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     // Never rerun the operation just because its normal evidence store failed.
     if (error.code !== 'ATTEMPT_CONTROLLER_BUSY'
       && !error.details?.fallbackReference && !error.details?.causal?.durable?.fallbackReference) {
-      const durable = await persistFailure({ executionId: admitted.envelope.attemptId,
-        error, stage: 'finalization', lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? 'admission' });
-      error.details = { ...error.details, ...durable };
+      try {
+        const durable = await persistFailure({ executionId: admitted.envelope.attemptId,
+          error, stage: 'finalization', lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? 'admission' });
+        error.details = { ...error.details, ...durable };
+      } catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
     }
   } finally {
     if (admitted.envelope.route === 'auto' && failure?.code !== 'ATTEMPT_CONTROLLER_BUSY') {
@@ -123,11 +141,21 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
       // Root reads that receipt itself; caller JSON cannot assert completion.
       try { await broker.invoke({ operation: 'complete-execution', runId: admitted.envelope.runId, attemptId: admitted.envelope.attemptId }); }
       catch (error) {
-        const durable = await persistFailure({ executionId: `${admitted.envelope.attemptId}-completion`,
-          error, stage: 'finalization', lastSuccessfulBoundary: 'terminal-handoff' });
-        error.details = { ...error.details, ...durable };
-        if (!failure) failure = error;
-        else failure.details = { ...failure.details, admissionCompletion: { status: 'unknown', code: error.code ?? 'ADMISSION_COMPLETION_UNKNOWN' } };
+        try {
+          const durable = await persistFailure({ executionId: `${admitted.envelope.attemptId}-completion`,
+            error, stage: 'finalization', lastSuccessfulBoundary: result ? 'outcome-publication'
+              : failure?.details?.diagnostic?.lastSuccessfulBoundary ?? 'admission' });
+          error.details = { ...error.details, ...durable };
+        } catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
+        if (!failure && result?.status === 'BLOCKED' && result.diagnostic) {
+          failure = Object.assign(new Error(result.code), { code: result.code, details: { diagnostic: result.diagnostic,
+            outcomePublication: { status: 'published' }, target: result.target } });
+        }
+        if (failure) failure.details = { ...failure.details, admissionCompletion: { status: 'unknown', code: error.code ?? 'ADMISSION_COMPLETION_UNKNOWN' } };
+        else {
+          await describePostOutcomeFailure(error, envelope, journal, result);
+          failure = error;
+        }
       }
     }
   }
@@ -137,7 +165,9 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
     failure.details = { ...failure.details, admissionWarnings: { status: 'unavailable', code: error.code ?? 'ADMISSION_WARNING_OUTPUT_FAILED' } };
   }
   if (failure) throw failure;
-  return result;
+  return result?.status === 'BLOCKED'
+    ? { ...result, runId: envelope.runId, target: result.target ?? progress.target }
+    : result;
 }
 export async function reportRoutingResult(run, options = {}) {
   const { write = value => process.stdout.write(value), writeError = value => process.stderr.write(value),
@@ -145,33 +175,40 @@ export async function reportRoutingResult(run, options = {}) {
   try {
     const value = await run();
     if (value?.status === 'BLOCKED') {
-      const code = value.code ?? value.envelope?.admissionBlock?.code;
-      writeError(code === 'ADMISSION_QUIESCED'
-        ? '::error title=Codex admission::Automatic admission is quiesced; no worker started. Inspect the lifecycle gate before another owner command.\n'
-        : code === 'OWNER_RUN_NOT_ADMITTED'
-          ? `::error title=Codex admission::OWNER_RUN_NOT_ADMITTED${ownerRunRejectionReason(code, value.reason) ? ` (${value.reason})` : ''}; no worker started and no target-bound Outcome was authorized. Inspect the original owner run and configured admission expectations before any fresh owner command.\n`
-          : `::error title=Codex outcome::BLOCKED; task remains incomplete${/^[A-Z][A-Z0-9_]{0,79}$/.test(code ?? '') ? ` (${code})` : ''}. Inspect the diagnostic reference and reconcile the terminal Outcome when authorized before another attempt.\n`);
+      const code = value.code ?? value.envelope?.admissionBlock?.code ?? value.diagnostic?.classification?.code;
+      const admission = value.phase === 'pre-worker-admission' || ['OWNER_RUN_NOT_ADMITTED', 'OWNER_EVENT_REQUIRED', 'ADMISSION_QUIESCED'].includes(code);
+      const diagnostic = value.diagnostic ?? { ...value, ...failureFacts({ details: value.envelope?.admissionBlock }), classification: { stage: admission ? 'authority' : 'finalization' },
+        observed: { child: value.worker ?? (admission ? 'not_started' : 'unknown') }, durable: { diagnosticStore: value.diagnosticStore, fallbackReference: value.fallbackReference } };
+      const target = value.target ?? (value.envelope ? { kind: value.envelope.target, number: value.envelope.number } : undefined);
+      const knownUnbound = ['OWNER_EVENT_REQUIRED', 'OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(code);
+      const outcome = positive(value.outcomeId ?? value.outcome?.outcomeId) ? { status: 'published' } : undefined;
+      const explanation = failureExplanation(code, diagnostic, { runId: value.runId, reason: value.reason, target, outcome, knownUnbound });
+      writeError(annotation(admission ? 'Codex admission' : 'Codex outcome', explanation));
     }
     const warning = executionWarningSummary(value?.executionWarnings);
     if (warning) writeError(`::warning title=Codex execution::${warning}\n`);
-    write(JSON.stringify(value) + '\n');
+    write(JSON.stringify(value?.diagnostic ? { ...value, diagnostic: routingDiagnostic(value.diagnostic) } : value) + '\n');
     return value?.status === 'BLOCKED' ? 1 : 0;
   } catch (error) {
     const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ROUTING_FAILED';
-    const diagnostic = error.details?.diagnostic ?? causalEvidence(error);
-    const action = code.startsWith('GITHUB_')
-      ? 'Inspect the retained native API response and configured actor access; reconcile any uncertain mutation before recovery.'
-      : code.includes('CONFIG') || code.startsWith('EXECUTION_SLOT_')
-        ? 'Inspect the selected consumer configuration and reported field through the authorized host reader before correcting the caller configuration.'
-        : code === 'TRUSTED_GIT_FAILED'
-          ? 'Inspect the original Git output and branch observations in protected diagnostics before selecting the supported correction.'
-          : 'Inspect the protected diagnostic reference and original attempt before selecting a supported correction or recovery.';
-    // Keep the exceptional stderr envelope parseable by existing collectors.
-    // Actions consumes the separate stdout annotation command.
-    writeAnnotation(`::error title=Relay routing::${code}; the requested operation did not complete. ${action}\n`);
-    writeError(JSON.stringify({ status: 'blocked', orchestration: 'FAILED', code, diagnostic }) + '\n');
+    const detail = error.details ?? {};
+    const diagnostic = detail.diagnostic ?? causalEvidence(error, { stage: detail.routingStage ?? 'authority' });
+    const explanation = failureExplanation(code, diagnostic, { runId: detail.runId, reason: detail.reason,
+      target: detail.target, outcome: detail.outcomePublication ?? diagnostic.outcomePublication });
+    const secondary = detail.admissionCompletion ? ' Completion of the protected admission reservation is also unverified.' : '';
+    // Keep exceptional stderr parseable. Actions consumes the stdout command.
+    writeAnnotation(annotation('Relay routing', explanation + secondary));
+    writeError(JSON.stringify({ status: 'blocked', orchestration: 'FAILED', code, diagnostic: routingDiagnostic(diagnostic) }) + '\n');
     return 1;
   }
+}
+function routingDiagnostic({ taskSummary, blockerSummary, validation, ...observation }) {
+  // Task claims have their existing target-bound Outcome publication channel.
+  return observation;
+}
+
+function annotation(title, explanation) {
+  return `::error title=${title}::${explanation.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A')}\n`;
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isMain()) reportRoutingResult(main).then(code => { process.exitCode = code; });

@@ -3,6 +3,8 @@
 The root admission gate owns durable state. This module adds no journal or
 deployment backend; a missing/uncertain proof leaves the gate closed.
 """
+from contextvars import ContextVar
+import json
 import re
 import sys
 import uuid
@@ -229,12 +231,18 @@ def failure_reporting_source():
     return inspect.getsource(report_failure) + '\n'
 
 
+class LifecycleCheckError(ValueError):
+    pass
+
+
 def require(condition, code):
     if not condition:
-        raise ValueError(code)
+        raise LifecycleCheckError(code)
 
 
 def progress(phase, target):
+    if phase in _LIFECYCLE_OPERATIONS:
+        observe_failure_state(attempted=_LIFECYCLE_OPERATIONS[phase])
     print(f'RELAY_LIFECYCLE_PROGRESS={phase};target={target}', flush=True)
 
 
@@ -271,34 +279,47 @@ def execute(gate, target, apply, verify, *, operation=None, timeout=1800,
     previously accepted target and the retained operation, after diagnosis.
     """
     operation = operation or str(uuid.uuid4())
+    observe_failure_state(requested=target, operation_id=operation)
     if not already_quiesced:
         progress('QUIESCE', target)
+        observe_admission_call('quiesce')
         gate('quiesce', '--operation', operation, '--target', target)
+        observe_admission_result('quiesce')
     progress('DRAIN', target)
     if recovery:
         state = gate('status', '--operation', operation)
         require(state['phase'] == 'recovery-required'
                 and not state['active'] and not state['unknown'], 'recovery-drain-unproven')
+        observe_failure_state(admission='closed', boundary='drained')
         gate('recovery-target', '--operation', operation, '--target', target)
     else:
-        gate('drain', '--operation', operation, '--timeout', str(timeout))
+        drained = gate('drain', '--operation', operation, '--timeout', str(timeout))
+        if isinstance(drained, dict) and drained.get('drained') is True:
+            observe_admission_result('drain')
     if stop:
         progress('QUIESCED', target)
         return operation
     try:
         gate('phase', '--operation', operation, '--phase', 'applying')
         progress('APPLY', target)
+        if _operation.get() is not None and _operation.get().get('phase') != 'resume':
+            observe_target_mutation()
         result = apply()
         progress('ACTIVATE/VERIFY', target)
         require(verify(result, target), 'lifecycle-verification-unproven')
+        observe_failure_state(boundary='activation', installed=target, activation='verified')
         gate('phase', '--operation', operation, '--phase', 'verified', '--revision', target)
+        observe_admission_result('phase', 'verified')
         progress('RESUME', target)
+        observe_admission_call('resume')
         gate('resume', '--operation', operation)
+        observe_admission_result('resume')
     except Exception:
         # A failed state write must not obscure the original failure. The gate
         # was closed before apply; absence of a successful resume stays closed.
         try:
             gate('phase', '--operation', operation, '--phase', 'recovery-required')
+            observe_admission_result('phase', 'recovery-required')
             progress('RECOVERY_REQUIRED', target)
         except Exception as recovery_error:
             report_failure(recovery_error, 'recovery-state-write')
@@ -307,3 +328,322 @@ def execute(gate, target, apply, verify, *, operation=None, timeout=1800,
         raise
     progress('OPEN', target)
     return operation
+
+
+# In-memory observations from the existing lifecycle and backend. The protected
+# gate, manifest, installation receipts and deployment log remain authoritative.
+_operation = ContextVar('deployment_operation', default=None)
+_DEPLOYMENT_PHASES = frozenset({
+    'install', 'check', 'apply', 'upgrade', 'post-check', 'inventory', 'bootstrap', 'reinstall',
+    'reinstall-recover', 'workflow-project', 'workflow-verify', 'workflow-deployment-project',
+    'runner-register', 'diagnose', 'activate', 'runner-enable', 'stale-dispose', 'tls-check',
+    'tls-prepare', 'tls-dry-run', 'tls-issue', 'reviewer-credentials', 'writer-credentials',
+    'codex-credentials', 'ingress', 'validate', 'owner-lifecycle-bootstrap', 'stop', 'resume', 'recover'
+})
+_LIFECYCLE_OPERATIONS = {
+    'PREFLIGHT': 'target preflight', 'STAGING': 'source staging', 'LOCK': 'host lock acquisition',
+    'QUIESCE': 'admission quiesce', 'DRAIN': 'admission drain', 'APPLY': 'target Apply',
+    'ACTIVATE/VERIFY': 'activation and verification', 'VERIFY_INSTALLED': 'installed identity readback',
+    'RESUME': 'admission resume'
+}
+_DEPLOYMENT_PROOFS = {
+    'backend-recap': 'The backend did not supply its required zero-failure recap.',
+    'installed-identity-proof': 'The required exact installed product and configuration receipt is missing.',
+    'final-runtime-proof': 'The backend did not supply the required runtime validation for the selected product.',
+    'upgrade-same-operation-activation-proof': 'The upgrade did not prove activation of the selected product in this operation.',
+    'lifecycle-same-operation-activation-proof': 'The deployment did not prove activation of the selected product in this operation.',
+    'post-check-drift': 'The read-only post-check observed configuration drift.'
+}
+_DEPLOYMENT_BOUNDARIES = {
+    'inputs': 'input selection', 'configuration': 'consumer configuration validation',
+    'host-preflight': 'target preflight', 'locked': 'invocation lock', 'installed-anchor': 'original installed identity',
+    'quiesced': 'closed admission', 'drained': 'admission drain', 'backend-started': 'backend launch',
+    'backend-returned': 'backend exit', 'installed': 'installed identity verification',
+    'activation': 'runtime activation verification', 'open': 'admission reopening',
+    'original-open': 'restoration of the original admission and availability'
+}
+_BACKEND_DEPENDENCIES = frozenset({
+    'ansible-playbook', 'apt-package-metadata', 'release-artifacts', 'codex-package-and-runtime',
+    'reviewer-build-and-runtime', 'production-runner-package', 'general-runner-package',
+    'controller-entrypoints', 'reviewer-activation', 'reviewer-listener', 'service-health', 'runtime-verification',
+    'public-deployment-primitive', 'admission-gate', 'source-git', 'workflow-projection', 'managed-pool'
+})
+_CONFIG_ACTIONS = {
+    'clean-source': 'Use an accepted product checkout with a clean worktree.',
+    'source-root': 'Select the root of the accepted Relay product checkout.',
+    'ssh-identity-required': 'Supply the selected target’s configured SSH identity and fingerprint.',
+    'operator-key': 'Verify the selected operator identity file is a regular local file.',
+    'operator-key-identity': 'Verify the configured operator fingerprint against the selected SSH key.',
+    'host-identity': 'Verify the selected host fingerprint through the trusted host identity record.',
+    'consumer-projection': 'Verify the committed Relay integration directory against the selected consumer and product.',
+    'explicit-installed-apply-recovery': 'Use the installed-configuration recovery command only for a matching installed Apply operation.',
+    'explicit-local-owner-lifecycle-bootstrap-required': 'Use the owner lifecycle bootstrap command locally with its explicit authorization.'
+}
+_CHECK_ACTIONS = {
+    'accepted-main-unavailable': 'Verify the selected repository’s trusted main commit through GitHub.',
+    'GIT_INTENT_REPOSITORY_MISMATCH': 'Verify the source and consumer repository bindings for the selected owner run.',
+    'GIT_INTENT_RUN_MISMATCH': 'Compare the original Actions run with the selected workflow, owner and configuration commit.',
+    'consumer-dispatch-stale': 'Compare the run configuration commit with the current trusted consumer branch before selecting the owner operation.',
+    'WORKFLOW_REVIEW_REQUIRED': 'Verify and integrate the generated workflow projection for the selected product and consumer configuration.',
+    'resume-recovery-requires-diagnosis': 'Read the retained admission gate and verify the installed pair before using Resume.',
+    'host-operation-guard-lost': 'Have the host operator read the retained operation and confirm the original host lock state.',
+    'host-operation-guard-final-check': 'Have the host operator reconcile the original host operation guard before proceeding.',
+    'lifecycle-verification-unproven': 'Run the supported read-only deployment diagnostic for this target and reconcile the retained operation.',
+    'argument-contract': 'Correct the action and exact revision arguments for the selected owner lifecycle command.',
+    'git-argument-contract': 'Correct the action, accepted revision, configuration commit and original run ID for the Git-backed lifecycle command.',
+    'git-selected-config-invalid': 'Correct the selected consumer configuration commit against the selected product schema.',
+    'git-consumer-readback-mismatch': 'Verify the selected consumer configuration commit and receipt through target inventory.',
+    'lifecycle-public-primitive-failed': 'Run the supported read-only deployment diagnostic for the same target before repeating this operation.',
+    'root-required': 'Use the installed owner lifecycle entrypoint with its configured host authorization.',
+}
+_READ_ONLY_PHASES = frozenset({'check', 'post-check', 'inventory', 'workflow-project', 'workflow-verify',
+                              'workflow-deployment-project', 'diagnose', 'tls-check', 'validate'})
+
+
+def start_failure_observation(operation, phase=None, run=None):
+    return _operation.set({'operation': operation, 'phase': phase, 'run': run, 'boundary': 'inputs',
+                           'admission': 'unknown', 'effect': 'not-entered', 'backend_attempts': 0})
+
+
+def stop_failure_observation(token):
+    _operation.reset(token)
+
+
+def observe_failure_state(**observed):
+    state = _operation.get()
+    if state is not None:
+        # Last proved installation/activation are independent of a subsequent
+        # narrower backend check, journal write or gate acknowledgement.
+        state.update(observed)
+
+
+def observe_admission_call(action):
+    if action in {'quiesce', 'resume', 'recovery-target'}:
+        observe_failure_state(admission='unknown-write')
+
+
+def observe_admission_result(action, phase=None):
+    if action in {'quiesce', 'drain', 'resume', 'phase'}:
+        observe_failure_state(admission='open' if action == 'resume' else 'closed')
+    if action in {'quiesce', 'drain', 'resume'}:
+        observe_failure_state(boundary={'quiesce': 'quiesced', 'drain': 'drained', 'resume': 'open'}[action])
+    if action == 'phase' and phase == 'verified':
+        # This is only called after the existing, successful guarded runtime
+        # and installation checks. It is not inferred from an Ansible exit.
+        state = _operation.get()
+        if state is not None:
+            observe_failure_state(boundary='activation', installed=state.get('requested'), activation='verified')
+
+
+def observe_backend_start():
+    state = _operation.get()
+    if state is not None:
+        observe_failure_state(boundary='backend-started', backend_attempts=state['backend_attempts'] + 1,
+                              attempted='deployment backend', backend='ansible-playbook', backend_exit=None)
+
+
+def observe_target_mutation():
+    state = _operation.get()
+    if state is not None and state.get('phase') not in _READ_ONLY_PHASES:
+        observe_failure_state(effect='possible', installed=None, activation=None)
+
+
+_ADMISSION_FAILURES = {
+    'ADMISSION_DRAIN_TIMEOUT': 'The admission drain reached its deadline.',
+    'ADMISSION_DRAIN_UNKNOWN': 'The drain observed unresolved execution or publication effects.',
+    'ADMISSION_DRAIN_STATUS_UNAVAILABLE': 'The drain could not read a verified controller inventory.',
+    'ADMISSION_PHASE_INVALID': 'The retained admission phase refused this transition.',
+    'ADMISSION_OPERATION_MISMATCH': 'The admission operation identity does not match the retained gate.',
+    'ADMISSION_TARGET_MISMATCH': 'The requested revision does not match the retained admission target.',
+    'ADMISSION_VERIFICATION_REQUIRED': 'The admission gate lacks the proof required to reopen.'
+}
+
+
+def admission_failure_receipt(stderr):
+    """Read the existing gate error receipt without exposing its raw streams."""
+    if not isinstance(stderr, str):
+        return {}
+    # A bounded capture can retain a bare legacy code, or end at the structured
+    # helper envelope. Ignore diagnostic text and arbitrary keys in the receipt.
+    lines = stderr[-65536:].strip().splitlines()
+    if not lines:
+        return {}
+    try:
+        receipt = json.loads(lines[-1])
+    except (ValueError, RecursionError):
+        receipt = {'code': next((line for line in reversed(lines) if re.fullmatch(r'ADMISSION_[A-Z_]{1,100}', line)), None)}
+    if not isinstance(receipt, dict) or not isinstance(receipt.get('code'), str) or not re.fullmatch(r'ADMISSION_[A-Z_]{1,100}', receipt['code']):
+        return {}
+    drain = receipt.get('drain')
+    if not isinstance(drain, dict):
+        drain = {}
+    details = receipt.get('details')
+    inventory = details.get('inventory', {}) if isinstance(details, dict) else {}
+    if isinstance(inventory, dict):
+        for key in ['active', 'unknown']:
+            if key not in drain and isinstance(inventory.get(key), list):
+                drain[key] = len(inventory[key])
+    return {'code': receipt['code'], **{key: drain[key] for key in ['active', 'unknown', 'seconds']
+            if type(drain.get(key)) is int and 0 <= drain[key] <= 1_000_000}}
+
+
+def deployment_failure(error, evidence=None):
+    """Compose ordinary command output from safe observations, with an existing protected reference."""
+    import errno
+    import os
+    import subprocess
+    from config import InvalidConfig
+    from git_intent import GitHubRequestError
+    state = _operation.get() or {}
+    details = {}
+    current = error
+    for _ in range(5):
+        if current is None:
+            break
+        if isinstance(current, GitHubRequestError):
+            details.setdefault('github', current.observation)
+        elif isinstance(current, subprocess.TimeoutExpired):
+            details.setdefault('cause', 'A deployment dependency exceeded its deadline.')
+        elif isinstance(current, subprocess.CalledProcessError):
+            dependency = getattr(current, 'deployment_dependency', None)
+            if dependency == 'admission-gate' or current.cmd == 'fixed-admission-operation':
+                gate = admission_failure_receipt(current.stderr)
+                if gate:
+                    details.setdefault('admission', gate)
+            if dependency == 'public-deployment-primitive':
+                # Only the fixed child protocol is read. Extract numeric exit
+                # and fixed dependencies from its existing progress, never text.
+                stream = current.output or ''
+                if isinstance(stream, str):
+                    for match in re.finditer(r'(?m)^RELAY_DEPLOYMENT_PROGRESS=backend;dependency=([a-z-]+);state=failed;exit=(-?[0-9]{1,3});elapsed_seconds=[0-9]{1,10}$', stream):
+                        if match[1] in _BACKEND_DEPENDENCIES:
+                            details['child_backend'] = (match[1], int(match[2]))
+            if current.returncode:
+                details.setdefault('cause', f'A deployment dependency {"ended on signal " + str(-current.returncode) if current.returncode < 0 else "exited with code " + str(current.returncode)}.')
+        elif isinstance(current, InterruptedError) or isinstance(current, KeyboardInterrupt):
+            details.setdefault('cause', 'The operation was interrupted.')
+        elif isinstance(current, OSError) and current.errno in errno.errorcode:
+            details.setdefault('cause', f'The operating system reported {errno.errorcode[current.errno]}.')
+        elif isinstance(current, (ValueError, RuntimeError)):
+            code = str(current).split(';', 1)[0]
+            # Config validation uses named fields. Exclude input values, arbitrary
+            # exception messages, and every suffix after the source-owned field.
+            field = (re.match(r'^INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?=[:;]|$)', code)
+                     if isinstance(current, InvalidConfig) else None)
+            if field:
+                details.setdefault('check', field[1])
+                action = _CONFIG_ACTIONS.get(field[1], f'Correct the {field[1]} check in the selected deployment input.')
+                details.setdefault('action', action)
+            elif code in _CHECK_ACTIONS:
+                details.setdefault('check', code)
+                details.setdefault('action', _CHECK_ACTIONS[code])
+            elif isinstance(current, LifecycleCheckError) and re.fullmatch('[a-z][a-z0-9-]{0,100}', code):
+                details.setdefault('check', code)
+            elif type(current).__name__ == 'PoolError' and re.fullmatch(r'MANAGED_POOL_[A-Z_]{1,100}', code):
+                details.setdefault('check', code)
+                details.setdefault('action', 'Verify the selected managed runner group and its trusted workflow access in pool preflight.')
+        current = current.__cause__
+    phase = state.get('phase') if state.get('phase') in _DEPLOYMENT_PHASES else 'operation'
+    operation = 'Owner Relay lifecycle' if state.get('operation') == 'owner' else 'Relay deployment'
+    boundary = _DEPLOYMENT_BOUNDARIES.get(state.get('boundary'), 'input selection')
+    requested = state.get('requested')
+    installed = state.get('installed')
+    run = state.get('run') or os.environ.get('GITHUB_RUN_ID')
+    correlation = f' (Actions run {run})' if re.fullmatch(r'[1-9][0-9]{0,19}', str(run)) else ''
+    sentences = [f'{operation} {phase} failed{correlation}. Last verified boundary was {boundary}.']
+    attempted = state.get('attempted')
+    if attempted in _LIFECYCLE_OPERATIONS.values() or attempted == 'deployment backend':
+        sentences.append(f'Relay was performing {attempted}.')
+    if isinstance(requested, str) and re.fullmatch('[0-9a-f]{40}', requested):
+        sentences.append(f'Selected product {requested}.')
+    config = state.get('config')
+    if isinstance(config, str) and re.fullmatch('[0-9a-f]{40}', config):
+        sentences.append(f'Selected configuration commit {config}.')
+    operation_id = state.get('operation_id')
+    if isinstance(operation_id, str) and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation_id):
+        sentences.append(f'Admission operation {operation_id}.')
+    if details.get('check'):
+        check = details['check']
+        sentences.append(_DEPLOYMENT_PROOFS.get(check, f'The {check} check failed.'))
+    backend = state.get('backend')
+    exit_code = state.get('backend_exit')
+    admission_error = details.get('admission')
+    if admission_error:
+        code = admission_error['code']
+        sentences.append(f'Admission gate reported {code}.')
+        if code in _ADMISSION_FAILURES:
+            sentences.append(_ADMISSION_FAILURES[code])
+        if 'seconds' in admission_error:
+            sentences.append(f'The drain budget was {admission_error["seconds"]} seconds.')
+        if 'active' in admission_error or 'unknown' in admission_error:
+            sentences.append(f'The last inventory had {admission_error.get("active", "an unknown number of")} active '
+                             f'and {admission_error.get("unknown", "an unknown number of")} unresolved attempts.')
+    github = details.get('github')
+    if github:
+        status = github['status']
+        detail = {'timeout': 'timed out', 'network': 'failed at the network boundary',
+                  'rate-limit': 'was rate-limited', 'invalid-response': 'returned a response that did not decode',
+                  'transport-unknown': 'failed without a recognized transport cause'}.get(github['reason'], 'failed')
+        http = f' (HTTP {status})' if type(status) is int and 100 <= status <= 599 else ''
+        os_code = f' ({github["osCode"]})' if github['osCode'] else ''
+        stopped = {'attempt-limit': 'the read attempt limit was reached', 'deadline': 'the deadline left no time to retry',
+                   'provider-delay': 'the provider-directed wait exceeded the read budget',
+                   'non-transient': 'the failure did not qualify for retry',
+                   'mutation': 'the request can have an effect and must not be repeated blindly'}[github['stopped']]
+        attempts = github['attempts']
+        sentences.append(f'GitHub {github["method"]} ({github["endpoint"]}) {detail}{http}{os_code}. '
+                         f'{attempts} request attempt{"s" if attempts != 1 else ""} ({max(0, attempts - 1)} retries). '
+                         f'Recovery stopped because {stopped}.')
+    if 'child_backend' in details:
+        backend, exit_code = details['child_backend']
+    if backend in _BACKEND_DEPENDENCIES and isinstance(exit_code, int) and exit_code != 0:
+        action = f'ended on signal {-exit_code}' if exit_code < 0 else f'exited with code {exit_code}'
+        sentences.append(f'Ansible {action} while reporting {backend}.')
+    elif not github and 'cause' in details:
+        sentences.append(details['cause'])
+    elif not github and not admission_error and not details.get('check'):
+        sentences.append('The cause at the failed boundary is unconfirmed.')
+    attempts = state.get('backend_attempts', 0)
+    if attempts:
+        sentences.append(f'{attempts} backend invocation{"s" if attempts != 1 else ""} started in this command.')
+    sentences.append('Relay did not automatically repeat this operation.')
+    effect = state.get('effect')
+    if effect == 'not-entered':
+        sentences.append('This invocation did not enter a target installation or activation mutation.')
+    if isinstance(installed, str) and re.fullmatch('[0-9a-f]{40}', installed):
+        sentences.append(f'Last verified installed product was {installed}.')
+    else:
+        sentences.append('The installed product is unverified.')
+    sentences.append('Runtime activation was verified.' if state.get('activation') == 'verified' else 'Runtime activation is unverified.')
+    admission = state.get('admission')
+    sentences.append({'closed': 'The last acknowledged gate state was closed.',
+                      'open': 'The last acknowledged gate state was open.'}.get(admission, 'Admission state is unverified.'))
+    reference = state.get('log') or (evidence or {}).get('reference')
+    if re.fullmatch(r'protected-log/relay-[0-9a-f]{12}-[a-z-]{1,40}-[A-Za-z0-9_-]{6,32}\.log', reference or ''):
+        sentences.append(f'Protected evidence reference {reference}.')
+    elif (evidence or {}).get('status') == 'submitted':
+        sentences.append('Protected evidence was submitted to the codex-relay-deployment host journal.')
+    elif (evidence or {}).get('status') == 'unavailable':
+        sentences.append('Protected evidence retention could not be verified.')
+    action = details.get('action') if effect == 'not-entered' and admission not in {'closed', 'unknown-write'} else None
+    if not action and github and effect == 'not-entered' and admission not in {'closed', 'unknown-write'}:
+        if github['reason'] == 'rate-limit':
+            action = 'Check the GitHub rate-limit reset for the configured reader before selecting another owner operation.'
+        elif github['method'] == 'GET' and github['status'] in {401, 403, 404}:
+            action = 'Verify the configured read credential and selected repository binding.'
+        elif github['method'] == 'GET':
+            action = 'Verify that the host can read the selected GitHub repository before selecting another owner operation.'
+    if not action and admission_error:
+        action = 'Have the host operator read relay-admission status for the retained operation before pursuing Apply recovery.'
+    if not action:
+        action = 'Run the supported read-only deployment diagnostic for the same target before repeating this operation.'
+    sentences.append('Next action: ' + action)
+    return ' '.join(sentences)
+
+
+def print_terminal_failure(error, phase, recorder):
+    try:
+        evidence = recorder(error, phase)
+    except Exception:
+        evidence = {'status': 'unavailable'}
+    print(deployment_failure(error, evidence), file=sys.stderr, flush=True)

@@ -231,7 +231,7 @@ test('the Actions reporting wrapper really exits red for BLOCKED and green for a
     assert.deepEqual(JSON.parse(result.stdout), value);
     if (status === 'BLOCKED') {
       assert.match(result.stderr, /::error title=Codex admission::/);
-      assert.match(result.stderr, /no worker started/);
+      assert.match(result.stderr, /Codex child did not start/);
     } else assert.equal(result.stderr, '');
   }
   const exceptional = spawnSync(process.execPath, ['--input-type=module', '-e',

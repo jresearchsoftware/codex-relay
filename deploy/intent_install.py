@@ -546,6 +546,8 @@ def complete_fresh(target, key, config, revision, receipt, guard, pool_guard):
 
 
 def run(args, primitive, root, identity, *, guard_factory=None):
+    from lifecycle import observe_failure_state
+    observe_failure_state(requested=identity['revision'])
     require(os.sys.platform == 'linux', 'LINUX_CONTROLLER_REQUIRED')
     require(args.resolved_revision == identity['revision'], 'EXACT_PRODUCT_TARGET_REQUIRED')
     bounded_requested = getattr(args, 'authorize_install_recovery', False)
@@ -603,6 +605,7 @@ def run(args, primitive, root, identity, *, guard_factory=None):
         proven = report.get('installed', {})
         if proven.get('status') == 'present' and REVISION.fullmatch(proven.get('revision', '')):
             selected['installed'] = proven['revision']
+            observe_failure_state(boundary='installed-anchor', installed=proven['revision'])
         elif proven.get('status') == 'missing':
             selected['installed'] = 'none'
         from install_recovery import provisional_inventory, remote_probe as recovery_probe
@@ -813,6 +816,10 @@ def run(args, primitive, root, identity, *, guard_factory=None):
                 code = 'RELAY_INSTALL_' + suffix.upper().replace('-', '_')
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_:-]{0,160}', code):
             code = type(error).__name__
+        if mutation:
+            # Some recovery helpers can cross mutation boundaries outside the
+            # ordinary backend. An old anchor alone is no current readback.
+            observe_failure_state(effect='possible')
         old_restored = inner is not None and getattr(inner, '_intent_old_availability_restored', False)
         prerequisites = inner is not None and getattr(inner, '_intent_product_prerequisites', False)
         failure = {'status': 'FAIL', 'target': identity['revision'], 'installed': selected['installed'],

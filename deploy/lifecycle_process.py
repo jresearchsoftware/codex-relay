@@ -117,6 +117,7 @@ def run(argv, *, phase, dependency, timeout=None, interval=30, forward=None,
                     secondary(error)
         writer = threading.Thread(target=write, daemon=True)
     def evidence(error):
+        error.deployment_dependency = dependency
         error.stdout = captured('stdout')
         error.stderr = captured('stderr')
         error.capture_bytes = dict(sizes)

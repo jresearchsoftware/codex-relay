@@ -105,7 +105,7 @@ for (const route of ['auto', 'manual']) {
       };
       if (mode !== 'lost-response') {
         await assert.rejects(main(f.options), { code: mode === 'failed' ? 'DRAFT_MUTATION_FAILED'
-          : mode === 'unconfirmed' ? 'DRAFT_OBSERVATION_CHANGED' : 'READBACK_UNAVAILABLE' });
+          : mode === 'unconfirmed' ? 'DRAFT_OBSERVATION_CHANGED' : 'GITHUB_REQUEST_FAILED' });
         assert.deepEqual(f.counts(), { executions: 0, preparations: 0, handoffs: 0 });
         assert.equal(await f.store.get(99), null); assert.equal(await f.journal.get(99), null);
         assert.ok((await f.lifecycleStore.get(f.review.id)).lifecycleIntent);

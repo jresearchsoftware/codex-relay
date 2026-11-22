@@ -89,7 +89,11 @@ test('the original ready DELETE cause is recorded before a later Outcome failure
     lifecycleStore: f.lifecycleStore, recordFailure: async value => {
       recorded.push(value); return { status: 'stored', executionId: `ready-cause-${recorded.length}`, mode: 'normal' };
     } });
-  await assert.rejects(broker.dispatch(f.admissionRequest), { code: 'OUTCOME_PUBLICATION_FAILED' });
+  await assert.rejects(broker.dispatch(f.admissionRequest), error => {
+    assert.equal(error.code, 'READY_CONSUMPTION_UNCERTAIN');
+    assert.deepEqual(error.details.outcomePublication, { status: 'failed', code: 'OUTCOME_PUBLICATION_FAILED' });
+    return true;
+  });
   assert.equal(recorded[0].error, original);
   assert.equal(recorded[0].operation, 'ready-command-consumption');
   assert.equal(recorded[0].runId, 99);

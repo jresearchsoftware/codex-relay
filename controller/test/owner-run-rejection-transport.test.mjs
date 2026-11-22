@@ -13,8 +13,10 @@ function helper(payload) {
 
 test('categorical rejection survives the real helper serialization and routing boundary without worker or Outcome', async () => {
   const wire = serializeWriterFailure({ code: 'OWNER_RUN_NOT_ADMITTED', message: 'private text',
+    observation: { check: 'status', expected: 'in_progress', observed: 'queued' },
     details: { reason: 'status', observed: 'private native value', expected: 'private config' } });
-  assert.deepEqual(wire, { code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status' });
+  assert.deepEqual(wire, { code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status',
+    predicate: { check: 'status', expected: 'in_progress', observed: 'queued' } });
   let operations = [], output = '', annotation = '';
   const writer = helper(wire);
   const run = () => main({
@@ -31,9 +33,12 @@ test('categorical rejection survives the real helper serialization and routing b
   });
   assert.equal(await reportRoutingResult(run, { write: v => { output += v; }, writeError: v => { annotation += v; } }), 1);
   assert.deepEqual(operations, ['admit']);
-  assert.deepEqual(JSON.parse(output), { status: 'BLOCKED', code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status', phase: 'pre-worker-admission', worker: 'not_started', runId: 99 });
+  assert.deepEqual(JSON.parse(output), { status: 'BLOCKED', code: 'OWNER_RUN_NOT_ADMITTED', reason: 'status', phase: 'pre-worker-admission', worker: 'not_started', runId: 99,
+    predicate: wire.predicate, writerFailure: { exit: 1, operation: 'admit' } });
   assert.match(annotation, /OWNER_RUN_NOT_ADMITTED \(status\)/);
-  assert.match(annotation, /no worker started and no target-bound Outcome was authorized/);
+  assert.match(annotation, /Expected GitHub run.status in_progress, observed queued/);
+  assert.match(annotation, /Codex child did not start/);
+  assert.match(annotation, /No target-bound Outcome was authorized/);
   assert.doesNotMatch(output + annotation, /private|Reconcile the terminal Outcome/);
 });
 

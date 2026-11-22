@@ -4,6 +4,7 @@ import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createHash } from 'node:crypto';
 import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { EXECUTION_DEFINITION } from '../../contracts/src/execution-defaults.mjs';
+import { failureFacts, safeFailureFacts } from './failure-report.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
 
@@ -196,6 +197,8 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
     ...(publicationSignal ? { signal: publicationSignal } : {})
   };
   return {
+    ...safeFailureFacts(inherited), ...failureFacts(error),
+    ...(detail.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}),
     codexUsage: normalizeCodexUsage(detail.codexUsage ?? inherited.codexUsage),
     observed: { child: ['started', 'not_started', 'unknown'].includes(observed) ? observed : 'unknown',
       exitCode: Number.isInteger(exitCode) && exitCode >= 0 && exitCode <= 255 ? exitCode : null,

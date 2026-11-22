@@ -2,6 +2,7 @@ import { CONSUMER } from '../../consumer/consumer.mjs';
 import { createSign } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { boundedDiagnosticText } from './diagnostic-redaction.mjs';
+import { githubEndpoint, networkCode } from './failure-report.mjs';
 import { responseFailure } from './github-api.mjs';
 const API_ROOT = "https://api.github.com";
 const APP_ID = CONSUMER.writerApp.appId;
@@ -58,21 +59,43 @@ async function appJwt() {
   return `${header}.${payload}.${b64url(signer.sign(key))}`;
 }
 
-export async function http(path, { method = "GET", token, jwt, body } = {}) {
+export async function http(path, { method = "GET", token, jwt, body, signal } = {}) {
   const headers = { accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28", "user-agent": "codex-relay-writer" };
   if (token) headers.authorization = `Bearer ${token}`;
   if (jwt) headers.authorization = `Bearer ${jwt}`;
   if (body !== undefined) headers["content-type"] = "application/json";
-  const response = await fetch(`${API_ROOT}${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  if (!response.ok) return responseFailure(response, { code: 'GITHUB_MUTATION_FAILED', operation: 'writer-authentication', method, path,
-    knownSecrets: [token, jwt].filter(Boolean) });
-  const text = await response.text();
+  const timeout = AbortSignal.timeout(15000);
+  const readSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const options = { code: 'GITHUB_MUTATION_FAILED', operation: 'writer-authentication', method, path,
+    knownSecrets: [token, jwt].filter(Boolean) };
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  let response;
+  let attempts = 0;
+  let text;
+  try {
+    readSignal.throwIfAborted();
+    attempts++;
+    response = await fetch(`${API_ROOT}${path}`, { method, headers,
+      body: payload, signal: readSignal, redirect: 'manual' });
+    if (response.ok) text = await response.text();
+  } catch (cause) {
+    const osCode = networkCode(cause?.cause?.code ?? cause?.code);
+    const reason = signal?.aborted ? 'cancelled'
+      : timeout.aborted || cause?.name === 'TimeoutError' || osCode === 'ETIMEDOUT' ? 'timeout'
+        : osCode ? 'network' : 'transport-unknown';
+    throw Object.assign(new Error('GITHUB_MUTATION_FAILED', { cause }), { code: 'GITHUB_MUTATION_FAILED',
+      details: { githubFailure: { method, endpoint: githubEndpoint(path), status: response?.status, osCode,
+        reason, attempts, stopped: signal?.aborted ? 'cancelled' : method === 'GET' ? 'non-transient' : 'mutation' } } });
+  }
+  if (!response.ok) return responseFailure(response, options);
   let value;
   try { value = text ? JSON.parse(text) : {}; }
   catch (cause) {
     const error = blocked('WRITER_TOKEN_INVALID', 'GitHub installation-token response is not valid JSON', {
       check: 'writer-token.response-json', expected: 'JSON object',
-      observed: { status: response.status, body: boundedDiagnosticText(text, 4096, { knownSecrets: [token, jwt].filter(Boolean) }) } });
+      observed: { status: response.status, body: boundedDiagnosticText(text, 4096, { knownSecrets: options.knownSecrets }) } });
+    error.details = { githubFailure: { method, endpoint: githubEndpoint(path), status: response.status,
+      reason: 'invalid-response', attempts, stopped: method === 'GET' ? 'non-transient' : 'mutation' } };
     Object.defineProperty(error, 'runtimeCause', { value: cause });
     throw error;
   }
@@ -89,10 +112,10 @@ export async function taskReadToken(repository) {
   return installationToken(repository, TASK_READ_TOKEN_PERMISSIONS);
 }
 
-async function installationToken(repository, permissions) {
+async function installationToken(repository, permissions, { signal } = {}) {
   const payload = await http(`/app/installations/${INSTALLATION_ID}/access_tokens`, {
     method: "POST",
-    jwt: await appJwt(),
+    jwt: await appJwt(), signal,
     body: { repositories: [repository.split('/')[1]], permissions }
   });
   if (typeof payload?.token !== "string" || !payload.token || typeof payload.expires_at !== "string") throw blocked("WRITER_TOKEN_INVALID", "GitHub did not return a bounded installation token", { check: 'writer-token.fields', expected: 'nonempty token and expiry string',
@@ -103,6 +126,6 @@ async function installationToken(repository, permissions) {
   return payload.token;
 }
 
-export async function token() {
-  return installationToken(CONSUMER.repository, WRITER_TOKEN_PERMISSIONS);
+export async function token(options) {
+  return installationToken(CONSUMER.repository, WRITER_TOKEN_PERMISSIONS, options);
 }

@@ -5,7 +5,7 @@ import { canonicalAuthorityJson, sha256Body, authorityMode, admissionBinding } f
 import { admitEnvelope, revalidateReadyEvent, readyTransitions, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
 import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
-import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, automaticOutcomeBody, usageOutcomeSummary } from './outcome.mjs';
+import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, automaticOutcomeBody, usageOutcomeSummary, safeOutcomePublication } from './outcome.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
 import { recoverPublication, recoveryAuthorization, recoveryAuthorizationBody, authorizeRecoveryCollection, authorizeRecovery } from './publication-recovery.mjs';
 import { assertStep, currentStep, assertPrStepTitle, projectedRequestTitle, labelNames, stepLike } from './step-metadata.mjs';
@@ -20,6 +20,7 @@ import { PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-re
 import { executionConsumer } from '../../consumer/consumer.mjs';
 import { renderManualHandoff } from './manual-handoff.mjs';
 import { latestProjection, assertPublicationIsolation } from './publication-isolation.mjs';
+import { ambiguousGithubWrite, attachWriteReadback, failureFacts, safeFailureFacts } from './failure-report.mjs';
 import { admissionFailure } from './admission-diagnostic.mjs';
 import { predispatchState, finalizePredispatch, predispatchReplacementState, finalizePredispatchReplacement,
   completedPredispatchRecovery, pendingPredispatchRecord, consumedPredispatchRecord, consumedPredispatchMarker,
@@ -77,7 +78,21 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         failure.diagnostic.preview += ' The protected diagnostic write also failed; retention is unverified.';
       }
       throw Object.assign(new Error(failure.diagnostic.code, { cause }), { code: failure.diagnostic.code,
-        details: { failureDiagnostic: failure.diagnostic } });
+        details: { childState: 'not_started', failureDiagnostic: { ...failure.diagnostic, childState: 'not_started' },
+          admissionEffect: { step: r.envelope.step, projection: 'unknown', ready: 'not-attempted' } } });
+    }
+  }
+  // Step labels and PR titles have a bounded, exact readback. Only a
+  // verified result reconciles a lost acknowledgement in this invocation.
+  async function projectPresentation(mutate, readback) {
+    try { await mutate(); }
+    catch (error) {
+      if (!ambiguousGithubWrite(error)) throw error;
+      try {
+        if (await readback()) return;
+        attachWriteReadback(error, 'not-observed');
+      } catch (cause) { attachWriteReadback(error, 'unavailable', cause); }
+      throw error;
     }
   }
   async function projectStep(r, at) {
@@ -98,11 +113,19 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     // Individual label operations preserve a ready command (or unrelated
     // owner label) added after this read. A labels-array PATCH can erase it.
     at('step-label-remove');
+    const labelPresent = async name => {
+      const state = await api.get(`/issues/${e.issueNumber}`);
+      if (state?.number !== subject.number || state?.state !== subject.state || state?.body !== subject.body
+        || !Array.isArray(state.labels)) fail('AUTHORITY_CHANGED');
+      return labelNames(state.labels).includes(name);
+    };
     for (const label of labelNames(subject.labels).filter(name => stepLike(name) && name !== `step-${e.step}`))
-      await api.delete(`/issues/${e.issueNumber}/labels/${encodeURIComponent(label)}`);
+      await projectPresentation(() => api.delete(`/issues/${e.issueNumber}/labels/${encodeURIComponent(label)}`),
+        async () => !await labelPresent(label));
     at('step-label-add');
     if (!labelNames(subject.labels).includes(`step-${e.step}`))
-      await api.post(`/issues/${e.issueNumber}/labels`, { labels: [`step-${e.step}`] });
+      await projectPresentation(() => api.post(`/issues/${e.issueNumber}/labels`, { labels: [`step-${e.step}`] }),
+        () => labelPresent(`step-${e.step}`));
     at('step-issue-readback'); assertStep((await api.get(`/issues/${e.issueNumber}`)).labels, e.step);
     if (e.target === 'pull_request' || e.continuation?.pullRequest) {
       const number = e.target === 'pull_request' ? e.number : e.continuation.pullRequest;
@@ -116,12 +139,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     if (cause) {
       // A later journal/Outcome failure must not erase the original DELETE or
       // revalidation error. This evidence write authorizes no native retry.
-      await recordFailure({ error: cause, operation: 'ready-command-consumption',
-        phase: 'authority', runId: e.runId, workerStarted: false, secrets: { knownSecrets: diagnosticSecrets } });
+      try {
+        await recordFailure({ error: cause, operation: 'ready-command-consumption',
+          phase: 'authority', runId: e.runId, workerStarted: false, secrets: { knownSecrets: diagnosticSecrets } });
+      } catch { cause.details = { ...cause.details, diagnosticRecorderFailed: true }; }
     }
     const later = transitions.length ? transitions.filter(event => event.id > e.readyEventId).map(event => event.id)
       : r.readyConsumption?.laterEvents ?? [];
     const originalCode = r.readyConsumption?.code ?? code;
+    const admissionEffect = { step: e.step, projection: r.stepProjected ? 'projected' : 'unknown', ready: 'uncertain' };
     const preview = `Ready consumption for ${e.attemptId} on #${e.number}, original event ${e.readyEventId}, stopped: ${code}.`
       + (later.length ? ` Later transition IDs: ${later.join(', ')}.` : '')
       + (e.route === 'auto' ? ' Automatic worker launch authority was not returned.' : ' No manual handoff was emitted; this does not establish the state of independent offline work.')
@@ -135,13 +161,17 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     await store.put(e.runId, r);
     try {
       await terminalOutcome(r, { terminalCode: originalCode, diagnostic: { ...admissionBlockDiagnostic({ code: originalCode }),
-        admissionSummary: preview, nextAction: 'inspect-ready-target-and-apply-fresh-owner-command' } });
+        ...failureFacts(cause), ...(cause?.details?.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}),
+        admissionEffect, admissionSummary: preview, nextAction: 'inspect-ready-target-and-apply-fresh-owner-command' } });
     } catch (error) {
-      publicationFailure(error.code ?? 'OUTCOME_PUBLICATION_FAILED', { cause: error,
-        diagnostic: { stage: 'authority', boundary: 'writer-publication', workerStarted: false, childState: 'not_started', preview } });
+      const original = cause ?? Object.assign(new Error(originalCode), { code: originalCode });
+      original.details = { ...original.details, outcomePublication: safeOutcomePublication(error) };
+      original.native = { ...original.native, outcomePublicationFailure: error };
+      publicationFailure(originalCode, { cause: original,
+        diagnostic: { stage: 'authority', boundary: 'writer-publication', workerStarted: false, childState: 'not_started', preview }, admissionEffect });
     }
     publicationFailure(code, { cause, diagnostic: { stage: 'authority', boundary: 'authority', workerStarted: false,
-      childState: 'not_started', preview } });
+      childState: 'not_started', preview }, admissionEffect });
   }
   async function consumeReadyCommand(r) {
     const e = r.envelope;
@@ -153,23 +183,33 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     catch (cause) { return readyConsumptionFailure(r, 'READY_EVENT_REPLACED', { cause }); }
     r.readyConsumption = { status: 'deleting', eventId: e.readyEventId, label: e.readyLabel };
     await store.put(e.runId, r);
-    let subject, transitions;
+    let subject, transitions, mutationError;
+    try { await api.delete(`/issues/${e.number}/labels/${e.readyLabel}`); }
+    catch (cause) {
+      if (!ambiguousGithubWrite(cause)) return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { cause });
+      mutationError = cause;
+    }
     try {
-      await api.delete(`/issues/${e.number}/labels/${e.readyLabel}`);
       subject = await api.get(`/issues/${e.number}`);
       transitions = await readyTransitions(api, e.number);
-    } catch (cause) { return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { cause }); }
+    } catch (cause) {
+      if (mutationError) attachWriteReadback(mutationError, 'unavailable', cause);
+      return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { cause: mutationError ?? cause });
+    }
     const later = transitions.filter(event => event.id > e.readyEventId);
     const ownRemoval = event => event.event === 'unlabeled' && event.label.name === e.readyLabel
       && event.actor?.login === WRITER && event.actor?.type === 'Bot';
     // GitHub DELETE has no compare-and-delete event precondition. Detect a
     // replacement even if DELETE erased it before the label read-back. Never
     // consume a later command or mistake a same-second transition for our own.
-    if (later.some(event => !ownRemoval(event)))
-      return readyConsumptionFailure(r, 'READY_EVENT_REPLACED', { transitions });
-    if (later.length !== 1 || !ownRemoval(later[0])
-      || labelNames(subject.labels).includes(e.readyLabel))
-      return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { transitions });
+    if (later.some(event => !ownRemoval(event))) {
+      if (mutationError) attachWriteReadback(mutationError, 'unavailable');
+      return readyConsumptionFailure(r, 'READY_EVENT_REPLACED', { transitions, cause: mutationError });
+    }
+    if (later.length !== 1 || !ownRemoval(later[0]) || labelNames(subject.labels).includes(e.readyLabel)) {
+      if (mutationError) attachWriteReadback(mutationError, 'not-observed');
+      return readyConsumptionFailure(r, 'READY_CONSUMPTION_UNCERTAIN', { transitions, cause: mutationError });
+    }
     r.readyConsumption = { ...r.readyConsumption, status: 'consumed', removalEventId: later[0].id };
     // Keep the reservation through controller startup. A consumed command may
     // have returned an envelope even when the caller never receives the reply;
@@ -213,7 +253,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         await api.post(`/issues/${pr.number}/labels`, { labels: [`step-${e.step}`] });
       }
       assertStep((await api.get(`/issues/${pr.number}`)).labels, e.step);
-      if (observed.title !== titleFor(e)) await api.patch(`/pulls/${pr.number}`, { title: titleFor(e) });
+      if (observed.title !== titleFor(e))
+        await projectPresentation(() => api.patch(`/pulls/${pr.number}`, { title: titleFor(e) }), async () => (await read()).title === titleFor(e));
       if ((await read()).title !== titleFor(e)) fail('AUTHORITY_TITLE_PROJECTION_MISMATCH');
     } catch (error) {
       if (error.code === 'PR_AUTHORITY_CHANGED') throw error;
@@ -227,7 +268,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     const current = await read();
     return current;
   }
-  function publicationFailure(code, { cause, diagnostic = {} } = {}) {
+  function publicationFailure(code, { cause, diagnostic = {}, admissionEffect } = {}) {
     const source = {
       ...(cause?.details ?? {}),
       failureDiagnostic: { ...(cause?.details?.failureDiagnostic ?? {}), ...diagnostic }
@@ -235,7 +276,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     const failureDiagnostic = failureDiagnosticFromDetails(source, {
       fallbackCode: code, fallbackStage: 'writer-publication', fallbackBoundary: 'writer-publication'
     });
-    const error = new Error(code, { cause }); error.code = code; error.details = { failureDiagnostic }; throw error;
+    const error = new Error(code, { cause }); error.code = code; error.details = { failureDiagnostic, admissionEffect, outcomePublication: cause?.details?.outcomePublication,
+      diagnosticRecorderFailed: cause?.details?.diagnosticRecorderFailed };
+    throw error;
   }
   async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false, verifyStartingBase = false } = {}) {
     if (!positive(request.runId)) fail('RUN_ID_INVALID');
@@ -255,7 +298,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     const marker = `<!-- relay:${r.envelope.attemptId}:${key} -->`;
     const intent = r.commentIntent?.key === key && r.commentIntent.number === number ? r.commentIntent : null;
     const exactBody = intent?.body ?? `${body}\n\n${marker}`;
-    const matches = (await api.list(`/issues/${number}/comments`)).filter(c => c.user?.login === WRITER && c.body?.includes(marker));
+    const readMatches = async () => (await api.list(`/issues/${number}/comments`))
+      .filter(c => c.user?.login === WRITER && c.body?.includes(marker));
+    const matches = await readMatches();
     if (matches.length > 1) fail('COMMENT_AMBIGUOUS');
     if (matches.length === 1) {
       const saved = r.commentBodies?.[key];
@@ -271,8 +316,20 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     // An ambiguous POST must never be blindly repeated after a failed GET.
     if (r.commentIntent?.key === key) fail('COMMENT_PUBLICATION_UNCERTAIN');
     r.commentIntent = { key, number, body: exactBody, rendererVersion: PUBLICATION_RENDERER_VERSION }; await store.put(r.envelope.runId, r);
-    const comment = await api.post(`/issues/${number}/comments`, { body: exactBody });
-    if (comment.body !== exactBody) fail('COMMENT_CONTENT_CHANGED');
+    let comment;
+    try { comment = await api.post(`/issues/${number}/comments`, { body: exactBody }); }
+    catch (error) {
+      if (!ambiguousGithubWrite(error)) throw error;
+      let observed;
+      try { observed = await readMatches(); }
+      catch (cause) { attachWriteReadback(error, 'unavailable', cause); throw error; }
+      if (observed.length !== 1 || !positive(observed[0].id) || observed[0].body !== exactBody) {
+        attachWriteReadback(error, observed.length === 0 ? 'not-observed' : 'unavailable');
+        throw error;
+      }
+      comment = observed[0];
+    }
+    if (comment?.body !== exactBody) fail('COMMENT_CONTENT_CHANGED');
     r.commentBodies = { ...r.commentBodies, [key]: { number, sha256: sha256Body(exactBody), rendererVersion: PUBLICATION_RENDERER_VERSION } };
     r.commentIntent = null; await store.put(r.envelope.runId, r);
     return comment;
@@ -287,8 +344,20 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     }
     if (r.prIntent) fail('PR_PUBLICATION_UNCERTAIN');
     r.prIntent = true; await store.put(e.runId, r);
-    const pr = await api.post('/pulls', { title: titleFor(await projectionFor(e, { sameBranch: true })), head: e.branch, base: CONSUMER.baseBranch, draft: true,
-      body: `Implementation of https://github.com/${REPOSITORY}/issues/${e.issueNumber}\n\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\n${bindingLines(e)}Requested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nStarting head: ${e.startHead}\n\n${e.closure}` });
+    const intent = { title: titleFor(await projectionFor(e, { sameBranch: true })), head: e.branch, base: CONSUMER.baseBranch, draft: true,
+      body: `Implementation of https://github.com/${REPOSITORY}/issues/${e.issueNumber}\n\nThread: ${e.thread}\nCorrelation: ${threadCorrelationIdentity(e.thread)}\nAttempt: ${e.attemptId}\n${bindingLines(e)}Requested model: ${e.profile.cliModelId}; effort: ${e.profile.effort}\nStarting head: ${e.startHead}\n\n${e.closure}` };
+    let pr;
+    try { pr = await api.post('/pulls', intent); }
+    catch (error) {
+      if (!ambiguousGithubWrite(error)) throw error;
+      try {
+        const observed = await findCurrentIssuePullRequest(api, e, null, publishedTransition);
+        if (observed?.body === intent.body && observed.title === intent.title && observed.draft === true
+          && observed.head.sha === r.publishedHead && observed.user?.login === WRITER) pr = observed;
+        else attachWriteReadback(error, observed ? 'unavailable' : 'not-observed');
+      } catch (cause) { attachWriteReadback(error, 'unavailable', cause); }
+      if (!pr) throw error;
+    }
     assertPr(pr, pr.number);
     if (pr.head.ref !== e.branch || linkedIssue(pr.body) !== e.issueNumber) fail('PR_AUTHORITY_CHANGED');
     await rememberPullRequest(r, pr);
@@ -451,7 +520,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   }
 
   function admissionBlockDiagnostic(block) {
-    return { observed: { child: 'not_started', exitCode: null }, executionState: 'known-not-executed', executionId: null,
+    return { ...safeFailureFacts(block), ...(block.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}), observed: { child: 'not_started', exitCode: null }, executionState: 'known-not-executed', executionId: null,
       lastSuccessfulBoundary: 'admission', failureBoundary: 'authority', classification: { code: block.code, source: 'observed', stage: 'authority' },
       primaryCause: block.code, containment: 'not_required', terminal: 'blocked', durable: { publishedHead: null, diagnosticStore: block.diagnosticStore ?? null },
       nextAction: 'correct-authority-before-new-owner-attempt', orchestration: 'COMPLETED' };
@@ -496,9 +565,11 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         return result;
       } catch (error) {
-        const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
-          runId: request?.runId, workerStarted: request?.operation === 'admit' && ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code) ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
-        if (diagnosticStore) error.details = { ...error.details, diagnosticStore };
+        try {
+          const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
+            runId: request?.runId, workerStarted: request?.operation === 'admit' && ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code) ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+          if (diagnosticStore) error.details = { ...error.details, diagnosticStore };
+        } catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
         throw error;
       }
     }
@@ -713,7 +784,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           await consumeReadyCommand(r);
         }
         if (admitted.blocked) {
-          await terminalOutcome(r, { terminalCode: admitted.block.code, diagnostic: admissionBlockDiagnostic(admitted.block) });
+          const block = admitted.block;
+          try { await terminalOutcome(r, { terminalCode: block.code, diagnostic: admissionBlockDiagnostic(block) }); }
+          catch (cause) {
+            const error = Object.assign(new Error(block.code), { code: block.code, details: {
+              ...safeFailureFacts(block), childState: 'not_started', diagnosticStore: block.diagnosticStore,
+              diagnosticRecorderFailed: block.diagnosticRecorderFailed, outcomePublication: safeOutcomePublication(cause)
+            }, native: { outcomePublicationFailure: cause } });
+            throw error;
+          }
           return receipt({ envelope, status: 'BLOCKED', outcome: r.outcome });
         }
         return receipt({ envelope });

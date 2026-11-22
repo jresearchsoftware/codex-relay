@@ -119,8 +119,11 @@ export async function publicationRecoveryJournal(request, broker, { createStore 
 export async function main({ persistFailure = persistAttemptFailureDiagnostic } = {}) {
   try { return await runRecovery(); }
   catch (error) {
-    const durable = await persistFailure({ executionId: `publication-recovery-${randomUUID()}`, error, stage: 'writer-publication', lastSuccessfulBoundary: 'recovery-entrypoint' });
-    error.details = { ...error.details, ...durable };
+    try {
+      const durable = await persistFailure({ executionId: `publication-recovery-${randomUUID()}`, error, stage: 'writer-publication', lastSuccessfulBoundary: 'recovery-entrypoint' });
+      error.details = { ...error.details, ...durable };
+    } catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
+    error.details = { ...error.details, routingStage: 'publication-recovery' };
     throw error;
   }
 }

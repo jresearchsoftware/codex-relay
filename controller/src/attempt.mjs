@@ -1,10 +1,15 @@
-import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest } from './execution-contract.mjs';
+import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest, positive } from './execution-contract.mjs';
+import { isWriterTokenRequest, safeWriterFailure } from './failure-report.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
 import { boundedDiagnosticText, captureCausalDiagnostic } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 
 // One runner-owned journal records whether the potentially paid call happened.
 // Publication may be resumed; a reserved/unknown child is never relaunched.
+const blockedReceipt = record => ({ ...record.outcome, code: record.diagnostic.classification.code, diagnostic: record.diagnostic,
+  runId: record.envelope.runId, target: { kind: record.outcome.prNumber ? 'pull_request' : record.envelope.target,
+    number: record.outcome.prNumber ?? record.envelope.number } });
+
 export async function runAttempt(options) {
   if (options.envelope.route === 'auto' && options.journal.withLock) {
     return options.journal.withLock(options.envelope.runId, () => runLockedAttempt(options));
@@ -17,14 +22,42 @@ async function runLockedAttempt(options) {
   if (options.envelope.route !== 'auto' || outcome.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW') return outcome;
   // Outside the execution catch: a failed/uncertain Ready transition retains
   // the successful durable Outcome and can resume without another model call.
-  return options.broker.invoke({ operation: 'complete-handoff', runId: options.envelope.runId,
-    attemptId: options.envelope.attemptId });
+  const { envelope, broker, journal } = options;
+  try { return await broker.invoke({ operation: 'complete-handoff', runId: envelope.runId, attemptId: envelope.attemptId }); }
+  catch (error) {
+    error.details = { writerFailure: safeWriterFailure({ operation: 'complete-handoff' }), ...error.details };
+    await describePostOutcomeFailure(error, envelope, journal, outcome);
+    throw error;
+  }
+}
+
+// An independent handoff failure cannot erase a previously returned Outcome.
+// Where the journal is unreadable, keep the Outcome proof and leave the child
+// observation unknown. This read authorizes no mutation or worker replay.
+export async function describePostOutcomeFailure(error, envelope, journal, outcome) {
+  if (!positive(outcome?.outcomeId)) return;
+  let saved;
+  try { saved = await journal.get(envelope.runId); }
+  catch { /* The earlier Outcome receipt still supplies publication evidence. */ }
+  const execution = saved?.envelope?.attemptId === envelope.attemptId && saved?.outcome?.outcomeId === outcome.outcomeId
+    ? saved.execution : null;
+  error.details = { ...error.details, executionId: envelope.attemptId, runId: envelope.runId,
+    target: outcome.prNumber ? { kind: 'pull_request', number: outcome.prNumber } : { kind: envelope.target, number: envelope.number },
+    lastSuccessfulBoundary: 'outcome-publication', outcomePublication: safeOutcomePublication(null, 'published') };
+  error.details.diagnostic = causalEvidence(error, { child: execution?.child, containment: execution?.containment,
+    publishedHead: outcome.noChange ? null : outcome.head, stage: 'finalization' });
 }
 
 async function runContainedAttempt({ envelope, broker, journal, prepare, execute, collect, admissionResumed = false,
   admissionUnstarted = false, persistFailure }) {
   const e = validateEnvelope(envelope);
-  const invoke = (operation, value = {}) => broker.invoke({ operation, runId: e.runId, attemptId: e.attemptId, ...value });
+  const invoke = async (operation, value = {}) => {
+    try { return await broker.invoke({ operation, runId: e.runId, attemptId: e.attemptId, ...value }); }
+    catch (error) {
+      error.details = { writerFailure: safeWriterFailure({ operation }), ...error.details };
+      throw error;
+    }
+  };
   if (e.route === 'manual') return invoke('handoff');
   let record = await journal.get(e.runId);
   if (admissionUnstarted && (!admissionResumed || e.route !== 'auto' || record))
@@ -32,21 +65,25 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
   if (admissionResumed && !record && !admissionUnstarted) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && (record.version !== VERSION || !Object.hasOwn(record, 'execution'))) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
-  // A durable terminal receipt ends this attempt's mutable-checkout lifetime.
-  // Replay outside the catch path so it cannot recollect or republish anything.
-  if (record?.outcome) {
-    if (record.outcome.status === 'BLOCKED' || record.diagnostic?.orchestration === 'FAILED') {
+  // A durable terminal receipt or recorded token refusal ends this attempt's
+  // mutable-checkout lifetime. Replay must not recollect or republish anything.
+  const deferredOutcome = !record?.outcome && record?.diagnostic?.outcomePublication?.status === 'deferred'
+    && isWriterTokenRequest(record.diagnostic.githubFailure);
+  if (record?.outcome || deferredOutcome) {
+    if (deferredOutcome || record.outcome.status === 'BLOCKED' || record.diagnostic?.orchestration === 'FAILED') {
       const diagnostic = record.diagnostic;
       if (!diagnostic?.classification?.code) fail('TERMINAL_STATE_INVALID');
       const code = diagnostic.classification.code;
-      if (diagnostic.orchestration === 'COMPLETED' && safeDomainTerminal({ code }, record, diagnostic.classification.stage)) return record.outcome;
+      if (!deferredOutcome && diagnostic.orchestration === 'COMPLETED'
+        && safeDomainTerminal({ code }, record, diagnostic.classification.stage)) return blockedReceipt(record);
       throw Object.assign(new Error(code), { code, details: {
         childState: diagnostic.observed.child,
         ...(diagnostic.classification.stage === 'execution' ? { causal: record.execution?.diagnostic } : {}),
         primaryCause: diagnostic.primaryCause,
         executionId: e.attemptId, attemptId: e.attemptId,
         lastSuccessfulBoundary: diagnostic.lastSuccessfulBoundary,
-        outcomePublication: safeOutcomePublication(null, 'published'), diagnostic
+        outcomePublication: deferredOutcome ? diagnostic.outcomePublication : safeOutcomePublication(null, 'published'), diagnostic,
+        runId: e.runId, target: { kind: e.target, number: e.number }
       } });
     }
     return record.outcome;
@@ -143,6 +180,7 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     record.diagnostic = null; await journal.put(e.runId, record);
     return record.outcome;
   } catch (error) {
+    const primaryExecution = record.execution?.errorCode ? record.execution.diagnostic : null;
     error.native = { ...error.native, ...(record.execution?.causalEvidence ? { executionEvidence: record.execution.causalEvidence } : {}),
       ...(record.execution?.result ? { workerResult: record.execution.result } : {}) };
     error.details = { ...error.details,
@@ -154,12 +192,17 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     // Preparation, collection and journal/finalization failures also need a
     // durable diagnostic. The runtime capsule is reused when it already exists.
     if (persistFailure) {
-      const durable = await persistFailure({ executionId: e.attemptId, error, stage, lastSuccessfulBoundary });
-      error.details = { ...error.details, ...durable };
+      try {
+        const durable = await persistFailure({ executionId: e.attemptId, error, stage, lastSuccessfulBoundary });
+        error.details = { ...error.details, ...durable };
+      } catch { error.details.diagnosticRecorderFailed = true; }
     }
     record.diagnostic = causalEvidence(error, { child: record.execution ? (record.execution.child ?? 'unknown') : 'not_started',
       containment: record.execution?.containment ?? 'not_required', publishedHead: record.progress?.head, stage });
-    const domain = safeDomainTerminal(error, record, stage);
+    if (primaryExecution?.classification?.code && primaryExecution.classification.code !== error.code) record.diagnostic.executionFailure = primaryExecution;
+    if (record.collection?.head && record.collection.head !== e.startHead)
+      record.diagnostic.durable.collectedHead = record.collection.head;
+    const domain = !error.details.diagnosticRecorderFailed && safeDomainTerminal(error, record, stage);
     record.diagnostic.orchestration = domain ? 'COMPLETED' : 'FAILED';
     // Presentation sanitizes these bounded worker claims; they are never
     // authority for execution, publication, validation or a completion verdict.
@@ -170,8 +213,28 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       const blocker = boundedDiagnosticText(record.execution.result.blockedReason ?? '', 16 * 1024);
       record.diagnostic.blockerSummary = blocker.text + (blocker.truncated ? ' [TRUNCATED]' : '');
     }
-    await journal.put(e.runId, record);
-    if (e.route === 'auto' && !record.outcome) {
+    const saveTerminal = async () => {
+      try { await journal.put(e.runId, record); }
+      catch (journalError) {
+        record.diagnostic.terminalJournalFailed = true;
+        record.diagnostic.orchestration = 'FAILED';
+        error.details = { ...error.details, attemptId: e.attemptId, diagnostic: record.diagnostic };
+        if (persistFailure) {
+          try { await persistFailure({ executionId: `${e.attemptId}-journal`, error: journalError, stage: 'finalization', lastSuccessfulBoundary }); }
+          catch { record.diagnostic.diagnosticRecorderFailed = true; }
+        }
+        throw error;
+      }
+    };
+    // A new Writer call would POST the same token request before it could
+    // deliver an Outcome. Retain the original failure without that request.
+    const deferOutcome = e.route === 'auto' && !record.outcome && isWriterTokenRequest(record.diagnostic.githubFailure);
+    if (deferOutcome) {
+      error.details.outcomePublication = { status: 'deferred' };
+      record.diagnostic.outcomePublication = error.details.outcomePublication;
+    }
+    await saveTerminal();
+    if (e.route === 'auto' && !record.outcome && !deferOutcome) {
       try {
         const outcome = await invoke('terminal-outcome', { status: 'blocked', terminalCode: error.code,
           diagnostic: record.diagnostic, executionWarnings: record.executionWarnings ?? record.execution?.executionWarnings ?? [], publishedHead: record.progress?.head ?? null,
@@ -182,8 +245,11 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       } catch (publicationError) {
         // Preserve the independently observed publication cause before reducing
         // it to the public uncertainty classification. Never repeat the POST.
-        if (persistFailure) await persistFailure({ executionId: `${e.attemptId}-publication`, error: publicationError,
-          stage: 'writer-publication', lastSuccessfulBoundary });
+        if (persistFailure) {
+          try { await persistFailure({ executionId: `${e.attemptId}-publication`, error: publicationError,
+            stage: 'writer-publication', lastSuccessfulBoundary }); }
+          catch { record.diagnostic.diagnosticRecorderFailed = true; }
+        }
         record.outcomePublicationEvidence = captureCausalDiagnostic({ error: publicationError, executionId: e.attemptId,
           phase: 'writer-publication', operation: 'terminal-outcome', secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } });
         error.details.outcomePublication = safeOutcomePublication(publicationError);
@@ -191,13 +257,13 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       }
       // A failed durable terminal write is a physical failure, even if GitHub
       // already accepted the Outcome. It must never be swallowed to turn green.
-      await journal.put(e.runId, record);
+      await saveTerminal();
     }
     error.details = { ...(error.details ?? {}), attemptId: e.attemptId, diagnostic: record.diagnostic };
     // A safe semantic/authority decision is a successful controller outcome
     // once the single terminal Outcome has been durably published. Keep real
     // runtime, transport, containment, and publication failures exceptional.
-    if (domain && record.diagnostic.orchestration === 'COMPLETED' && record.outcome?.status === 'BLOCKED') return record.outcome;
+    if (domain && record.diagnostic.orchestration === 'COMPLETED' && record.outcome?.status === 'BLOCKED') return blockedReceipt(record);
     throw error;
   }
 }
