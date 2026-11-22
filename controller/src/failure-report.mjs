@@ -52,7 +52,7 @@ export function safeFailurePredicate(value) {
     return { check: value.check, expected: value.expected,
       observed: Number.isSafeInteger(value.observed) && value.observed > 0 ? value.observed : value.observed == null ? 'missing' : 'unrecognized' };
   }
-  if (['pr.starting-head', 'task-branch-head'].includes(value?.check) && /^[a-f0-9]{40}$/.test(value.expected ?? '')) {
+  if (['pr.starting-head', 'task-branch-head'].includes(value?.check) && typeof value.expected === 'string' && /^[a-f0-9]{40}$/.test(value.expected)) {
     const observed = Array.isArray(value.observed) && value.observed.length === 1 ? value.observed[0] : value.observed;
     return { check: value.check, expected: value.expected, observed: /^[a-f0-9]{40}$/.test(observed ?? '') ? observed : 'unavailable' };
   }
@@ -219,9 +219,10 @@ function githubObservation(github) {
 export function failureExplanation(code, diagnostic = {}, { runId, reason, target, outcome, knownUnbound = false } = {}) {
   const { githubFailure: github, predicate, writerFailure: writer, admissionEffect: admission } = safeFailureFacts(diagnostic);
   const stage = diagnostic.classification?.stage;
-  const phase = phaseNames[stage] ?? phaseNames[diagnostic.failureBoundary] ?? 'routing';
-  const operation = writer ? `Writer ${writer.operation} during ${phase}`
-    : diagnostic.runtime?.operation === 'checkout-prepare' ? 'checkout preparation' : phase;
+  const phase = [stage, diagnostic.failureBoundary].filter(value => Object.hasOwn(phaseNames, value))[0];
+  const phaseName = phaseNames[phase] ?? 'routing';
+  const operation = writer ? writer.operation === phase ? `Writer ${phaseName}` : `Writer ${writer.operation} during ${phaseName}`
+    : diagnostic.runtime?.operation === 'checkout-prepare' ? 'checkout preparation' : phaseName;
   const run = Number.isSafeInteger(runId) && runId > 0 ? `run-${runId}` :
     /^run-[1-9][0-9]{0,19}$/.test(diagnostic.executionId ?? '') ? diagnostic.executionId : null;
   const subject = Number.isSafeInteger(target?.number) && target.number > 0
@@ -238,7 +239,7 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   if (predicate) details.push(`Expected ${predicateNames[predicate.check]} ${predicate.expected}, observed ${predicate.observed}.`);
   else if (check) details.push(`The ${check} check failed. Comparable values are unavailable in the public result.`);
   else if (!github) details.push(Object.hasOwn(otherObservations, failureCode) ? otherObservations[failureCode]
-    : `The underlying cause was not established at the ${phase} boundary.`);
+    : `The underlying cause was not established at the ${phaseName} boundary.`);
   if (github) details.push(githubObservation(github),
     `${github.attempts} request attempt${github.attempts === 1 ? '' : 's'} (${Math.max(0, github.attempts - 1)} retries). Recovery stopped because ${stopReasons[github.stopped]}.`);
   else if (predicate || check) details.push('Relay stopped at the failed authority check without retrying it.');
@@ -286,19 +287,26 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   const uncertainWrite = mutation || secondaryWrite || /PUBLICATION_UNCERTAIN|REF_OBSERVATION|PUSH_UNCERTAIN|GIT_REMOTE_STATE_UNKNOWN/.test(failureCode)
     || ['publish-progress', 'finish', 'complete-handoff', 'terminal-outcome'].includes(writer?.operation) && !github;
   if (uncertainWrite) details.push('An external effect may remain unverified.');
-  const action = github?.endpoint === 'Writer installation token' ? next.credential : failureCode.startsWith('READY_') ? next.ready : admission?.projection === 'unknown' ? next.projection : uncertainWrite ? next.write
-    : /CONTAINMENT_NOT_PROVEN|EXECUTION_UNKNOWN|ATTEMPT_CONTROLLER_BUSY/.test(failureCode) || github?.stopped === 'cancelled' && child.child !== 'not_started' ? next.containment
-    : github && [401, 403, 404].includes(github.status) && github.reason !== 'rate-limit' ? next.access
-    : github?.reason === 'rate-limit' ? next.waitRate
-    : github?.reason === 'network' && github.stopped === 'non-transient' ? next.transport
-    : github && ['attempt-limit', 'deadline', 'provider-delay'].includes(github.stopped) ? next.wait
-    : failureCode === 'ADMISSION_QUIESCED' ? next.gate
-    : /^(OWNER_(RUN_NOT_ADMITTED|EVENT_REQUIRED))$/.test(failureCode) ? next.event
-    : failureCode === 'CURRENT_PROTOCOL_REQUIRED' ? next.current
-    : failureCode === 'EVENT_PAYLOAD_INVALID' ? next.eventPayload
-    : failureCode.startsWith('CHECKOUT_') ? next.checkout
-    : /CONFIG|CREDENTIAL|EXECUTION_SLOT|WRITER_IDENTITY|WORKFLOW_READ_TOKEN/.test(failureCode) ? next.configuration
-    : /AUTHORITY|STARTING_STATE|STEP_LABEL|^ISSUE_/.test(failureCode) ? next.authority
-    : failureCode.startsWith('CODEX_') || failureCode === 'SEMANTIC_RESULT_BLOCKED' ? next.result : next.diagnostic;
+  const actions = [
+    [github?.endpoint === 'Writer installation token', next.credential],
+    [failureCode.startsWith('READY_'), next.ready],
+    [admission?.projection === 'unknown', next.projection],
+    [uncertainWrite, next.write],
+    [/CONTAINMENT_NOT_PROVEN|EXECUTION_UNKNOWN|ATTEMPT_CONTROLLER_BUSY/.test(failureCode)
+      || github?.stopped === 'cancelled' && child.child !== 'not_started', next.containment],
+    [github?.reason === 'rate-limit', next.waitRate],
+    [github && [401, 403, 404].includes(github.status), next.access],
+    [github?.reason === 'network' && github.stopped === 'non-transient', next.transport],
+    [github && ['attempt-limit', 'deadline', 'provider-delay'].includes(github.stopped), next.wait],
+    [failureCode === 'ADMISSION_QUIESCED', next.gate],
+    [/^OWNER_(RUN_NOT_ADMITTED|EVENT_REQUIRED)$/.test(failureCode), next.event],
+    [failureCode === 'CURRENT_PROTOCOL_REQUIRED', next.current],
+    [failureCode === 'EVENT_PAYLOAD_INVALID', next.eventPayload],
+    [failureCode.startsWith('CHECKOUT_'), next.checkout],
+    [/CONFIG|CREDENTIAL|EXECUTION_SLOT|WRITER_IDENTITY|WORKFLOW_READ_TOKEN/.test(failureCode), next.configuration],
+    [/AUTHORITY|STARTING_STATE|STEP_LABEL|^ISSUE_/.test(failureCode), next.authority],
+    [failureCode.startsWith('CODEX_') || failureCode === 'SEMANTIC_RESULT_BLOCKED', next.result]
+  ];
+  const action = actions.find(([matches]) => matches)?.[1] ?? next.diagnostic;
   return [heading, ...details, `Next action: ${action}`].join(' ');
 }

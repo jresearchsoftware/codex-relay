@@ -24,7 +24,7 @@ from git_source_locator import expected_locator, resume_receipt
 from lifecycle import (progress, report_failure, public_log_reference, start_failure_observation,
                        stop_failure_observation, print_terminal_failure, observe_failure_state,
                        observe_admission_call, observe_admission_result, observe_backend_start,
-                       observe_target_mutation)
+                       observe_target_mutation, admission_failure_receipt)
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -186,8 +186,8 @@ def remote_admission(target, key, namespace, *arguments):
     result = run_target(target, key, remote, timeout=1860,
                         **({'progress': True} if arguments[0] == 'drain' else {}))
     if result.returncode:
-        codes = re.findall(r'(?m)^ADMISSION_[A-Z_]{1,100}$', result.stderr)
-        raise ValueError((codes[-1] if codes else 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
+        receipt = admission_failure_receipt(result.stderr)
+        raise ValueError(receipt.get('code', 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
             result.returncode, 'fixed-admission-operation', output=result.stdout, stderr=result.stderr)
     decoded = json.loads(result.stdout)
     action = arguments[0]

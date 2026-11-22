@@ -650,7 +650,7 @@ def main(arguments=None, token_stream=None):
         else:
             run(arguments[0])
         return 0
-    except Exception as error:
+    except (Exception, KeyboardInterrupt) as error:
         print_terminal_failure(error, 'owner-lifecycle', report_failure)
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.

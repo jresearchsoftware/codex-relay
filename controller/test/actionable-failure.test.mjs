@@ -5,6 +5,7 @@ import { fixture } from './fixture.mjs';
 import { createGithubApi } from '../src/github-api.mjs';
 import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { reportRoutingResult } from '../src/entrypoint.mjs';
+import { admissionCliFailure, drainAdmission } from '../src/admission-cli.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { REPOSITORY } from '../src/execution-contract.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
@@ -246,4 +247,21 @@ test('late handoff failure reports the already published candidate and Outcome',
   assert.match(result.output, /Writer confirmed a target-bound Outcome/);
   assert.equal(f.comments.length, 1);
   assert.equal(f.pushes(), 1);
+});
+
+test('drain exhaustion yields an actionable protected-gate command result', async () => {
+  const operationId = '11111111-1111-4111-8111-111111111111';
+  let clock = 0;
+  const input = { operationId, timeout: 1 };
+  await assert.rejects(drainAdmission(input, {
+    snapshot: async () => ({ drained: false, active: [99], unknown: [], private: canary }),
+    now: () => clock, wait: async delay => { clock += delay; }, reportProgress() {}
+  }), error => {
+    const failure = admissionCliFailure(error, 'drain', { status: 'unavailable' });
+    assert.match(failure.text, /Relay admission drain failed.*ADMISSION_DRAIN_TIMEOUT.*1 active and 0 unresolved/);
+    assert.match(failure.text, /run relay-admission status for the retained operation/);
+    assert.doesNotMatch(failure.text + JSON.stringify(failure.receipt), new RegExp(canary));
+    assert.deepEqual(failure.receipt.drain, { seconds: 1, active: 1, unknown: 0 });
+    return true;
+  });
 });

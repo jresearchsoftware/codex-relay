@@ -1490,7 +1490,10 @@ existing selected deployment inputs. Reconcile the original operation before
 using the supported recovery or Resume path. An input validation failure
 instead names the failed field and the correction to make before another
 command. CLI diagnostics report the existing Actions run and protected
-admission operation when those identifiers are available.
+admission operation when those identifiers are available. A drain failure
+also reports the deadline or unresolved inventory counts when known.
+Use protected `relay-admission status` on that original operation before
+choosing recovery.
 
 The fixed GitHub reads used to resolve the selected owner workflow inputs,
 repository and refs use the same bounded attempt, backoff and provider

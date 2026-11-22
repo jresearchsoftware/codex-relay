@@ -3,6 +3,7 @@ import errno
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
 import sys
 from types import SimpleNamespace
 
@@ -173,3 +174,24 @@ def test_terminal_recorder_exception_does_not_replace_the_primary_os_cause(monke
     public = capsys.readouterr().err
     assert 'EACCES' in public and 'Protected evidence retention could not be verified' in public
     assert SECRET not in public and 'secondary private' not in public
+
+
+def test_owner_apply_names_drain_failure_and_safe_counts_from_the_gate_receipt(monkeypatch, capsys):
+    def operation():
+        def gate(action, *_args):
+            if action == 'drain':
+                child = subprocess.CalledProcessError(1, ['fixed-gate'], stderr=SECRET + '\n' + json.dumps({
+                    'code': 'ADMISSION_DRAIN_TIMEOUT', 'drain': {'seconds': 45, 'active': 2, 'unknown': 1},
+                    'details': {'private': SECRET}
+                }))
+                child.deployment_dependency = 'admission-gate'
+                raise child
+        lifecycle.execute(gate, REVISION, lambda: pytest.fail('Apply must not start'), lambda *_: False)
+    assert owner_apply(monkeypatch, operation) == 1
+    public = capsys.readouterr().err
+    assert 'Last verified boundary was closed admission' in public
+    assert 'Admission gate reported ADMISSION_DRAIN_TIMEOUT' in public
+    assert 'The drain budget was 45 seconds' in public
+    assert '2 active and 1 unresolved attempts' in public
+    assert 'read relay-admission status for the retained operation' in public
+    assert SECRET not in public

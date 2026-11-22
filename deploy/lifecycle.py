@@ -4,6 +4,7 @@ The root admission gate owns durable state. This module adds no journal or
 deployment backend; a missing/uncertain proof leaves the gate closed.
 """
 from contextvars import ContextVar
+import json
 import re
 import sys
 import uuid
@@ -447,6 +448,45 @@ def observe_target_mutation():
         observe_failure_state(effect='possible', installed=None, activation=None)
 
 
+_ADMISSION_FAILURES = {
+    'ADMISSION_DRAIN_TIMEOUT': 'The admission drain reached its deadline.',
+    'ADMISSION_DRAIN_UNKNOWN': 'The drain observed unresolved execution or publication effects.',
+    'ADMISSION_DRAIN_STATUS_UNAVAILABLE': 'The drain could not read a verified controller inventory.',
+    'ADMISSION_PHASE_INVALID': 'The retained admission phase refused this transition.',
+    'ADMISSION_OPERATION_MISMATCH': 'The admission operation identity does not match the retained gate.',
+    'ADMISSION_TARGET_MISMATCH': 'The requested revision does not match the retained admission target.',
+    'ADMISSION_VERIFICATION_REQUIRED': 'The admission gate lacks the proof required to reopen.'
+}
+
+
+def admission_failure_receipt(stderr):
+    """Read the existing gate error receipt without exposing its raw streams."""
+    if not isinstance(stderr, str):
+        return {}
+    # A bounded capture can retain a bare legacy code, or end at the structured
+    # helper envelope. Ignore diagnostic text and arbitrary keys in the receipt.
+    lines = stderr[-65536:].strip().splitlines()
+    if not lines:
+        return {}
+    try:
+        receipt = json.loads(lines[-1])
+    except (ValueError, RecursionError):
+        receipt = {'code': next((line for line in reversed(lines) if re.fullmatch(r'ADMISSION_[A-Z_]{1,100}', line)), None)}
+    if not isinstance(receipt, dict) or not isinstance(receipt.get('code'), str) or not re.fullmatch(r'ADMISSION_[A-Z_]{1,100}', receipt['code']):
+        return {}
+    drain = receipt.get('drain')
+    if not isinstance(drain, dict):
+        drain = {}
+    details = receipt.get('details')
+    inventory = details.get('inventory', {}) if isinstance(details, dict) else {}
+    if isinstance(inventory, dict):
+        for key in ['active', 'unknown']:
+            if key not in drain and isinstance(inventory.get(key), list):
+                drain[key] = len(inventory[key])
+    return {'code': receipt['code'], **{key: drain[key] for key in ['active', 'unknown', 'seconds']
+            if type(drain.get(key)) is int and 0 <= drain[key] <= 1_000_000}}
+
+
 def deployment_failure(error, evidence=None):
     """Compose ordinary command output from safe observations, with an existing protected reference."""
     import errno
@@ -465,6 +505,10 @@ def deployment_failure(error, evidence=None):
             details.setdefault('cause', 'A deployment dependency exceeded its deadline.')
         elif isinstance(current, subprocess.CalledProcessError):
             dependency = getattr(current, 'deployment_dependency', None)
+            if dependency == 'admission-gate' or current.cmd == 'fixed-admission-operation':
+                gate = admission_failure_receipt(current.stderr)
+                if gate:
+                    details.setdefault('admission', gate)
             if dependency == 'public-deployment-primitive':
                 # Only the fixed child protocol is read. Extract numeric exit
                 # and fixed dependencies from its existing progress, never text.
@@ -521,6 +565,17 @@ def deployment_failure(error, evidence=None):
         sentences.append(_DEPLOYMENT_PROOFS.get(check, f'The {check} check failed.'))
     backend = state.get('backend')
     exit_code = state.get('backend_exit')
+    admission_error = details.get('admission')
+    if admission_error:
+        code = admission_error['code']
+        sentences.append(f'Admission gate reported {code}.')
+        if code in _ADMISSION_FAILURES:
+            sentences.append(_ADMISSION_FAILURES[code])
+        if 'seconds' in admission_error:
+            sentences.append(f'The drain budget was {admission_error["seconds"]} seconds.')
+        if 'active' in admission_error or 'unknown' in admission_error:
+            sentences.append(f'The last inventory had {admission_error.get("active", "an unknown number of")} active '
+                             f'and {admission_error.get("unknown", "an unknown number of")} unresolved attempts.')
     github = details.get('github')
     if github:
         status = github['status']
@@ -544,7 +599,7 @@ def deployment_failure(error, evidence=None):
         sentences.append(f'Ansible {action} while reporting {backend}.')
     elif not github and 'cause' in details:
         sentences.append(details['cause'])
-    elif not github and not details.get('check'):
+    elif not github and not admission_error and not details.get('check'):
         sentences.append('The cause at the failed boundary is unconfirmed.')
     attempts = state.get('backend_attempts', 0)
     if attempts:
@@ -576,6 +631,8 @@ def deployment_failure(error, evidence=None):
             action = 'Verify the configured read credential and selected repository binding.'
         elif github['method'] == 'GET':
             action = 'Verify that the host can read the selected GitHub repository before selecting another owner operation.'
+    if not action and admission_error:
+        action = 'Have the host operator read relay-admission status for the retained operation before pursuing Apply recovery.'
     if not action:
         action = 'Run the supported read-only deployment diagnostic for the same target before repeating this operation.'
     sentences.append('Next action: ' + action)

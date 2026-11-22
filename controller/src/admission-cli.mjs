@@ -12,7 +12,7 @@ import { createAttemptStore, createPublicationStore } from './attempt-store.mjs'
 import { createAdmissionControl, terminalAdmissionOutcome, activeControllerReservation, preAdmissionRefusalHasNoPendingEffects, verifiedPendingLocation, ADMISSION_STATE_BYTES } from './admission-control.mjs';
 import { createSlotJournal } from './slot-journal.mjs';
 import { manualAttemptHasNoPendingEffects, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
-import { fail } from './execution-contract.mjs';
+import { fail, positive } from './execution-contract.mjs';
 import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { traceConsumerTransition } from './transition-timing.mjs';
 import { assertPredispatchTargetCompatible } from './predispatch-target-compatibility.mjs';
@@ -143,19 +143,21 @@ export async function readAdmissionSnapshot(input = process.stdin) {
   try { return parseConsumerJson(Buffer.concat(chunks).toString('utf8')); }
   catch { fail('ADMISSION_SNAPSHOT_INVALID'); }
 }
+function boundedPending(values, installation) {
+  return Array.isArray(values) ? values.filter(item => [item?.task, item?.step, item?.runId].every(positive)).slice(0, 20)
+    .map(item => ({ task: item.task, step: item.step, runId: item.runId, ...verifiedPendingLocation(item, installation) })) : undefined;
+}
+
 export async function drainAdmission({ operationId, timeout }, { snapshot, wait = setTimeout,
   now = () => performance.now(), reportProgress = () => {}, installation = INSTALLATION_CONSUMER } = {}) {
   const started = now(); const deadline = started + timeout * 1000;
   let nextProgress = started; let previous;
   const report = (value, reason) => {
     const count = values => Array.isArray(values) && values.length <= 10000 ? values.length : null;
-    const identities = Array.isArray(value.pending) ? value.pending.filter(item =>
-      [item?.task, item?.step, item?.runId].every(value => Number.isSafeInteger(value) && value > 0))
-      .slice(0, 20).map(item => {
-        const location = verifiedPendingLocation(item, installation);
-        const suffix = location.repository ? `[repository=${location.repository}${location.executionSlot ? `;slot=${location.executionSlot}` : ''}]` : '';
-        return `Task-${item.task}/Step-${item.step}/run-${item.runId}${suffix}`;
-      }) : [];
+    const identities = (boundedPending(value.pending, installation) ?? []).map(item => {
+      const suffix = item.repository ? `[repository=${item.repository}${item.executionSlot ? `;slot=${item.executionSlot}` : ''}]` : '';
+      return `Task-${item.task}/Step-${item.step}/run-${item.runId}${suffix}`;
+    });
     // Configured long repository names must not overflow the transport's line
     // bound. Counts still report the whole inventory when identities are capped.
     const bounded = []; let bytes = 0;
@@ -232,9 +234,43 @@ export async function main(args = process.argv.slice(2)) {
     operationId: options.operationId, previousDigest: options.previousDigest, target: options.revision }));
   return admission[command](options);
 }
+export function admissionCliFailure(error, command, diagnosticStore) {
+  const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED';
+  const operation = Object.hasOwn(commands, command ?? '') ? command : 'command';
+  const inventory = error?.details?.inventory;
+  const ids = value => Array.isArray(value) && value.length <= 10_000 && value.every(positive) ? value : undefined;
+  const safeInventory = inventory ? { active: ids(inventory.active), unknown: ids(inventory.unknown),
+    pending: boundedPending(inventory.pending, INSTALLATION_CONSUMER) } : undefined;
+  const active = safeInventory?.active?.length;
+  const unknown = safeInventory?.unknown?.length;
+  const seconds = error?.details?.elapsedSeconds;
+  const drain = ['ADMISSION_DRAIN_TIMEOUT', 'ADMISSION_DRAIN_UNKNOWN', 'ADMISSION_DRAIN_STATUS_UNAVAILABLE'].includes(code)
+    ? { active, unknown, ...(Number.isInteger(seconds) && seconds > 0 && seconds <= 3600 ? { seconds } : {}) } : undefined;
+  const reason = {
+    ADMISSION_ARGUMENTS_INVALID: 'The arguments did not satisfy the selected command contract.',
+    ADMISSION_DRAIN_TIMEOUT: drain?.seconds ? `The drain deadline expired after ${drain.seconds} seconds.` : 'The drain deadline expired.',
+    ADMISSION_DRAIN_UNKNOWN: 'One or more original execution or publication effects could not be reconciled.',
+    ADMISSION_DRAIN_STATUS_UNAVAILABLE: 'The drain could not read a verified controller inventory.',
+    ADMISSION_OPERATION_MISMATCH: 'The supplied operation does not match the retained gate operation.',
+    ADMISSION_PHASE_INVALID: 'The retained gate phase does not permit this command.',
+    ADMISSION_TARGET_MISMATCH: 'The requested revision does not match the retained gate target.',
+    ADMISSION_VERIFICATION_REQUIRED: 'The gate does not have the verification receipt required to reopen admission.'
+  }[code] ?? 'The exact gate failure could not be established from the safe observations.';
+  const counts = drain ? ` The last inventory had ${active ?? 'an unknown number of'} active and ${unknown ?? 'an unknown number of'} unresolved attempts.` : '';
+  const action = code === 'ADMISSION_ARGUMENTS_INVALID'
+    ? 'Correct the selected command arguments using the installed admission command contract.'
+    : 'Have the host operator run relay-admission status for the retained operation before attempting another transition.';
+  return { text: `Relay admission ${operation} failed (${code}). ${reason}${counts} Next action: ${action}`,
+    receipt: { code, diagnosticStore, ...(drain ? { drain } : {}), ...(safeInventory ? { details: { inventory: safeInventory } } : {}) } };
+}
+
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
-  const diagnosticStore = await recordHostFailure({ error, operation: 'admission-lifecycle', phase: 'finalization' });
-  process.stderr.write(JSON.stringify({ code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ADMISSION_FAILED', diagnosticStore, ...(error.details?.inventory ? { details: { inventory: error.details.inventory } } : {}) }) + '\n');
+  let diagnosticStore;
+  try { diagnosticStore = await recordHostFailure({ error, operation: 'admission-lifecycle', phase: 'finalization' }); }
+  catch { /* Keep the original ordinary error when the recorder is unavailable. */ }
+  const failure = admissionCliFailure(error, process.argv[2], diagnosticStore);
+  process.stderr.write(failure.text + '\n');
+  process.stderr.write(JSON.stringify(failure.receipt) + '\n');
   process.exitCode = 1;
 });
