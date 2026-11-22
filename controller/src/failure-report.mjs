@@ -112,8 +112,8 @@ export function failureFacts(error) {
 // Acknowledgement uncertainty only. Definite rejections need no readback.
 export function ambiguousGithubWrite(error) {
   const facts = failureFacts(error).githubFailure;
-  return facts?.method !== 'GET' && facts?.attempts === 1 &&
-    !(facts.reason === 'http' && [400, 401, 403, 404, 405, 409, 422].includes(facts.status));
+  return facts?.method !== 'GET' && facts?.attempts === 1 && facts.reason !== 'rate-limit' &&
+    !(facts.reason === 'http' && [400, 401, 403, 404, 405, 409, 422, 429].includes(facts.status));
 }
 
 export function attachWriteReadback(error, readback, cause) {
@@ -200,12 +200,14 @@ const next = {
   waitRate: 'Check the rate-limit reset for the configured GitHub reader before making another request.',
   eventPayload: 'Verify that the configured routing workflow passed the original Actions event to Relay.',
   checkout: 'Have the host operator reconcile the retained checkout for the original attempt before another checkout is prepared.',
-  write: 'Reconcile the original Writer reservation against its native target using Inspect in Relay recovery before another mutation.',
-  projection: 'Run Relay recovery with Inspect for the original attempt before changing Step labels or the ready command.',
+  write: 'Reconcile the original Writer reservation against its native target using inspect in the Writer publication recovery workflow before another mutation.',
+  projection: 'Use inspect in the Writer publication recovery workflow for the original attempt before changing Step labels or the ready command.',
   ready: 'Reconcile the original ready-label event and Writer reservation before applying a fresh ready command.',
   result: 'Review the retained result and candidate for this attempt before requesting any further execution.',
   containment: 'Have the host operator verify containment for this attempt before reusing its execution resource.',
-  diagnostic: 'Have the host operator read the retained diagnostic for this run through the supported protected diagnostics path before recovery.'
+  diagnostic: 'Have the host operator read the retained diagnostic for this run through the supported protected diagnostics path before recovery.',
+  inspectAttempt: 'Use inspect in the Writer publication recovery workflow to verify the original attempt and its recorded effects before recovery.',
+  verifyStartup: 'Have the host operator verify the installed routing entrypoint and consumer configuration for the original Actions run.'
 };
 
 function githubObservation(github) {
@@ -279,10 +281,12 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   const store = diagnostic.durable?.diagnosticStore;
   const fallback = diagnostic.durable?.fallbackReference;
   const ref = item => /^[A-Za-z0-9_-]{1,128}$/.test(item?.executionId ?? '') ? item.executionId : null;
-  if (store?.status === 'stored' && ref(store)) details.push(`Protected diagnostics reference ${ref(store)}.`);
-  else if (['reserved', 'released', 'retained', 'stored'].includes(fallback?.status) && ref(fallback)) details.push(`Protected fallback reference ${ref(fallback)}. Primary capture is unconfirmed.`);
+  const primaryReference = store?.status === 'stored' ? ref(store) : null;
+  const fallbackReference = ['reserved', 'released', 'retained', 'stored'].includes(fallback?.status) ? ref(fallback) : null;
+  if (primaryReference) details.push(`Protected diagnostics reference ${primaryReference}.`);
+  else if (fallbackReference) details.push(`Protected fallback reference ${fallbackReference}. Primary capture is unconfirmed.`);
   else if (store || fallback) details.push('Protected evidence retention is unconfirmed.');
-  const secondaryWrite = outcome?.status === 'failed' && outcomeHttp?.method !== 'GET';
+  const secondaryWrite = outcome?.status === 'failed' && (!outcomeHttp || ambiguousGithubWrite({ details: { githubFailure: outcomeHttp } }));
   const mutation = ambiguousGithubWrite({ details: { githubFailure: github } });
   const uncertainWrite = mutation || secondaryWrite || /PUBLICATION_UNCERTAIN|REF_OBSERVATION|PUSH_UNCERTAIN|GIT_REMOTE_STATE_UNKNOWN/.test(failureCode)
     || ['publish-progress', 'finish', 'complete-handoff', 'terminal-outcome'].includes(writer?.operation) && !github;
@@ -294,7 +298,7 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
     [uncertainWrite, next.write],
     [/CONTAINMENT_NOT_PROVEN|EXECUTION_UNKNOWN|ATTEMPT_CONTROLLER_BUSY/.test(failureCode)
       || github?.stopped === 'cancelled' && child.child !== 'not_started', next.containment],
-    [github?.reason === 'rate-limit', next.waitRate],
+    [github?.reason === 'rate-limit' || !github && outcomeHttp?.reason === 'rate-limit', next.waitRate],
     [github && [401, 403, 404].includes(github.status), next.access],
     [github?.reason === 'network' && github.stopped === 'non-transient', next.transport],
     [github && ['attempt-limit', 'deadline', 'provider-delay'].includes(github.stopped), next.wait],
@@ -307,6 +311,8 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
     [/AUTHORITY|STARTING_STATE|STEP_LABEL|^ISSUE_/.test(failureCode), next.authority],
     [failureCode.startsWith('CODEX_') || failureCode === 'SEMANTIC_RESULT_BLOCKED', next.result]
   ];
-  const action = actions.find(([matches]) => matches)?.[1] ?? next.diagnostic;
+  const fallbackAction = primaryReference || fallbackReference ? next.diagnostic
+    : subject && phase !== 'authority' && phase !== 'pre-worker-admission' ? next.inspectAttempt : next.verifyStartup;
+  const action = actions.find(([matches]) => matches)?.[1] ?? fallbackAction;
   return [heading, ...details, `Next action: ${action}`].join(' ');
 }

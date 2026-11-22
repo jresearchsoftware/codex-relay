@@ -1027,9 +1027,8 @@ An admission reservation is durable before Step projection and ready-command
 consumption. An exception during projection can therefore leave a reserved Step,
 old display labels and an unconsumed owner event. These are separate facts.
 Writer retains a bounded, redacted exception in the protected attempt record;
-the helper wire reports only the projection suboperation, safe error code/type
-and HTTP status when available. A failed diagnostic write is reported as
-unverified retention. New native automatic label attempts have the durable
+the helper reports typed projection, HTTP and retry observations when available.
+A failed diagnostic write is reported as unverified retention. New native automatic label attempts have the durable
 pre-dispatch marker described above; diagnostic retention is not its proof.
 Neither the marker nor a projection diagnostic proves containment of an older
 attempt that predates the marker.
@@ -1526,7 +1525,7 @@ delivery as a separate failure and states whether publication is confirmed.
 | Event and owner admission | Failed predicate and safe expected/observed values where available. Use the original run and trusted owner command to correct the failed check. A reserved but partially projected Step is visible separately. |
 | Writer API and checkout | Named preflight or checkout operation, GitHub method and endpoint category or recognized OS cause, observed HTTP status and exact request attempts. If no Codex child started, the report says so. |
 | Child and runtime | Available child start, exit or signal and the failed runtime boundary. Invalid results are distinguishable from transport failure and from unverified containment. Use the original attempt to reconcile retained work. |
-| Trusted Git and finalization | The verified collected or published head when available, an unresolved external effect or receipt when applicable, and a separate report of any later Outcome or recorder failure. Use **Inspect** in the **Relay recovery** workflow for the original run and attempt before any authorized recovery. |
+| Trusted Git and finalization | The verified collected or published head when available, an unresolved external effect or receipt when applicable, and a separate report of any later Outcome or recorder failure. Use **inspect** in the **Writer publication recovery** workflow for the original run and attempt before any authorized recovery. |
 | Apply and lifecycle | The CLI explains the last verified lifecycle boundary, dependency failure and available installation, activation and admission evidence. See [deployment diagnostics](../deploy/README.md#owner-lifecycle-failure-diagnostics). |
 
 Safe GitHub GETs can make up to three attempts within a 48-second request

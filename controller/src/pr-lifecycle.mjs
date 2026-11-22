@@ -1,4 +1,4 @@
-import { attachWriteReadback } from './failure-report.mjs';
+import { ambiguousGithubWrite, attachWriteReadback, failureFacts } from './failure-report.mjs';
 import { assertPr, currentReview, linkedIssue, revalidateAuthority } from './live-authority.mjs';
 import { digest, exactSha, fail, positive, validateEnvelope, NATIVE_VALIDATIONS, OWNER, REVIEWER, REPOSITORY, requireCurrentProtocol } from './execution-contract.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
@@ -20,7 +20,13 @@ export async function transitionPr({ api, store, key, record, readPr, head, draf
   if (typeof pr.draft !== 'boolean') fail('PR_STATE_UNAVAILABLE');
   if (pr.draft !== draft) {
     let mutationError;
-    try { await api[draft ? 'draft' : 'ready'](pr.node_id); } catch (error) { mutationError = error; }
+    try { await api[draft ? 'draft' : 'ready'](pr.node_id); }
+    catch (error) {
+      // A provider refusal has a definite response. Retain the reserved
+      // intent and avoid another immediate API call after a rate-limit refusal.
+      if (failureFacts(error).githubFailure && !ambiguousGithubWrite(error)) throw error;
+      mutationError = error;
+    }
     try { pr = await readPr(); } catch (error) {
       if (!mutationError) throw error;
       attachWriteReadback(mutationError, 'unavailable', error);

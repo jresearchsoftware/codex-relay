@@ -265,3 +265,40 @@ test('drain exhaustion yields an actionable protected-gate command result', asyn
     return true;
   });
 });
+
+test('rate-limited Outcome write stops without an immediate native readback or second write', async t => {
+  const f = await fixture(t);
+  let writes = 0;
+  let subsequentReads = 0;
+  const list = f.api.list.bind(f.api);
+  f.api.list = async path => {
+    if (writes) subsequentReads++;
+    return list(path);
+  };
+  f.api.post = (path, body) => createGithubApi({
+    fetchImpl: async () => {
+      writes++;
+      return new Response('', { status: 429, headers: { 'retry-after': '120' } });
+    }
+  }).post(path, body);
+  const result = await capture(() => runAttempt({ ...f,
+    prepare: async () => { throw Object.assign(new Error('retained checkout'), { code: 'CHECKOUT_DIRTY' }); },
+    execute: () => assert.fail('preflight blocked the worker') }));
+  assert.equal(result.status, 1);
+  assert.equal(writes, 1);
+  assert.equal(subsequentReads, 0);
+  assert.equal(f.comments.length, 0);
+  assert.match(result.output, /CHECKOUT_DIRTY.*Outcome delivery also failed.*HTTP 429.*Check the rate-limit reset/);
+  assert.doesNotMatch(result.output, /assert|read back the write/);
+});
+
+test('an unavailable recorder leaves an applicable action for an unknown startup cause', async () => {
+  const error = Object.assign(new Error(canary), { details: {
+    routingStage: 'authority', runId: 99, childState: 'not_started', diagnosticRecorderFailed: true
+  } });
+  const { status, output } = await capture(async () => { throw error; });
+  assert.equal(status, 1);
+  assert.match(output, /run-99.*The underlying cause was not established.*diagnostic recorder also failed/);
+  assert.match(output, /Next action: Have the host operator verify the installed routing entrypoint and consumer configuration/);
+  assert.doesNotMatch(output, new RegExp(canary));
+});
