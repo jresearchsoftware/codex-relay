@@ -24,7 +24,7 @@ from git_source_locator import expected_locator, resume_receipt
 from lifecycle import (progress, report_failure, public_log_reference, start_failure_observation,
                        stop_failure_observation, print_terminal_failure, observe_failure_state,
                        observe_admission_call, observe_admission_result, observe_backend_start,
-                       observe_target_mutation, admission_failure_receipt)
+                       observe_target_mutation, admission_failure_receipt, LifecycleCheckError)
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -187,7 +187,8 @@ def remote_admission(target, key, namespace, *arguments):
                         **({'progress': True} if arguments[0] == 'drain' else {}))
     if result.returncode:
         receipt = admission_failure_receipt(result.stderr)
-        raise ValueError(receipt.get('code', 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
+        code = receipt.get('code', 'trusted-admission-operation-failed')
+        raise LifecycleCheckError(code + ';inspect-before-recovery') from subprocess.CalledProcessError(
             result.returncode, 'fixed-admission-operation', output=result.stdout, stderr=result.stderr)
     decoded = json.loads(result.stdout)
     action = arguments[0]
@@ -1510,7 +1511,9 @@ def main():
             code = candidate.split(';', 1)[0]
             known = code in {'BACKEND_FAILED', 'RELAY_INSTALL_FAILED', 'recovery-requires-disposition',
                              'host-operation-guard-lost'}
-            if type(error).__name__ == 'PoolError':
+            if isinstance(error, LifecycleCheckError):
+                known = len(code) <= 110 and re.fullmatch(r'[a-z][a-z0-9]*(?:-[a-z0-9]+)+|ADMISSION_[A-Z_]{1,100}', code)
+            elif type(error).__name__ == 'PoolError':
                 known = re.fullmatch(r'MANAGED_POOL_[A-Z_]{1,100}', code)
             message = code if known else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)

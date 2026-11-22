@@ -19,15 +19,24 @@ const capture = async run => {
 
 // Use the real API client and Writer wire serializer in another process. The
 // GitHub dependency and installed sudo entrypoint are synthetic in this test.
-function preflightProcess(mode, healthyReceipt) {
+function preflightProcess(mode, healthyReceipt, tokenResponse) {
   const uri = path => JSON.stringify(new URL(path, import.meta.url).href);
   const script = `
     import { createGithubApi } from ${uri('../src/github-api.mjs')};
+    import { http } from ${uri('../src/writer-auth.mjs')};
     import { serializeWriterFailure } from ${uri('../src/privileged-writer-helper.mjs')};
     import { readFileSync } from 'node:fs';
     const request = JSON.parse(readFileSync(0, 'utf8'));
     if (request.operation !== 'preflight') process.exit(21);
     let calls = 0;
+    const tokenResponse = ${JSON.stringify(tokenResponse ?? null)};
+    if (tokenResponse) globalThis.fetch = async (url, options) => {
+      calls++;
+      if (url !== 'https://api.github.com/app/installations/12345/access_tokens'
+        || options.method !== 'POST' || options.headers.authorization !== 'Bearer ${canary}') process.exit(23);
+      if (tokenResponse.network) throw Object.assign(new Error('private network message'), { code: 'ECONNRESET' });
+      return new Response(tokenResponse.body ?? 'private native data token=${canary}', tokenResponse);
+    };
     const api = createGithubApi({
       wait: async () => {}, random: () => 0,
       token: ${JSON.stringify(canary)},
@@ -40,12 +49,17 @@ function preflightProcess(mode, healthyReceipt) {
       }
     });
     try {
-      const value = await api.get('/issues/42?hidden=${canary}');
+      const value = tokenResponse
+        ? await http('/app/installations/12345/access_tokens', { method: 'POST', jwt: '${canary}', body: {} })
+        : await api.get('/issues/42?hidden=${canary}');
       if (calls !== 2) process.exit(22);
       process.stdout.write(JSON.stringify(value));
     } catch (error) {
       error.details.diagnosticStore = { status: 'stored', mode: 'normal', executionId: 'host-99-fixture' };
-      process.stderr.write(JSON.stringify(serializeWriterFailure(error)));
+      const wire = JSON.stringify(serializeWriterFailure(error));
+      if (tokenResponse && (calls !== 1 || wire.includes('${canary}')
+        || /private |12345/.test(wire))) process.exit(24);
+      process.stderr.write(wire);
       process.exitCode = 1;
     }
   `;
@@ -98,6 +112,62 @@ for (const [mode, cause, attempts] of [
     assert.match(surface, /Codex child did not start/);
     assert.match(surface, /Next action: (?:Have the host operator|Verify that the configured GitHub credential)/);
     assert.doesNotMatch(surface, new RegExp(`${canary}|private (?:native|timeout) detail`));
+  }
+});
+
+for (const [label, response, cause, action, uncertain] of [
+  ['429 with provider guidance', { status: 429, headers: { 'retry-after': '120' } },
+    /HTTP 429 Too Many Requests and was rate-limited/, /Wait at least 120 seconds/, false],
+  ['429 with a delay outside the public range', { status: 429, headers: { 'retry-after': '99999999' } },
+    /HTTP 429 Too Many Requests and was rate-limited/, /verify when the GitHub App rate limit lifts/, false],
+  ['403 with provider guidance', { status: 403, headers: { 'retry-after': '120' } },
+    /HTTP 403 Forbidden and was rate-limited/, /Wait at least 120 seconds/, false],
+  ['403 with a secondary limit', { status: 403, body: '{"message":"You have exceeded a secondary rate limit. private native data"}' },
+    /HTTP 403 Forbidden and was rate-limited/, /Wait at least 60 seconds/, false],
+  ['401', { status: 401 }, /HTTP 401 Unauthorized/, /verify the configured Writer App installation/, false],
+  ['403', { status: 403 }, /HTTP 403 Forbidden/, /verify the configured Writer App installation/, false],
+  ['504', { status: 504 }, /HTTP 504 Gateway Timeout/, /check GitHub API availability/, true],
+  ['network reset', { network: true }, /failed at the network boundary \(ECONNRESET\)/, /check GitHub API availability/, true]
+]) test(`Writer token failure reaches Actions and Outcome after ${label}`, async t => {
+  const f = await fixture(t);
+  const writer = preflightProcess('token', null, response);
+  const operations = [];
+  const { status, output } = await capture(() => runAttempt({ ...f, broker: { invoke(request) {
+    operations.push(request.operation);
+    assert.equal(request.operation, 'preflight', 'Outcome delivery would repeat the installation-token POST');
+    return writer.invoke(request);
+  } }, execute: () => assert.fail('preflight blocked the worker') }));
+  assert.equal(status, 1);
+  assert.deepEqual(operations, ['preflight']);
+  assert.equal((await f.store.all()).length, 1);
+  assert.equal(f.pushes(), 0);
+  assert.equal(f.comments.length, 0);
+  assert.match(output, /deferred target-bound Outcome delivery because it requires another installation token request/);
+  const saved = await f.journal.get(f.envelope.runId);
+  assert.equal(saved.outcome, null);
+  assert.deepEqual(saved.diagnostic.outcomePublication, { status: 'deferred' });
+  const replay = await capture(() => runAttempt({ ...f, admissionResumed: true,
+    broker: { invoke: () => assert.fail('deferred token failure must not start another Writer operation') },
+    execute: () => assert.fail('deferred token failure must not start Codex') }));
+  assert.equal(replay.status, 1);
+  assert.match(replay.output, cause);
+  assert.match(replay.output, /deferred target-bound Outcome delivery/);
+
+  // Exercise Writer's real Outcome composition from the saved diagnostic
+  // with the fake authorized GitHub client. The router did not dispatch this.
+  await f.broker.invoke({ operation: 'terminal-outcome', runId: f.envelope.runId, attemptId: f.envelope.attemptId,
+    status: 'blocked', terminalCode: saved.diagnostic.classification.code, diagnostic: saved.diagnostic });
+  assert.equal(f.comments.length, 1);
+  for (const surface of [output, f.comments[0].body]) {
+    assert.match(surface, /Writer preflight.*run-99.*GITHUB_MUTATION_FAILED/);
+    assert.match(surface, /GitHub POST \(Writer installation token\)/);
+    assert.match(surface, cause);
+    assert.match(surface, /1 request attempt \(0 retries\).*installation token requests are single-attempt/);
+    assert.match(surface, /The Codex child did not start/);
+    assert.match(surface, action);
+    assert.equal(surface.includes('GitHub installation token issuance is unconfirmed.'), uncertain);
+    assert.doesNotMatch(surface, new RegExp(`${canary}|private |12345|without a recognized transport cause|original Writer reservation`));
+    if (response.headers || response.body) assert.doesNotMatch(surface, /verify the configured Writer App installation/);
   }
 });
 

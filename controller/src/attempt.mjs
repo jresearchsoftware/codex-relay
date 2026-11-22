@@ -1,5 +1,5 @@
 import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest, positive } from './execution-contract.mjs';
-import { safeWriterFailure } from './failure-report.mjs';
+import { isWriterTokenRequest, safeWriterFailure } from './failure-report.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
 import { boundedDiagnosticText, captureCausalDiagnostic } from './diagnostics.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
@@ -65,21 +65,24 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
   if (admissionResumed && !record && !admissionUnstarted) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && (record.version !== VERSION || !Object.hasOwn(record, 'execution'))) fail('JOURNAL_MISSING_EXECUTION_UNKNOWN');
   if (record && digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
-  // A durable terminal receipt ends this attempt's mutable-checkout lifetime.
-  // Replay outside the catch path so it cannot recollect or republish anything.
-  if (record?.outcome) {
-    if (record.outcome.status === 'BLOCKED' || record.diagnostic?.orchestration === 'FAILED') {
+  // A durable terminal receipt or recorded token refusal ends this attempt's
+  // mutable-checkout lifetime. Replay must not recollect or republish anything.
+  const deferredOutcome = !record?.outcome && record?.diagnostic?.outcomePublication?.status === 'deferred'
+    && isWriterTokenRequest(record.diagnostic.githubFailure);
+  if (record?.outcome || deferredOutcome) {
+    if (deferredOutcome || record.outcome.status === 'BLOCKED' || record.diagnostic?.orchestration === 'FAILED') {
       const diagnostic = record.diagnostic;
       if (!diagnostic?.classification?.code) fail('TERMINAL_STATE_INVALID');
       const code = diagnostic.classification.code;
-      if (diagnostic.orchestration === 'COMPLETED' && safeDomainTerminal({ code }, record, diagnostic.classification.stage)) return blockedReceipt(record);
+      if (!deferredOutcome && diagnostic.orchestration === 'COMPLETED'
+        && safeDomainTerminal({ code }, record, diagnostic.classification.stage)) return blockedReceipt(record);
       throw Object.assign(new Error(code), { code, details: {
         childState: diagnostic.observed.child,
         ...(diagnostic.classification.stage === 'execution' ? { causal: record.execution?.diagnostic } : {}),
         primaryCause: diagnostic.primaryCause,
         executionId: e.attemptId, attemptId: e.attemptId,
         lastSuccessfulBoundary: diagnostic.lastSuccessfulBoundary,
-        outcomePublication: safeOutcomePublication(null, 'published'), diagnostic,
+        outcomePublication: deferredOutcome ? diagnostic.outcomePublication : safeOutcomePublication(null, 'published'), diagnostic,
         runId: e.runId, target: { kind: e.target, number: e.number }
       } });
     }
@@ -223,8 +226,15 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
         throw error;
       }
     };
+    // A new Writer call would POST the same token request before it could
+    // deliver an Outcome. Retain the original failure without that request.
+    const deferOutcome = e.route === 'auto' && !record.outcome && isWriterTokenRequest(record.diagnostic.githubFailure);
+    if (deferOutcome) {
+      error.details.outcomePublication = { status: 'deferred' };
+      record.diagnostic.outcomePublication = error.details.outcomePublication;
+    }
     await saveTerminal();
-    if (e.route === 'auto' && !record.outcome) {
+    if (e.route === 'auto' && !record.outcome && !deferOutcome) {
       try {
         const outcome = await invoke('terminal-outcome', { status: 'blocked', terminalCode: error.code,
           diagnostic: record.diagnostic, executionWarnings: record.executionWarnings ?? record.execution?.executionWarnings ?? [], publishedHead: record.progress?.head ?? null,

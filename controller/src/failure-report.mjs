@@ -22,6 +22,10 @@ export function githubEndpoint(path) {
   return endpoints.find(([pattern]) => pattern.test(path.split('?')[0]))?.[1] ?? 'repository API';
 }
 
+export function isWriterTokenRequest(value) {
+  return value?.method === 'POST' && value.endpoint === 'Writer installation token';
+}
+
 export const networkCode = value => [
   'EAI_AGAIN', 'ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EPIPE', 'ENETDOWN', 'ENETUNREACH',
   'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT', 'UND_ERR_SOCKET',
@@ -38,7 +42,11 @@ export function safeGithubFailure(value) {
   const status = Number.isInteger(value.status) && value.status >= 100 && value.status <= 599 ? value.status : undefined;
   const osCode = networkCode(value.osCode);
   const readback = ['not-observed', 'unavailable'].includes(value.readback) ? value.readback : undefined;
-  return { method, endpoint, reason, stopped, attempts, ...(status ? { status } : {}), ...(osCode ? { osCode } : {}), ...(readback ? { readback } : {}) };
+  const retryDelaySeconds = isWriterTokenRequest(value) && reason === 'rate-limit'
+    && Number.isInteger(value.retryDelaySeconds) && value.retryDelaySeconds >= 1 && value.retryDelaySeconds <= 86_400
+    ? value.retryDelaySeconds : undefined;
+  return { method, endpoint, reason, stopped, attempts, ...(status ? { status } : {}), ...(osCode ? { osCode } : {}),
+    ...(readback ? { readback } : {}), ...(retryDelaySeconds ? { retryDelaySeconds } : {}) };
 }
 
 const runStatuses = ['requested', 'queued', 'pending', 'waiting', 'in_progress', 'completed'];
@@ -198,6 +206,8 @@ const next = {
   access: 'Verify that the configured GitHub credential has access to the selected repository and endpoint.',
   wait: 'Have the host operator verify the Relay runner can reach the selected GitHub API before pursuing recovery for this run.',
   waitRate: 'Check the rate-limit reset for the configured GitHub reader before making another request.',
+  waitTokenRate: 'Have the host operator verify when the GitHub App rate limit lifts before inspecting the original run in the Writer publication recovery workflow.',
+  tokenService: 'Have the host operator check GitHub API availability from the Relay runner before recovering the original run.',
   eventPayload: 'Verify that the configured routing workflow passed the original Actions event to Relay.',
   checkout: 'Have the host operator reconcile the retained checkout for the original attempt before another checkout is prepared.',
   write: 'Reconcile the original Writer reservation against its native target using inspect in the Writer publication recovery workflow before another mutation.',
@@ -216,6 +226,12 @@ function githubObservation(github) {
     'invalid-response': 'returned a response that could not be decoded', 'graphql-error': 'did not return a successful GraphQL mutation result',
     'rate-limit': 'was rate-limited', cancelled: 'was cancelled' }[github.reason];
   return `GitHub ${github.method} (${github.endpoint})${result || (detail ? ` ${detail}` : ' failed')}${result && detail ? ` and ${detail}` : ''}${github.osCode ? ` (${github.osCode})` : ''}.`;
+}
+
+function recoveryStopped(github) {
+  return isWriterTokenRequest(github) && github.stopped === 'mutation'
+    ? 'installation token requests are single-attempt'
+    : stopReasons[github.stopped];
 }
 
 export function failureExplanation(code, diagnostic = {}, { runId, reason, target, outcome, knownUnbound = false } = {}) {
@@ -243,7 +259,7 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   else if (!github) details.push(Object.hasOwn(otherObservations, failureCode) ? otherObservations[failureCode]
     : `The underlying cause was not established at the ${phaseName} boundary.`);
   if (github) details.push(githubObservation(github),
-    `${github.attempts} request attempt${github.attempts === 1 ? '' : 's'} (${Math.max(0, github.attempts - 1)} retries). Recovery stopped because ${stopReasons[github.stopped]}.`);
+    `${github.attempts} request attempt${github.attempts === 1 ? '' : 's'} (${Math.max(0, github.attempts - 1)} retries). Recovery stopped because ${recoveryStopped(github)}.`);
   else if (predicate || check) details.push('Relay stopped at the failed authority check without retrying it.');
   if (github?.readback) details.push(github.readback === 'not-observed'
     ? 'Native readback did not show the reserved effect. Writer did not repeat the write.'
@@ -276,7 +292,10 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   if (diagnostic.terminalJournalFailed === true) details.push('The terminal journal write also failed. Its durable state is unconfirmed.');
   const outcomeHttp = safeGithubFailure(outcome?.githubFailure);
   if (outcome?.status === 'published') details.push('Writer confirmed a target-bound Outcome.');
-  if (outcome?.status === 'failed') details.push(`Outcome delivery also failed (${/^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.code ?? '') ? outcome.code : 'OUTCOME_PUBLICATION_FAILED'}). Its publication is unconfirmed.`, ...(outcomeHttp ? [githubObservation(outcomeHttp), `Outcome delivery stopped after ${outcomeHttp.attempts} request attempt(s) because ${stopReasons[outcomeHttp.stopped]}.`,
+  if (outcome?.status === 'deferred' && isWriterTokenRequest(github)) {
+    details.push('Relay deferred target-bound Outcome delivery because it requires another installation token request.');
+  }
+  if (outcome?.status === 'failed') details.push(`Outcome delivery also failed (${/^[A-Z][A-Z0-9_]{0,79}$/.test(outcome.code ?? '') ? outcome.code : 'OUTCOME_PUBLICATION_FAILED'}). Its publication is unconfirmed.`, ...(outcomeHttp ? [githubObservation(outcomeHttp), `Outcome delivery stopped after ${outcomeHttp.attempts} request attempt(s) because ${recoveryStopped(outcomeHttp)}.`,
       ...(outcomeHttp.readback ? ['Writer checked the original Outcome reservation without issuing another write.'] : [])] : []));
   const store = diagnostic.durable?.diagnosticStore;
   const fallback = diagnostic.durable?.fallbackReference;
@@ -288,16 +307,27 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   else if (store || fallback) details.push('Protected evidence retention is unconfirmed.');
   const secondaryWrite = outcome?.status === 'failed' && (!outcomeHttp || ambiguousGithubWrite({ details: { githubFailure: outcomeHttp } }));
   const mutation = ambiguousGithubWrite({ details: { githubFailure: github } });
-  const uncertainWrite = mutation || secondaryWrite || /PUBLICATION_UNCERTAIN|REF_OBSERVATION|PUSH_UNCERTAIN|GIT_REMOTE_STATE_UNKNOWN/.test(failureCode)
+  const primaryToken = isWriterTokenRequest(github);
+  const outcomeToken = isWriterTokenRequest(outcomeHttp);
+  const tokenFailure = primaryToken ? github : !github && outcomeToken ? outcomeHttp : undefined;
+  if (mutation && primaryToken || secondaryWrite && outcomeToken) {
+    details.push('GitHub installation token issuance is unconfirmed.');
+  }
+  const uncertainWrite = mutation && !primaryToken || secondaryWrite && !outcomeToken
+    || /PUBLICATION_UNCERTAIN|REF_OBSERVATION|PUSH_UNCERTAIN|GIT_REMOTE_STATE_UNKNOWN/.test(failureCode)
     || ['publish-progress', 'finish', 'complete-handoff', 'terminal-outcome'].includes(writer?.operation) && !github;
   if (uncertainWrite) details.push('An external effect may remain unverified.');
   const actions = [
-    [github?.endpoint === 'Writer installation token', next.credential],
     [failureCode.startsWith('READY_'), next.ready],
     [admission?.projection === 'unknown', next.projection],
     [uncertainWrite, next.write],
     [/CONTAINMENT_NOT_PROVEN|EXECUTION_UNKNOWN|ATTEMPT_CONTROLLER_BUSY/.test(failureCode)
       || github?.stopped === 'cancelled' && child.child !== 'not_started', next.containment],
+    [tokenFailure?.reason === 'rate-limit', tokenFailure?.retryDelaySeconds
+      ? `Wait at least ${tokenFailure.retryDelaySeconds} seconds from this failure before inspecting the original run in the Writer publication recovery workflow.`
+      : next.waitTokenRate],
+    [tokenFailure?.status >= 400 && tokenFailure.status < 500 && tokenFailure.status !== 408, next.credential],
+    [tokenFailure, next.tokenService],
     [github?.reason === 'rate-limit' || !github && outcomeHttp?.reason === 'rate-limit', next.waitRate],
     [github && [401, 403, 404].includes(github.status), next.access],
     [github?.reason === 'network' && github.stopped === 'non-transient', next.transport],

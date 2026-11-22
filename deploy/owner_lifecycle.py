@@ -78,9 +78,9 @@ def projection_preflight(source, target, consumer, config):
             input=json.dumps(config), env=clean_environment(), text=True, timeout=180,
             phase='owner-preflight', dependency='workflow-projection')
     except subprocess.CalledProcessError as error:
-        raise ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target') from error
+        raise LifecycleCheckError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target') from error
     if result.stdout != 'WORKFLOW_PREFLIGHT=PASS\n':
-        raise retain_failure(ValueError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target'), result)
+        raise retain_failure(LifecycleCheckError('WORKFLOW_REVIEW_REQUIRED;consumer-projection-must-match-selected-target'), result)
 
 
 POOL_PREFLIGHT_SCRIPT = failure_reporting_source() + '''import json, re, sys
@@ -119,9 +119,9 @@ def pool_preflight(source, config):
                 phase='owner-preflight', dependency='managed-pool')
         except subprocess.CalledProcessError as error:
             codes = re.findall(r'^MANAGED_POOL_[A-Z_]{1,100}$', error.stderr, re.MULTILINE)
-            raise ValueError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN') from error
+            raise LifecycleCheckError(codes[-1] if codes else 'MANAGED_POOL_OWNER_PREFLIGHT_UNPROVEN') from error
     if result.stdout != 'MANAGED_POOL_PREFLIGHT=PASS\n':
-        raise retain_failure(ValueError('MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN'), result)
+        raise retain_failure(LifecycleCheckError('MANAGED_POOL_OWNER_PREFLIGHT_RESULT_UNPROVEN'), result)
 
 
 def public_main(repository):
@@ -134,7 +134,7 @@ def public_main(repository):
     try:
         value = json.loads(raw)
     except (ValueError, UnicodeError):
-        raise ValueError('accepted-main-unavailable') from git_intent.GitHubRequestError(
+        raise LifecycleCheckError('accepted-main-unavailable') from git_intent.GitHubRequestError(
             'GET', 'Git refs or objects', 200, 'invalid-response', attempts, 'non-transient')
     obj = value.get('object') if isinstance(value, dict) else None
     require(isinstance(obj, dict) and value.get('ref') == 'refs/heads/main' and obj.get('type') == 'commit'
@@ -313,10 +313,10 @@ console.log('GIT_CONSUMER_READBACK=PASS');'''
         input=json.dumps({'current': current, 'desired': desired['consumer']}), text=True,
         env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False, timeout=60)
     if proof.returncode:
-        raise ValueError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
+        raise LifecycleCheckError('git-consumer-readback-mismatch') from subprocess.CalledProcessError(
             proof.returncode, 'fixed-consumer-readback', output=proof.stdout, stderr=getattr(proof, 'stderr', ''))
     if proof.stdout != 'GIT_CONSUMER_READBACK=PASS\n':
-        raise retain_failure(ValueError('git-consumer-readback-mismatch'), proof)
+        raise retain_failure(LifecycleCheckError('git-consumer-readback-mismatch'), proof)
 
 
 def selected_config(source, raw):
@@ -337,17 +337,17 @@ print(json.dumps({'config': c, 'values': compile_inputs(c)}))
         input=raw, env=clean_environment(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         check=False, timeout=180)
     if result.returncode:
-        raise ValueError('git-selected-config-invalid') from subprocess.CalledProcessError(
+        raise LifecycleCheckError('git-selected-config-invalid') from subprocess.CalledProcessError(
             result.returncode, 'fixed-selected-config-parser', output=result.stdout, stderr=getattr(result, 'stderr', ''))
     if len(result.stdout) > 524288:
-        raise retain_failure(ValueError('git-selected-config-invalid'), result)
+        raise retain_failure(LifecycleCheckError('git-selected-config-invalid'), result)
     try:
         parsed = json.loads(result.stdout)
     except (ValueError, UnicodeError) as error:
-        raise retain_failure(ValueError('git-selected-config-invalid'), result) from error
+        raise retain_failure(LifecycleCheckError('git-selected-config-invalid'), result) from error
     if not (isinstance(parsed, dict) and isinstance(parsed.get('config'), dict)
             and isinstance(parsed.get('values'), dict)):
-        raise retain_failure(ValueError('git-selected-config-invalid'), result)
+        raise retain_failure(LifecycleCheckError('git-selected-config-invalid'), result)
     return parsed['config'], parsed['values']
 
 
@@ -363,9 +363,9 @@ def git_target_capability(source):
     try:
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
-        raise ValueError('git-target-installation-contract-missing') from None
+        raise LifecycleCheckError('git-target-installation-contract-missing') from None
     except OSError:
-        raise ValueError('git-target-installation-contract-invalid') from None
+        raise LifecycleCheckError('git-target-installation-contract-invalid') from None
     try:
         with os.fdopen(fd, 'rb') as stream:
             before = os.fstat(stream.fileno())
@@ -386,7 +386,7 @@ def git_target_capability(source):
                         for value in capabilities)
                 and len(capabilities) == len(set(capabilities)), 'git-target-installation-contract-invalid')
     except (OSError, UnicodeError, ValueError, TypeError):
-        raise ValueError('git-target-installation-contract-invalid') from None
+        raise LifecycleCheckError('git-target-installation-contract-invalid') from None
     require('git-desired-v1' in capabilities, 'git-target-installation-contract-unsupported')
 
 
@@ -615,11 +615,11 @@ def run(request):
                     return public_primitive(argv, env=clean_environment(), pass_fds=(lock_fd,),
                                             stdout_proofs=required_proofs)
                 except subprocess.CalledProcessError as error:
-                    raise ValueError('lifecycle-public-primitive-failed') from error
+                    raise LifecycleCheckError('lifecycle-public-primitive-failed') from error
 
             def verify_result(evidence, revision):
                 if evidence.stdout_proofs != required_proofs:
-                    error = retain_failure(ValueError('lifecycle-same-operation-proof-missing'), evidence)
+                    error = retain_failure(LifecycleCheckError('lifecycle-same-operation-proof-missing'), evidence)
                     error.observation['missingStdoutProofs'] = sorted(required_proofs - evidence.stdout_proofs)
                     raise error
                 return installed_proof(config, revision)
@@ -656,8 +656,7 @@ def main(arguments=None, token_stream=None):
         # stderr is copied into public errors. Admission is never reopened here.
         from git_intent import GitIntentError
         known = isinstance(error, (LifecycleCheckError, GitIntentError, repository_source.ConsumerSourceError))
-        candidate = str(error).split(';', 1)[0] if isinstance(error, ValueError) else ''
-        code = candidate if known or candidate == 'WORKFLOW_REVIEW_REQUIRED' or re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', candidate) else 'input-or-io'
+        code = str(error).split(';', 1)[0] if known else 'input-or-io'
         if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED|MANAGED_POOL_[A-Z_]{1,100}|GIT_INTENT_[A-Z_]{1,100}|CONSUMER_SOURCE_[A-Z0-9_]{1,100}', code):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)

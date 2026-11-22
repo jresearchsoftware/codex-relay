@@ -1495,6 +1495,12 @@ also reports the deadline or unresolved inventory counts when known.
 Use protected `relay-admission status` on that original operation before
 choosing recovery.
 
+The terminal `RELAY_DEPLOYMENT_BLOCKED` and `RELAY_OWNER_LIFECYCLE_BLOCKED`
+lines retain named validation codes alongside the explanation. For example,
+`lifecycle-verification-unproven` identifies missing verification of the
+operation, and `accepted-main-unavailable` can identify a malformed GitHub
+response while resolving the selected repository's trusted main commit.
+
 The fixed GitHub reads used to resolve the selected owner workflow inputs,
 repository and refs use the same bounded attempt, backoff and provider
 guidance described in the

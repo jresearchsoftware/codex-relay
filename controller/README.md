@@ -1544,6 +1544,22 @@ state can confirm a lost acknowledgement. An inconclusive readback leaves
 the original intent for supported recovery. The request helper never retries
 a mutation.
 
+Writer installation-token requests make one POST. HTTP 429 and HTTP 403
+responses that indicate rate limiting tell the operator how long to wait
+before recovering the original run. Relay uses GitHub's `Retry-After` or
+rate-limit reset when available and defaults to one minute when neither is
+available. Delays over a day direct the host operator to verify the reset.
+An authorization refusal directs the operator to verify the Writer App
+installation and token access. A server or
+network failure can leave token issuance unconfirmed and directs the operator
+to check GitHub API availability from the runner.
+If an admitted attempt stops at token acquisition, Relay retains its terminal
+diagnostic and defers Outcome delivery. The Actions failure reports the
+deferral because delivery would require another installation-token POST.
+Use **inspect** in **Writer publication recovery** for the original run once
+GitHub access is available. Admission completion still requires its existing
+verified receipt.
+
 For a synthetic admission rejection, ordinary output can show
 `Expected GitHub run.status in_progress, observed queued` and say that no
 Codex child started and no target-bound Outcome was authorized. An absent or

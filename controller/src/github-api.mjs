@@ -30,10 +30,19 @@ async function captureResponseFailure(response, { code, operation, method, path,
   error.native = { operation, method, path, status: response.status, response: capture };
   return error;
 }
+function isRateLimited(response, error) {
+  return response.status === 429 || response.status === 403 && (response.headers?.has('retry-after')
+    || response.headers?.get('x-ratelimit-remaining') === '0'
+    || /"message"\s*:\s*"(?:You have exceeded a secondary rate limit|API rate limit exceeded)\b/i.test(error.native.response.text ?? ''));
+}
+
 export async function responseFailure(response, options) {
   const error = await captureResponseFailure(response, options);
+  const rateLimited = isRateLimited(response, error);
   error.details = { githubFailure: { method: options.method, endpoint: githubEndpoint(options.path),
-    status: response.status, reason: 'http', attempts: 1, stopped: options.method === 'GET' ? 'non-transient' : 'mutation' } };
+    status: response.status, reason: rateLimited ? 'rate-limit' : 'http',
+    ...(rateLimited ? { retryDelaySeconds: Math.max(1, Math.ceil(retryDelay(response.headers, true, Date.now()) / 1000)) } : {}),
+    attempts: 1, stopped: options.method === 'GET' ? 'non-transient' : 'mutation' } };
   throw error;
 }
 
@@ -99,9 +108,7 @@ export function createGithubApi({ token, runToken, fetchImpl = fetch, signal,
         status = response.status;
         if (!response.ok) {
           error = await captureResponseFailure(response, { code, operation, method, path, knownSecrets: [credential].filter(Boolean) });
-          const rateLimited = status === 429 || status === 403 && (response.headers?.has('retry-after')
-            || response.headers?.get('x-ratelimit-remaining') === '0'
-            || /"message"\s*:\s*"(?:You have exceeded a secondary rate limit|API rate limit exceeded)\b/i.test(error.native.response.text ?? ''));
+          const rateLimited = isRateLimited(response, error);
           reason = rateLimited ? 'rate-limit' : 'http';
           retryMs = retryDelay(response.headers, rateLimited, wallTime());
         } else {

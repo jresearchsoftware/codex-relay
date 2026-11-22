@@ -492,6 +492,7 @@ def deployment_failure(error, evidence=None):
     import errno
     import os
     import subprocess
+    from config import InvalidConfig
     from git_intent import GitHubRequestError
     state = _operation.get() or {}
     details = {}
@@ -527,7 +528,8 @@ def deployment_failure(error, evidence=None):
             code = str(current).split(';', 1)[0]
             # Config validation uses named fields. Exclude input values, arbitrary
             # exception messages, and every suffix after the source-owned field.
-            field = re.match(r'^INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?=[:;]|$)', code)
+            field = (re.match(r'^INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?=[:;]|$)', code)
+                     if isinstance(current, InvalidConfig) else None)
             if field:
                 details.setdefault('check', field[1])
                 action = _CONFIG_ACTIONS.get(field[1], f'Correct the {field[1]} check in the selected deployment input.')
