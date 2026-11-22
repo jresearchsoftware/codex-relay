@@ -319,6 +319,19 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         resource: e?.executionSlot ?? 'primary' } });
     return e;
   }
+  async function readResourceEvidence(e, slot, observe) {
+    try { return await observe(); }
+    catch (error) {
+      throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE', { cause: error }), {
+        code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
+        details: { conflictingRunId: e.runId, repository: e.repository, resource: slot ?? e.executionSlot ?? 'primary',
+          cause: /^[A-Z][A-Z0-9_]{0,100}$/.test(error.code ?? '') ? error.code : 'JOURNAL_UNREADABLE' }
+      });
+    }
+  }
+  async function noPredispatchResource(e) {
+    return journal && !await journal.get(e.runId, e.repository) && checkoutAbsent && await checkoutAbsent(e);
+  }
   async function currentInventory(task = null, slot = null, resourceOnly = false) {
     const active = []; const unknown = [];
     const rows = store.scan ? await store.scan()
@@ -327,11 +340,15 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const record = row.record; const identity = record?.envelope ?? row.envelope;
       if (task !== null && row.repository !== undefined && row.repository !== REPOSITORY) continue;
       if (identity && task !== null && identity.issueNumber !== task) continue;
-      if (identity && slot !== null && (identity.executionSlot ?? 'primary') !== slot) continue;
-      if (row.error || !identity) {
+      const invalidPendingSlot = record?.predispatchPending && identity && Object.hasOwn(identity, 'executionSlot')
+        && !verifiedPendingLocation(identity, installation).executionSlot;
+      const recordError = row.error ?? (invalidPendingSlot ? 'ADMISSION_RESOURCE_IDENTITY_INVALID' : null);
+      if (!recordError && identity && slot !== null && (identity.executionSlot ?? 'primary') !== slot) continue;
+      if (recordError || !identity) {
+        const cause = recordError ?? 'ATTEMPT_ENVELOPE_MISSING';
         throw Object.assign(new Error('ADMISSION_ATTEMPT_INVALID', { cause: row.cause }), { code: 'ADMISSION_ATTEMPT_INVALID',
-          observation: { check: 'inventory.record', expected: 'readable native envelope', observed: { runId: row.runId, code: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } },
-          details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause: row.error ?? 'ATTEMPT_ENVELOPE_MISSING' } });
+          observation: { check: 'inventory.record', expected: 'readable native envelope', observed: { runId: row.runId, code: cause } },
+          details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause } });
       }
       // A handoff is not evidence of physical runner occupation.
       if (resourceOnly && identity.route === 'manual') continue;
@@ -340,7 +357,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // independent of the current consumer digest or the old Task's status.
       if (e.route === 'manual') {
         if (await manualAttemptHasConflictingActivity(record, { journal })) {
-          unknown.push(e.runId);
+          unknown.push(e);
         }
         continue;
       }
@@ -348,55 +365,50 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // Production inventory and Writer admission share the publication lock.
       // A pending marker cannot race the live Writer while this snapshot is read.
       if (record.predispatchPending && record.predispatchRecovery) {
-        if (!completedPredispatchRecovery(record) || !journal || await journal.get(e.runId, e.repository)
-          || !checkoutAbsent || !await checkoutAbsent(e)) unknown.push(e.runId);
+        if (!completedPredispatchRecovery(record)
+          || !await readResourceEvidence(e, slot, () => noPredispatchResource(e))) unknown.push(e);
         continue;
       }
       if (record.predispatchPending) {
         // Consumption alone retains the slot, but a matching contained
         // execution journal can release the physical resource before the
         // separate task/PR lifecycle and external-effect boundary completes.
-        if (resourceOnly && consumedPredispatchMarker(record) && await resourceReleased(record)) continue;
+        if (resourceOnly && consumedPredispatchMarker(record)
+          && await readResourceEvidence(e, slot, () => resourceReleased(record))) continue;
         if (consumedPredispatchMarker(record) && record.controllerLifecycle?.status === 'active' && !record.outcome) {
-          active.push(e.runId);
+          active.push(e);
           continue;
         }
-        const safe = predispatchNoWorkerRecord(record) && journal && !await journal.get(e.runId, e.repository)
-          && checkoutAbsent && await checkoutAbsent(e);
+        const safe = predispatchNoWorkerRecord(record)
+          && await readResourceEvidence(e, slot, () => noPredispatchResource(e));
         // A possibly applied DELETE or Outcome publication remains an
         // external-effect boundary even after the physical slot is released.
-        if (!safe || !resourceOnly && (!pendingPredispatchRecord(record) || record.readyConsumption)) unknown.push(e.runId);
+        if (!safe || !resourceOnly && (!pendingPredispatchRecord(record) || record.readyConsumption)) unknown.push(e);
         continue;
       }
       if (record.predispatchRecovery) {
-        if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) unknown.push(e.runId);
+        if (!completedPredispatchRecovery(record) || await journal.get(e.runId, e.repository)) unknown.push(e);
         continue;
       }
       if (resourceOnly) {
-        let released;
-        try {
+        const released = await readResourceEvidence(e, slot, async () => {
           // A refusal reserves no worker. Publication-only uncertainty holds its
           // native effect, while contradictory execution evidence holds the slot.
-          released = record.admissionBlock && !record.controllerLifecycle
+          return record.admissionBlock && !record.controllerLifecycle
             && !await journal.get(e.runId, e.repository) ? true : await resourceReleased(record);
-        }
-        catch (error) {
-          throw Object.assign(new Error('ADMISSION_RESOURCE_EVIDENCE_UNREADABLE', { cause: error }), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
-            details: { conflictingRunId: e.runId, repository: e.repository, resource: slot,
-              cause: /^[A-Z][A-Z0-9_]{0,100}$/.test(error.code ?? '') ? error.code : 'JOURNAL_UNREADABLE' } });
-        }
+        });
         if (!released) {
-          if (record.controllerLifecycle?.version === 1 && record.controllerLifecycle.status === 'active' && !record.outcome) active.push(e.runId);
-          else unknown.push(e.runId);
+          if (record.controllerLifecycle?.version === 1 && record.controllerLifecycle.status === 'active' && !record.outcome) active.push(e);
+          else unknown.push(e);
         }
         continue;
       }
       if (attemptHasPendingPublicationEffects(record) && !activeControllerReservation(record)) {
-        unknown.push(e.runId);
+        unknown.push(e);
         continue;
       }
       if (record.admissionBlock) {
-        if (await admissionRefusalHasConflictingActivity(record, { journal })) unknown.push(e.runId);
+        if (await admissionRefusalHasConflictingActivity(record, { journal })) unknown.push(e);
         continue;
       }
       const recovery = record.prepublicationRecovery;
@@ -413,7 +425,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
           || recovery.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
           || recovery.outcome.head !== recovery.binding.head || !positive(recovery.outcome.outcomeId)
           || !positive(recovery.outcome.prNumber) || record.prNumber !== recovery.outcome.prNumber
-          || record.prIntent || record.commentIntent || record.lifecycleIntent) unknown.push(e.runId);
+          || record.prIntent || record.commentIntent || record.lifecycleIntent) unknown.push(e);
         continue;
       }
       const lifecycle = record.controllerLifecycle;
@@ -423,28 +435,31 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
           if (!['started', 'not_started'].includes(lifecycle.child)
             || !(lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))
             || !terminalAdmissionOutcome(record) || record.publicationIntent || (record.prIntent && !positive(record.prNumber)) || record.commentIntent
-            || record.lifecycleIntent || record.handoffComplete === false) unknown.push(e.runId);
+            || record.lifecycleIntent || record.handoffComplete === false) unknown.push(e);
           continue;
         }
         // A terminal record with unknown containment or external mutation is
         // an immediate boundary. A live controller is allowed bounded drain.
-        if (record.outcome && !await contained(record)) unknown.push(e.runId);
-        else active.push(e.runId);
+        if (record.outcome && !await contained(record)) unknown.push(e);
+        else active.push(e);
       } else if (!await contained(record)) {
         // Earlier releases did not record the full controller lifecycle. Only
         // their existing matching terminal journal can establish completion.
-        unknown.push(e.runId);
+        unknown.push(e);
       }
     }
-    const pendingRuns = new Set([...active, ...unknown]);
-    const pending = rows.filter(row => pendingRuns.has(row.record?.envelope?.runId)).flatMap(row => {
-      const e = row.record.envelope;
+    const pending = [...active, ...unknown].flatMap(e => {
       const location = verifiedPendingLocation(e, installation);
       return location.repository && positive(e.issueNumber) && positive(e.step)
         && e.attemptId === `run-${e.runId}`
         ? [{ task: e.issueNumber, step: e.step, runId: e.runId, ...location }] : [];
     });
-    return { active: active.sort((a, b) => a - b), unknown: unknown.sort((a, b) => a - b), pending };
+    const runIds = records => records.map(e => e.runId).sort((a, b) => a - b);
+    const first = active[0] ?? unknown[0];
+    const slotConflict = resourceOnly && first ? { slot, runId: first.runId,
+      repository: verifiedPendingLocation(first, installation).repository,
+      state: active.length ? 'active' : 'unknown' } : undefined;
+    return { active: runIds(active), unknown: runIds(unknown), pending, ...(slotConflict ? { slotConflict } : {}) };
   }
   async function inventory(task = null, slot = null, resourceOnly = false) {
     const current = await currentInventory(task, slot, resourceOnly);
@@ -453,7 +468,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     const supplemental = await supplementalInventory({ task, slot, resourceOnly });
     if (!supplemental || !['active', 'unknown'].every(key => Array.isArray(supplemental[key])
       && supplemental[key].every(positive))) fail('ADMISSION_ATTEMPT_INVALID');
-    return { ...current, ...Object.fromEntries(['active', 'unknown'].map(key =>
+    return { ...current, ...(!current.slotConflict && supplemental.slotConflict ? { slotConflict: supplemental.slotConflict } : {}),
+      ...Object.fromEntries(['active', 'unknown'].map(key =>
       [key, [...new Set([...current[key], ...supplemental[key]])].sort((a, b) => a - b)])) };
   }
   return {

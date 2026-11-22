@@ -104,7 +104,14 @@ export function safeFailureFacts(value) {
   const admissionEffect = Number.isSafeInteger(admission?.step) && admission.step > 0
     && ['unknown', 'projected'].includes(admission.projection) && ['not-attempted', 'uncertain'].includes(admission.ready)
     ? { step: admission.step, projection: admission.projection, ready: admission.ready } : undefined;
-  return { ...(githubFailure ? { githubFailure } : {}), ...(predicate ? { predicate } : {}), ...(writerFailure ? { writerFailure } : {}), ...(admissionEffect ? { admissionEffect } : {}) };
+  const conflict = value?.slotConflict;
+  const slotConflict = typeof conflict?.slot === 'string' && /^[a-z][a-z0-9-]{0,31}$/.test(conflict.slot)
+    && Number.isSafeInteger(conflict.runId) && conflict.runId > 0 && ['active', 'unknown', 'unreadable'].includes(conflict.state)
+    ? { slot: conflict.slot, runId: conflict.runId, state: conflict.state,
+      ...(typeof conflict.repository === 'string' && /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(conflict.repository)
+        ? { repository: conflict.repository } : {}) } : undefined;
+  return { ...(githubFailure ? { githubFailure } : {}), ...(predicate ? { predicate } : {}), ...(writerFailure ? { writerFailure } : {}),
+    ...(admissionEffect ? { admissionEffect } : {}), ...(slotConflict ? { slotConflict } : {}) };
 }
 
 // Follow wrapper causes only for typed facts. A wrapper's own observation wins.
@@ -112,7 +119,11 @@ export function failureFacts(error) {
   let current = error;
   let facts = {};
   for (let depth = 0; current && depth < 5; depth++, current = current.cause) {
-    facts = { ...safeFailureFacts({ predicate: current.observation, ...current.details }), ...facts };
+    const detail = current.details;
+    const inventoryError = ['ADMISSION_RESOURCE_EVIDENCE_UNREADABLE', 'ADMISSION_ATTEMPT_INVALID'].includes(current.code);
+    const slotConflict = inventoryError && { slot: detail?.resource, runId: detail?.conflictingRunId,
+      repository: detail?.repository, state: 'unreadable' };
+    facts = { ...safeFailureFacts({ predicate: current.observation, slotConflict, ...detail }), ...facts };
   }
   return facts;
 }
@@ -198,6 +209,7 @@ const stopReasons = {
 const next = {
   credential: 'Have the host operator verify the configured Writer App installation and its token access before recovery.',
   gate: 'Have the host operator check admission status for the retained lifecycle operation before opening admission.',
+  slot: 'Have the host operator verify the prior run’s retained Writer record, runner journal and checkout before reusing the slot.',
   event: 'Compare the original Actions run with the configured workflow and authenticated owner command before issuing another command.',
   authority: 'Correct the named check in the canonical Task, trusted Decision, or Change Request before requesting fresh admission.',
   transport: 'Have the host operator check the Relay host’s DNS or TLS configuration for GitHub.',
@@ -235,7 +247,7 @@ function recoveryStopped(github) {
 }
 
 export function failureExplanation(code, diagnostic = {}, { runId, reason, target, outcome, knownUnbound = false } = {}) {
-  const { githubFailure: github, predicate, writerFailure: writer, admissionEffect: admission } = safeFailureFacts(diagnostic);
+  const { githubFailure: github, predicate, writerFailure: writer, admissionEffect: admission, slotConflict } = safeFailureFacts(diagnostic);
   const stage = diagnostic.classification?.stage;
   const phase = [stage, diagnostic.failureBoundary].filter(value => Object.hasOwn(phaseNames, value))[0];
   const phaseName = phaseNames[phase] ?? 'routing';
@@ -256,6 +268,13 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
   }
   if (predicate) details.push(`Expected ${predicateNames[predicate.check]} ${predicate.expected}, observed ${predicate.observed}.`);
   else if (check) details.push(`The ${check} check failed. Comparable values are unavailable in the public result.`);
+  else if (slotConflict) {
+    const prior = `${slotConflict.repository ? `${slotConflict.repository} ` : ''}run-${slotConflict.runId}`;
+    const resource = `Slot ${slotConflict.slot}`;
+    details.push(slotConflict.state === 'active' ? `${resource} has an active reservation for ${prior}.`
+      : slotConflict.state === 'unknown' ? `${resource} has no verified release for ${prior}.`
+        : `${resource} cannot be released because inventory evidence for ${prior} is unreadable or invalid.`);
+  }
   else if (!github) details.push(Object.hasOwn(otherObservations, failureCode) ? otherObservations[failureCode]
     : `The underlying cause was not established at the ${phaseName} boundary.`);
   if (github) details.push(githubObservation(github),
@@ -333,6 +352,7 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
     [github?.reason === 'network' && github.stopped === 'non-transient', next.transport],
     [github && ['attempt-limit', 'deadline', 'provider-delay'].includes(github.stopped), next.wait],
     [failureCode === 'ADMISSION_QUIESCED', next.gate],
+    [slotConflict || ['EXECUTION_SLOT_UNAVAILABLE', 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE'].includes(failureCode), next.slot],
     [/^OWNER_(RUN_NOT_ADMITTED|EVENT_REQUIRED)$/.test(failureCode), next.event],
     [failureCode === 'CURRENT_PROTOCOL_REQUIRED', next.current],
     [failureCode === 'EVENT_PAYLOAD_INVALID', next.eventPayload],

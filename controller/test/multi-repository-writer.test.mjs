@@ -11,16 +11,25 @@ const targets = ['example-org/project-a', 'example-org/project-b'];
 const source = name => new URL(`../src/${name}.mjs`, import.meta.url).href;
 const consumerSource = new URL('../../consumer/consumer.mjs', import.meta.url).href;
 const linux = { skip: process.platform !== 'linux' };
-async function fixture(t) {
+async function fixture(t, { repositories = targets, pool = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'relay-multi-writer-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const configuration = JSON.parse(await readFile(new URL('../../consumer/fixtures/example.json', import.meta.url), 'utf8'));
   delete configuration.repository;
-  configuration.repositories = targets;
+  configuration.repositories = repositories;
   configuration.paths.workRoot = join(root, 'work');
   configuration.paths.attemptRoot = join(root, 'journals');
   configuration.paths.claimRoot = join(root, 'claims');
   configuration.paths.diagnosticsRoot = join(root, 'diagnostics');
+  if (pool) {
+    const { EXECUTION_PATH_NAMES } = await import('../../consumer/consumer-config.mjs');
+    configuration.generalRunnerPool = { desiredCapacity: 2 };
+    configuration.executionSlots = ['primary', 'pool-2'].map(id => ({
+      id, runnerName: `test-${id}`, runnerUser: 'relay-runner', runtimeUser: configuration.runtimeUser,
+      workGroup: 'relay-work', paths: Object.fromEntries(EXECUTION_PATH_NAMES.map(name => [name,
+        id === 'primary' ? configuration.paths[name] : join(root, id, name)]))
+    }));
+  }
   const pathname = join(root, 'consumer.json');
   await writeFile(pathname, JSON.stringify(configuration), { mode: 0o600 });
   const env = { ...process.env, RELAY_CONSUMER_CONFIG: pathname };
@@ -28,7 +37,7 @@ async function fixture(t) {
   async function run(repository, program) {
     const bootstrap = `import assert from 'node:assert/strict';
       const root = ${JSON.stringify(root)};
-      const targets = ${JSON.stringify(targets)};
+      const targets = ${JSON.stringify(repositories)};
       const repository = process.env.RELAY_REPOSITORY;
       ${program}`;
     const result = await exec(process.execPath, ['--input-type=module', '-e', bootstrap], {
@@ -37,6 +46,134 @@ async function fixture(t) {
   }
   return { root, run };
 }
+
+test('installed pool admission classifies a foreign pending checkout without transferring Task authority', linux, async t => {
+  const relay = 'example-org/codex-relay';
+  const docReview = 'example-org/docs-evolution-review';
+  const f = await fixture(t, { repositories: [relay, docReview], pool: true });
+  const setup = program => `
+    const { mkdir, readFile, rmdir, writeFile, unlink } = await import('node:fs/promises');
+    const { CONSUMER, INSTALLATION_CONSUMER, executionConsumer } = await import(${JSON.stringify(consumerSource)});
+    const { resolveExecutionConsumer, selectRepositoryConsumer } = await import(${JSON.stringify(new URL('../../consumer/consumer-config.mjs', import.meta.url).href)});
+    const { createAttemptStore, createPublicationStore } = await import(${JSON.stringify(source('attempt-store'))});
+    const { installedAdmissionControl } = await import(${JSON.stringify(source('admission-cli'))});
+    const { createPublicationBroker } = await import(${JSON.stringify(source('publication-broker'))});
+    const { createSlotJournal } = await import(${JSON.stringify(source('slot-journal'))});
+    const { pendingPredispatchRecord } = await import(${JSON.stringify(source('predispatch-recovery'))});
+    const { validateEnvelope } = await import(${JSON.stringify(source('execution-contract'))});
+    const { harness } = await import(${JSON.stringify(new URL('./independent-admission-fixture.mjs', import.meta.url).href)});
+    const cleanups = [];
+    const slot = 'pool-2';
+    const storeRoot = CONSUMER.paths.claimRoot + '/publication-v2';
+    const docReview = targets[1];
+    const paths = resolveExecutionConsumer(selectRepositoryConsumer(INSTALLATION_CONSUMER, docReview), slot).paths;
+    const journal = createAttemptStore(paths.attemptRoot, { repository: docReview });
+    const store = createPublicationStore(storeRoot);
+    const runId = 80;
+    const localRunId = 81;
+    const task = 42;
+    const local = await harness({ after: cleanup => cleanups.push(cleanup) }, {
+      store, journal: createSlotJournal(store), executionSlot: slot });
+    try {
+      ${program}
+    } finally { for (const cleanup of cleanups.reverse()) await cleanup(); }`;
+  await f.run(docReview, setup(`
+    const failure = Object.assign(new Error('Synthetic Step projection failure'), { code: 'EIO' });
+    local.api.ensureStepLabel = async () => { throw failure; };
+    await assert.rejects(local.broker.dispatch(local.ready(runId, task, 'auto')), { code: 'EIO' });
+    const retained = await store.get(runId);
+    assert.equal(retained.envelope.repository, docReview);
+    assert.equal(retained.envelope.executionSlot, slot);
+    assert.equal(pendingPredispatchRecord(retained), true);
+    assert.equal(await journal.get(runId), null);
+    await mkdir(paths.workRoot, { recursive: true });`));
+
+  await f.run(relay, setup(`
+    const gate = installedAdmissionControl();
+    const admission = { assertOpen: () => local.control.assertOpen(), reserve: () => local.control.reserve(),
+      assertSlotComplete: slot => gate.assertSlotComplete(slot) };
+    const broker = createPublicationBroker({ api: local.api, store, publisher: {}, admission, journal: createSlotJournal(store) });
+    const request = local.ready(localRunId, task, 'auto');
+    const foreignStore = createAttemptStore(storeRoot, { repository: docReview, repositories: targets, namespace: true });
+    const retained = await foreignStore.get(runId);
+    const foreignPath = storeRoot + '/repositories/' + docReview + '/' + runId + '.json';
+    const foreignBytes = await readFile(foreignPath);
+    const checkout = paths.workRoot + '/run-' + runId;
+    assert.throws(() => validateEnvelope(retained.envelope), { code: 'EXECUTION_ENVELOPE_INVALID' });
+    await assert.rejects(broker.dispatch({ ...request, repository: docReview }), { code: 'ATTEMPT_REPOSITORY_MISMATCH' });
+    assert.equal(await store.get(runId), null);
+
+    async function unavailable(state) {
+      await assert.rejects(broker.dispatch(request), error => {
+        assert.equal(error.code, 'EXECUTION_SLOT_UNAVAILABLE');
+        assert.equal(error.details.resource, slot);
+        assert.deepEqual(error.details.active, state === 'active' ? [runId] : []);
+        assert.deepEqual(error.details.unknown, state === 'unknown' ? [runId] : []);
+        assert.ok(error.details.pending.some(item => item.runId === runId && item.repository === docReview));
+        assert.deepEqual(error.details.slotConflict, { slot, runId, repository: docReview, state });
+        return true;
+      });
+      assert.equal(await store.get(localRunId), null);
+      assert.equal(local.deletes(), 0);
+    }
+    await mkdir(checkout);
+    await unavailable('unknown');
+    await rmdir(checkout);
+    await journal.put(runId, { version: 2, envelope: retained.envelope });
+    await unavailable('unknown');
+    await unlink(paths.attemptRoot + '/' + runId + '.json');
+
+    const consumed = { ...retained, stepProjected: true, readyConsumed: true,
+      readyConsumption: { status: 'consumed', eventId: retained.envelope.readyEventId,
+        label: retained.envelope.readyLabel, removalEventId: retained.envelope.readyEventId + 1 } };
+    delete consumed.stepProjectionFrom;
+    await foreignStore.put(runId, consumed);
+    await unavailable('active');
+    await writeFile(foreignPath, foreignBytes);
+
+    await rmdir(paths.workRoot);
+    await writeFile(paths.workRoot, 'Synthetic non-directory');
+    await assert.rejects(broker.dispatch(request), { code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE' });
+    assert.equal(await store.get(localRunId), null);
+    await unlink(paths.workRoot);
+    await mkdir(paths.workRoot);
+
+    const malformed = { ...retained, envelope: { ...retained.envelope, attemptId: 'run-0' } };
+    await foreignStore.put(runId, malformed);
+    await assert.rejects(broker.dispatch(request), { code: 'EXECUTION_SLOT_UNAVAILABLE' });
+    assert.equal(await store.get(localRunId), null);
+    await writeFile(foreignPath, foreignBytes);
+
+    await foreignStore.put(runId, { ...retained, envelope: { ...retained.envelope, runId: runId + 2 } });
+    await assert.rejects(broker.dispatch(request), { code: 'ADMISSION_ATTEMPT_INVALID' });
+    assert.equal(await store.get(localRunId), null);
+    await writeFile(foreignPath, foreignBytes);
+    await assert.rejects(foreignStore.put(runId, { ...retained, envelope: { ...retained.envelope, repository } }),
+      { code: 'ATTEMPT_REPOSITORY_MISMATCH' });
+
+    await foreignStore.put(runId, { ...retained, envelope: { ...retained.envelope, executionSlot: 'pool-unknown' } });
+    await assert.rejects(broker.dispatch(request), error => {
+      assert.equal(error.code, 'ADMISSION_ATTEMPT_INVALID');
+      assert.equal(error.details.conflictingRunId, runId);
+      assert.equal(error.details.repository, docReview);
+      assert.equal(error.details.cause, 'ADMISSION_RESOURCE_IDENTITY_INVALID');
+      return true;
+    });
+    assert.equal(await store.get(localRunId), null);
+    await writeFile(foreignPath, foreignBytes);
+
+    await gate.assertTaskComplete(task);
+    await mkdir(executionConsumer(slot).paths.workRoot + '/run-' + runId, { recursive: true });
+    await gate.assertSlotComplete(slot);
+    const admitted = await broker.dispatch(request);
+    assert.equal(admitted.envelope.repository, repository);
+    assert.equal(admitted.envelope.runId, localRunId);
+    assert.equal(admitted.envelope.executionSlot, slot);
+    assert.equal(admitted.envelope.step, 1);
+    assert.equal(local.deletes(), 1);
+    assert.deepEqual(await readFile(foreignPath), foreignBytes);
+    assert.equal(await journal.get(runId), null);`));
+});
 
 test('same run and Task numbers retain separate records, journals and Step lineage while sharing slot admission', linux, async t => {
   const f = await fixture(t);
