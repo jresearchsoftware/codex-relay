@@ -1,26 +1,22 @@
-import { exactSha } from './execution-contract.mjs';
+import { exactSha, fail } from './execution-contract.mjs';
 import { threadCorrelationIdentity } from './run-name.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
 import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { admissionBinding, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
-import { isReportFailure, SUMMARY_DISPLAY_BYTES } from './worker-report.mjs';
+import { redactDiagnosticText } from './diagnostic-redaction.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
 const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
+const OUTCOME_BYTES = 60 * 1024;
+const SUMMARY_BYTES = 48 * 1024;
+const CLAIMS_LIMITATION = 'Worker claims were shortened for publication. Use the published result and primary evidence for review.';
+const CLAIMS_OMITTED = 'Publication warning: Worker summary and validation claims omitted to fit the Outcome.';
 
-function workerReportLimitation(code) {
-  if (!isReportFailure(code)) return null;
-  return code === 'WORKER_REPORT_UNSAFE'
-    ? 'The complete worker report failed publication safety checks and its text was withheld.'
-    : 'Writer could not verify a published copy of the complete worker report on this target.';
-}
-
-export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift, workerReport, terminalCode } = {}) {
+export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, executionWarnings = [], authorityDrift, shortenedClaims } = {}) {
   if (!e.request || !e.requestReference) return body;
-  const reportLimitation = workerReportLimitation(terminalCode);
   const warningSources = [...(e.admission?.warnings ?? []).map(warning => warning.code), ...executionWarnings];
   const warnings = [...new Set(warningSources)].map(source => ({ source: `Attempt ${e.attemptId}: ${source}`,
     impact: executionWarningSummary([source]) || 'Admission selected a safe default; inspect the canonical authority before acceptance.',
@@ -33,11 +29,10 @@ export function boundOutcomeBody(e, body, { pr, status = 'implemented', head, ex
       ...(authorityDrift && authorityDrift.current_authority.sha256 !== e.request.authority.sha256
         ? { authority_drift: authorityDrift } : {}), attempt: e.attemptId, status,
     result: { kind: exactSha(head) && head !== e.startHead ? 'git' : 'no-change',
-      revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) },
-        ...(workerReport ? [{ kind: 'github-report-comment', id: `${workerReport.commentId}:${workerReport.bodySha256}` }] : [])] },
-    warnings, limitations: [...(reportLimitation ? [reportLimitation] : []),
-      'Native exact-head checks and independent acceptance remain separate.',
-      'Execution and publication grant no deployment, credential, release, merge or Issue-closure authority.'],
+      revision: exactSha(head) ? head : e.startHead, identities: [{ kind: 'github-actions-run', id: String(e.runId) }] },
+    warnings, limitations: ['Native exact-head checks and independent acceptance remain separate.',
+      'Execution and publication grant no deployment, credential, release, merge or Issue-closure authority.',
+      ...(shortenedClaims ? [CLAIMS_LIMITATION] : [])],
     summary: status === 'implemented' ? 'The admitted execution completed; independent review remains required.' : 'The admitted execution stopped; useful durable work and its boundary are recorded above.' };
   const source = `Authority source native ID: ${e.requestReference.id}\nAuthority digest: ${e.request.authority.sha256}\nAdmission digest: ${record.admission.sha256}`;
   return `${body}\n\n${e.executionSlot ? `Execution slot: ${e.executionSlot}\n\n` : ''}${source}\n\n${renderAuthorityRecord(record)}`;
@@ -113,25 +108,61 @@ export function blockedOutcomeToken(e) {
   return e?.target === 'pull_request' ? 'REMEDIATION_BLOCKED' : 'IMPLEMENTATION_BLOCKED';
 }
 
-export function workerOutcomeClaims(result, { reportLink, secrets } = {}) {
-  const claim = (value, maxBytes) => {
-    if (typeof value !== 'string' || !value.trim()) return 'UNAVAILABLE';
-    const bounded = boundedDiagnosticText(value, maxBytes, secrets);
-    const escaped = safePublicationText(bounded.text);
-    const rendered = boundedDiagnosticText(escaped, maxBytes);
-    return rendered.text + (bounded.truncated || rendered.truncated ? ' [TRUNCATED]' : '');
-  };
+function publicationClaim(value, maxBytes, secrets) {
+  const redacted = typeof value === 'string' && value.trim()
+    ? redactDiagnosticText(redactDiagnosticText(value, secrets), secrets) : 'UNAVAILABLE';
+  const escaped = safePublicationText(redacted);
+  if (Buffer.byteLength(escaped) <= maxBytes) return { text: escaped, shortened: false };
+  let text = '';
+  let bytes = 0;
+  // Keep each original code point and its Markdown escape/entity together.
+  for (const character of redacted) {
+    const part = safePublicationText(character);
+    bytes += Buffer.byteLength(part);
+    if (bytes > maxBytes) break;
+    text += part;
+  }
+  return { text, shortened: true };
+}
+
+export function workerOutcomeClaims(result, { maxBytes = OUTCOME_BYTES, summaryBytes = SUMMARY_BYTES, secrets } = {}) {
+  const summaryLabel = 'Worker summary (claim): ';
+  const summaryNotice = '\n\nPublication warning: Worker summary shortened to fit the Outcome. The complete summary is not included.';
+  const validationHeading = '\n\nWorker validation (claims; independent native checks remain required):\n';
+  const validationNotice = '\n- Additional worker validation claims omitted to fit the Outcome.';
+  const claimSuffix = ' [TRUNCATED]';
+  const overhead = Buffer.byteLength(summaryLabel + summaryNotice + validationHeading + validationNotice + '\n- UNAVAILABLE');
+  const summary = publicationClaim(result?.summary, Math.min(summaryBytes, Math.max(0, maxBytes - overhead)), secrets);
   const validations = Array.isArray(result?.validation) ? result.validation.slice(0, 64) : [];
-  return [
-    ...(reportLink ? [
-      `[Complete worker report](${reportLink}) verified by Writer for this attempt.`, '',
-      `Worker report preview (shortened claim): ${safePublicationText(boundedDiagnosticText(result.summary, 2048, secrets).text)}`,
-    ] : [`Worker summary (claim): ${claim(result?.summary, SUMMARY_DISPLAY_BYTES)}`]),
-    '',
-    'Worker validation (claims; independent native checks remain required):',
-    '',
-    ...(validations.length ? validations.map(value => `- ${claim(value, 512)}`) : ['- UNAVAILABLE'])
-  ].join('\n');
+  let text = summaryLabel + summary.text + (summary.shortened ? summaryNotice : '') + validationHeading;
+  let available = maxBytes - Buffer.byteLength(text + validationNotice);
+  let shortened = summary.shortened;
+  for (const value of validations.length ? validations : ['UNAVAILABLE']) {
+    let claim = publicationClaim(value, 512, secrets);
+    if (claim.shortened) claim = publicationClaim(value, 512 - claimSuffix.length, secrets);
+    const line = `\n- ${claim.text}${claim.shortened ? claimSuffix : ''}`;
+    const bytes = Buffer.byteLength(line);
+    if (bytes > available) return { text: text + validationNotice, shortened: true };
+    text += line;
+    available -= bytes;
+    shortened ||= claim.shortened;
+  }
+  return { text, shortened };
+}
+
+export function automaticOutcomeBody(e, before, after, { taskResult, secrets, summaryBytes, markerKey = 'outcome', ...binding } = {}) {
+  // Leave room for the native attempt marker and a later PR readiness refresh.
+  const limit = OUTCOME_BYTES - Buffer.byteLength(`\n\n<!-- relay:${e.attemptId}:${markerKey} -->`) - (binding.pr ? 128 : 0);
+  let suffix = boundOutcomeBody(e, after, binding);
+  const claimsBudget = () => limit - Buffer.byteLength(before + suffix);
+  let claims = taskResult ? workerOutcomeClaims(taskResult, { maxBytes: claimsBudget(), summaryBytes, secrets }) : { text: '' };
+  if (claims.shortened) {
+    suffix = boundOutcomeBody(e, after, { ...binding, shortenedClaims: true });
+    claims = workerOutcomeClaims(taskResult, { maxBytes: claimsBudget(), summaryBytes, secrets });
+  }
+  const body = before + (Buffer.byteLength(claims.text) <= claimsBudget() ? claims.text : CLAIMS_OMITTED) + suffix;
+  if (Buffer.byteLength(body) > limit) fail('OUTCOME_BODY_BUDGET_EXCEEDED');
+  return body;
 }
 
 function diagnosticCode(diagnostic) {
@@ -146,7 +177,7 @@ export function usageOutcomeSummary(value) {
   ].join('\n');
 }
 
-export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagnostic, executionWarnings = [] } = {}) {
+export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagnostic, executionWarnings = [], authorityDrift, secrets } = {}) {
   const d = diagnostic && typeof diagnostic === 'object' ? diagnostic : {};
   const head = exactSha(publishedHead) ? publishedHead : 'NONE PUBLISHED';
   const integrationBase = exactSha(pr?.base?.sha) ? pr.base.sha : 'UNAVAILABLE';
@@ -161,7 +192,7 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
   const child = safeFailureDiagnosticReference({ childState: d.observed?.child, childExitCode: d.observed?.exitCode, signal: d.observed?.signal }) ?? {};
   const store = safeDiagnosticStoreReference(d.durable?.diagnosticStore);
   const fallback = safeFallbackReference(d.durable?.fallbackReference);
-  return [
+  const before = [
     '## Codex Outcome',
     '',
     'Status: BLOCKED',
@@ -188,20 +219,19 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     ...(runtime.cleanupContainment ? [`Cleanup containment: ${runtime.cleanupContainment}`] : []),
     ...(store ? [`Primary diagnostics: ${store.status}; reference: ${store.executionId ?? 'UNAVAILABLE'}${store.storeCode ? `; store cause: ${store.storeCode}` : ''}`] : []),
     ...(fallback ? [`Fallback diagnostics: ${fallback.status}; reference: ${fallback.executionId ?? 'UNAVAILABLE'}${Number.isInteger(fallback.slot) ? `; slot: ${fallback.slot}` : ''}${fallback.code ? `; cause: ${fallback.code}` : ''}`] : []),
-    ...(isReportFailure(terminalCode) ? [
-      `Review evidence blocked: ${workerReportLimitation(terminalCode)}`,
-      'Inspect the original attempt’s protected evidence and publication state before choosing a continuation.'
-    ] : [
-      ...(d.taskSummary || d.validation ? [workerOutcomeClaims({ summary: d.taskSummary, validation: d.validation })] : []),
-      ...(d.blockerSummary ? [`Worker blocker (claim): ${safePublicationText(boundedDiagnosticText(d.blockerSummary, 16 * 1024).text)}`] : []),
-    ]),
+  ];
+  const after = [
+    ...(d.blockerSummary ? [`Worker blocker (claim): ${publicationClaim(d.blockerSummary, 16 * 1024, secrets).text}`] : []),
     `Result class: ${d.orchestration === 'COMPLETED' ? 'DOMAIN_BLOCKED (task remains incomplete)' : 'ORCHESTRATION_FAILURE_OR_UNCONFIRMED'}`,
     `Next action: ${next}`,
     `Admission status: ${admissionStatus}`,
     ...(warnings ? [`Warning summary: ${warnings}`] : []),
     'Validation: automatic execution terminated without a successful terminal completion; no readiness, review, merge, or production action is implied.',
     'Independent reconciliation and review remain required.'
-  ].join('\n');
+  ];
+  const taskResult = d.taskSummary || d.validation ? { summary: d.taskSummary, validation: d.validation } : undefined;
+  return automaticOutcomeBody(e, before.join('\n') + '\n', (taskResult ? '\n' : '') + after.join('\n'),
+    { taskResult, summaryBytes: 16 * 1024, pr, status: 'blocked', head: publishedHead, executionWarnings, authorityDrift, secrets });
 }
 
 export function safeOutcomePublication(error, status = 'failed') {

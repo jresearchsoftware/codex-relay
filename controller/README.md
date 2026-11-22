@@ -347,37 +347,23 @@ typed Outcome is the completion signal: automation verifies Writer identity,
 authority/admission or compatibility Request, attempt and immutable result before acting. No additional label,
 receipt comment, Check or parallel completion ledger is needed.
 
-### Full automatic execution reports
+### Automatic Outcome size and worker claims
 
-Writer keeps a successful worker's summary inline when it fits the 16 KiB
-Outcome display limit. If the original UTF-8 text or its escaped presentation
-exceeds that limit, Writer reads the exact summary from the admitted attempt's
-protected runner journal. It publishes one **Codex execution report** comment
-on the same Issue or PR and verifies the native comment's author, parent and
-complete body before reserving the successful Outcome. The Outcome labels the
-shortened preview and links the full report. GitHub repository and target
-visibility govern access to both comments. The report has no Actions artifact
-expiration. The native ID and digest let Reviewer detect edits and deletion.
+The launcher accepts up to 16,384 Unicode code points in a worker summary.
+The protected runner journal records the accepted semantic result before
+collection and publication. The journal is host evidence with protected access.
+Report-sized deliverables requested by a Task use that Task's authorized
+artifact route.
 
-The report contains the full semantic `summary` accepted after the launcher
-safety boundary, within the existing 16,384 Unicode code point input limit.
-Task, Step, attempt, result head, UTF-8 byte count and SHA-256 appear above the
-literal text. The comment explains how to reverse its inert text escaping if
-exact byte recovery is needed. The canonical Outcome pins the native comment
-ID and exact comment body SHA-256 as `github-report-comment` result evidence.
-Validation claims, blocked reasons, token usage and diagnostics retain their
-own bounded handling. Writer withholds the report if publication screening
-would alter its text.
-
-Before the report POST, Writer records its target, head and body digest in the
-existing attempt record. It reconciles an uncertain POST by exact readback and
-does not repeat it. If verified report publication fails, the terminal Outcome
-identifies the blocked review evidence and any source PR stays Draft. If the
-report becomes unavailable after Outcome publication, the original Outcome
-retains its link and digest. Readback failure prevents unfinished Ready handoff
-and independent acceptance. Reviewers can report the missing evidence through
-the existing findings path. Previously reserved or published Outcome bodies
-keep their original publication and recovery behavior.
+Writer redacts and escapes worker claims before measuring their UTF-8 size.
+The successful summary can use up to 48 KiB within a 60 KiB budget for the
+entire automatic Outcome comment, including the authority block and attempt
+marker. Validation claims remain individually bounded and share the remaining
+space. Shortened summaries and omitted validation claims are identified in
+the visible Outcome, with a limitation recorded in the authority block.
+Presentation clipping alone leaves a successful result eligible for independent
+review. Reviewers use the actual result and its primary evidence to assess any
+gap. Writer reuses the reserved body on publication retry.
 
 A newly generated manual handoff keeps its copyable prompt to approximately
 10–15 lines: Task/Step, repository, canonical authority, exact thread and requested

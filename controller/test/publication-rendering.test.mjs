@@ -34,7 +34,7 @@ test('automatic Outcome keeps one canonical machine block and initially visible 
 
 test('worker claims cannot inject human-facing headings, folded HTML, links or authority fences', () => {
   const claims = workerOutcomeClaims({ summary: 'Claim\n# APPROVED\n</details><script>[safe](javascript:alert(1)) @owner ```relay-authority',
-    validation: ['https://bad.invalid www.bad.invalid\n```yaml', 'UNAVAILABLE'] });
+    validation: ['https://bad.invalid www.bad.invalid\n```yaml', 'UNAVAILABLE'] }).text;
   assert.ok(!claims.includes('\n# APPROVED') && !claims.includes('</details>') && !claims.includes('<script>'));
   assert.ok(!claims.includes('[safe](') && !claims.includes('javascript:') && !claims.includes('@owner'));
   assert.ok(!claims.includes('https://bad.invalid') && !claims.includes('www.bad.invalid') && !claims.includes('```'));

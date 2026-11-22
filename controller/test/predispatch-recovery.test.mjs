@@ -12,7 +12,7 @@ import { completedPredispatchRecovery, consumedPredispatchRecord, predispatchNoW
 import { parseRecoveryRequest } from '../src/recover-attempt-publication.mjs';
 import { sha256Body } from '../../contracts/src/github-authority.mjs';
 import { PUBLICATION_RENDERER_VERSION } from '../../contracts/src/publication-rendering.mjs';
-import { boundOutcomeBody, terminalOutcomeBody } from '../src/outcome.mjs';
+import { terminalOutcomeBody } from '../src/outcome.mjs';
 
 async function partial(t) {
   let f;
@@ -418,8 +418,7 @@ async function uncertainOutcome(t, phase = 'intent') {
     label: e.readyLabel, code: 'READY_CONSUMPTION_UNCERTAIN', laterEvents: [], diagnostic: 'uncertain' };
   record.controllerLifecycle = { version: 1, status: 'complete', child: 'not_started', containment: 'not_required' };
   const number = e.continuation.pullRequest;
-  const body = boundOutcomeBody(e, terminalOutcomeBody(e, { terminalCode: 'READY_CONSUMPTION_UNCERTAIN' }),
-    { pr: { number }, status: 'blocked' }) + `\n\n<!-- relay:${e.attemptId}:outcome -->`;
+  const body = terminalOutcomeBody(e, { terminalCode: 'READY_CONSUMPTION_UNCERTAIN', pr: { number } }) + `\n\n<!-- relay:${e.attemptId}:outcome -->`;
   if (phase === 'intent') record.commentIntent = { key: 'outcome', number, body, rendererVersion: PUBLICATION_RENDERER_VERSION };
   else record.commentBodies = { outcome: { number, sha256: sha256Body(body), rendererVersion: PUBLICATION_RENDERER_VERSION } };
   if (phase === 'outcome' || phase === 'outcome-only') record.outcome = { status: 'BLOCKED', head: null,
