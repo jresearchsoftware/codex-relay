@@ -69,6 +69,17 @@ requires separate product authority and qualification. No-PR analytical or
 qualification results use the Issue without an artificial PR or commit.
 Draft/Ready transitions remain Writer-owned and exact-head-bound (TH-028).
 
+## Interim solution and review guidance
+
+During Task authoring, solution selection and independent review, examine
+material assumptions and verify where each limit comes from. Compare simpler
+alternatives using their actual costs and the observed frequency and impact of
+the problem. When the owner identifies an issue, check adjacent assumptions and
+the consumers that depend on the affected behavior before concluding the
+analysis. Record material tradeoffs in the existing Task or review record.
+This interim Relay-local guidance applies pending separate acceptance of a
+portable Shared Governance change. Remove the overlap when Relay adopts it.
+
 ## Product safeguards and operator interfaces
 
 Shared PC/RA owns proportional controls and requirement origin; Relay keeps

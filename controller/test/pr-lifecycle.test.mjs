@@ -59,7 +59,7 @@ test('lost Ready response is reconciled by exact native readback without repeati
   await f.broker.invoke(handoff(f)); assert.equal(calls, 1);
 });
 
-test('lost successful Outcome response recovers its exact body despite later integration changes', async t => {
+test('lost successful Outcome response recovers its exact shortened body despite later integration changes', async t => {
   const f = await fixture(t); const post = f.api.post.bind(f.api); let lost = false; let calls = 0;
   f.api.post = async (path, body) => {
     const value = await post(path, body);
@@ -69,9 +69,16 @@ test('lost successful Outcome response recovers its exact body despite later int
     }
     return value;
   };
-  const args = { ...f, execute: async () => { await f.commit(); return success(f.envelope); } };
+  const args = { ...f, execute: async () => {
+    await f.commit();
+    const returned = success(f.envelope);
+    returned.result.summary = '😀'.repeat(16_384);
+    return returned;
+  } };
   await assert.rejects(runAttempt(args), { code: 'GITHUB_REQUEST_FAILED' });
   assert.equal((await f.api.get('/pulls/43')).draft, true);
+  const original = f.comments[0].body;
+  assert.match(original, /Publication warning: Worker summary shortened/);
   const get = f.api.get.bind(f.api);
   f.api.get = async path => {
     const value = await get(path);
@@ -79,6 +86,7 @@ test('lost successful Outcome response recovers its exact body despite later int
   };
   const recovered = await runAttempt({ ...args, execute: () => assert.fail('reexecution') });
   assert.equal(recovered.draft, false); assert.equal(calls, 1); assert.equal(f.pushes(), 1);
+  assert.equal(f.comments[0].body, original);
   const refreshed = await f.broker.invoke({ operation: 'observe-readiness', runId: 99,
     attemptId: f.envelope.attemptId, head: recovered.head });
   assert.equal(refreshed.readiness.status, 'PENDING'); assert.equal(f.comments.length, 1);

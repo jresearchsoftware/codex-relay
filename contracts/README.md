@@ -332,12 +332,6 @@ The typed records have these separate roles:
 | `task-approval` | Trusted Reviewer Issue comment accepting the current Task Request/Step and exact Outcome/result with explicit warning disposition |
 | `task-review` | Trusted Reviewer Issue evidence comment containing reviewed Request/Step and `REQUEST_CHANGES` findings; no execution authority or route |
 
-A schema-v4 automatic Outcome can include a `github-report-comment` result
-identity. Its value is `<native comment ID>:<SHA-256 of the exact UTF-8 comment body>`.
-The report's Writer, native parent, Task, Step, attempt and result head must
-match the Outcome binding. The linked report is evidence for independent
-review and carries no executable authority.
-
 Every payload binds repository, canonical Task number, native parent and the
 SHA-256 of the entire live Issue charter body, including its migration marker.
 Native source references carry `{kind,id,parent,sha256}`. Their supported kinds

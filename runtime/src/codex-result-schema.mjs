@@ -1,6 +1,3 @@
-// JSON Schema maxLength counts Unicode codepoints, not UTF-8 bytes or UTF-16 units.
-export const MAX_SUMMARY_CHARACTERS = 16 * 1024;
-
 // The model owns only decision-bearing task semantics. Git inventory,
 // authority, execution profile, and publication metadata are derived by the
 // trusted Writer/runtime after the native process has completed.
@@ -12,7 +9,7 @@ export const CODEX_RESULT_SCHEMA = Object.freeze({
   required: ["status", "summary", "validation", "blockedReason"],
   properties: {
     status: { type: "string", enum: ["success", "blocked"] },
-    summary: { type: "string", maxLength: MAX_SUMMARY_CHARACTERS },
+    summary: { type: "string", maxLength: 16 * 1024 },
     validation: {
       type: "array",
       maxItems: 64,
@@ -23,6 +20,8 @@ export const CODEX_RESULT_SCHEMA = Object.freeze({
 });
 
 const RESULT_KEYS = Object.freeze(["status", "summary", "validation", "blockedReason"]);
+// JSON Schema maxLength counts Unicode codepoints, not UTF-8 bytes or UTF-16 units.
+const MAX_SUMMARY_CHARACTERS = 16 * 1024;
 const MAX_BLOCKED_REASON_CHARACTERS = 2 * 1024;
 const MAX_VALIDATION_CLAIM_CHARACTERS = 512;
 const CODEX_RUNTIME_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$/;

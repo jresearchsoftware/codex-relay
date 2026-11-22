@@ -1,9 +1,6 @@
 //! Fixed, read-only GitHub evidence acquisition. Response URLs, cursors and
 //! caller-selected endpoints are never followed. This is observation, not review.
 use super::{Github, USER_AGENT};
-use crate::task_authority::{
-    execution_report_reference, verify_execution_report, EXECUTION_REPORT_HEADING,
-};
 use reqwest::{redirect::Policy, Client, Response};
 use serde_json::{json, Value};
 use std::time::{Duration, Instant};
@@ -49,15 +46,10 @@ pub fn output_schema() -> Value {
             "head_sha": sha, "reviewed_head_sha": sha, "association": {"enum": ["exact_head", "writer_exact_head_outcome"]}, "outcome_comment_id": id,
             "name": nullable_text(256), "app_id": id, "app_slug": nullable_text(100), "status": nullable_text(32), "conclusion": nullable_text(32),
             "native_url": {"type": "string", "maxLength": 256}, "text_redacted_or_truncated": {"type": "boolean"}, "annotations": annotations}});
-    let report = json!({"type": "object", "additionalProperties": false,
-        "required": ["comment_id", "sha256", "native_url", "availability", "reason"],
-        "properties": {"comment_id": id, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "native_url": {"type": "string", "maxLength": 256},
-            "availability": availability, "reason": nullable_text(100)}});
     let outcome = json!({"type": "object", "additionalProperties": false,
         "required": ["comment_id", "issue_number", "head_sha", "actor", "native_url", "workflow_run_id", "warning_summaries", "text_redacted_or_truncated"],
         "properties": {"comment_id": id, "issue_number": id, "head_sha": sha, "actor": {"type": "string", "maxLength": 100},
-            "native_url": {"type": "string", "maxLength": 256}, "workflow_run_id": id, "report": report,
+            "native_url": {"type": "string", "maxLength": 256}, "workflow_run_id": id,
             "warning_summaries": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 2048}},
             "text_redacted_or_truncated": {"type": "boolean"}}});
     let binding = json!({"type": "object", "additionalProperties": false,
@@ -223,10 +215,19 @@ impl ReadSession<'_> {
         max_items: usize,
     ) -> Listing {
         let mut listing = Listing::new(path);
-        for page in 1..=REQUESTS {
-            let page_path = format!("{path}?per_page={PAGE_SIZE}&page={page}");
+        let mut page_size = PAGE_SIZE;
+        let mut offset = 0;
+        loop {
+            let page = offset / page_size + 1;
+            let page_path = format!("{path}?per_page={page_size}&page={page}");
             let (payload, next) = match self.get(&page_path, false).await {
                 Ok(response) => response,
+                Err(failure) if failure.reason == "GITHUB_RESPONSE_BYTE_LIMIT" && page_size > 1 => {
+                    // Each smaller page size divides its predecessor, so retry
+                    // only the unread range within the original session budget.
+                    page_size /= 5;
+                    continue;
+                }
                 Err(failure) => {
                     listing.fail(failure);
                     return listing;
@@ -237,15 +238,13 @@ impl ReadSession<'_> {
                 listing.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
                 return listing;
             };
-            if items.len() > PAGE_SIZE {
+            if items.len() > page_size {
                 listing.fail(Failure::unavailable("GITHUB_RESPONSE_INVALID"));
                 return listing;
             }
             for item in items {
                 if item["user"]["login"] == writer
-                    && item["body"].as_str().is_some_and(|body| {
-                        !body.starts_with(EXECUTION_REPORT_HEADING) && body.contains(sha)
-                    })
+                    && item["body"].as_str().is_some_and(|body| body.contains(sha))
                 {
                     if listing.items.len() == max_items {
                         listing.fail(Failure::truncated("GITHUB_ITEM_LIMIT"));
@@ -254,7 +253,11 @@ impl ReadSession<'_> {
                     listing.items.push(item.clone());
                 }
             }
-            if !next && items.len() < PAGE_SIZE {
+            if items.len() < page_size {
+                if next {
+                    listing.fail(Failure::unavailable("GITHUB_PAGINATION_INCONSISTENT"));
+                    return listing;
+                }
                 listing.availability = if listing.items.is_empty() {
                     "absent"
                 } else {
@@ -262,28 +265,8 @@ impl ReadSession<'_> {
                 };
                 return listing;
             }
-            if items.is_empty() {
-                listing.fail(Failure::unavailable("GITHUB_PAGINATION_INCONSISTENT"));
-                return listing;
-            }
+            offset += items.len();
         }
-        listing.fail(Failure::truncated("GITHUB_REQUEST_LIMIT"));
-        listing
-    }
-
-    async fn execution_report(
-        &mut self,
-        repository: &str,
-        outcome: &Value,
-        reference: &Value,
-        writer: &Value,
-    ) -> Result<(), Failure> {
-        let id = reference["id"].as_u64().unwrap();
-        let (report, _) = self
-            .get(&format!("/repos/{repository}/issues/comments/{id}"), false)
-            .await?;
-        verify_execution_report(repository, outcome, reference, &report, writer)
-            .map_err(Failure::unavailable)
     }
 
     async fn list(&mut self, path: &str, key: Option<&str>, max_items: usize) -> Listing {
@@ -857,12 +840,9 @@ impl Github {
                 // block; human presentation is never evidence authority.
                 match crate::task_authority::parse(body) {
                     Ok(Some(record)) if record["kind"] == "outcome" => {
-                        let report = execution_report_reference(&record);
                         if record["repository"] != repository
                             || record["parent"]["number"] != *target
-                            || !(record["result"]["kind"] == "git"
-                                || record["result"]["kind"] == "no-change"
-                                    && !matches!(report, Ok(None)))
+                            || record["result"]["kind"] != "git"
                             || record["result"]["revision"] != sha
                         {
                             continue;
@@ -893,39 +873,8 @@ impl Github {
                         let warning_summaries=warnings.iter().take(10).map(|warning| text(Some(&json!(format!("{}: {}; disposition: {}; next action: {}; evidence gaps: {}",
                             warning["source"].as_str().unwrap(),warning["impact"].as_str().unwrap(),warning["resolution"].as_str().unwrap(),warning["next_action"].as_str().unwrap(),
                             warning["evidence_gaps"].as_array().unwrap().iter().filter_map(Value::as_str).collect::<Vec<_>>().join("; ")))),2048,&mut altered,&[&session.token, &session.jwt])).collect::<Vec<_>>();
-                        let mut item = json!({"comment_id":id,"issue_number":target,"head_sha":sha,"actor":writer_actor,
-                            "native_url":format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),"workflow_run_id":run_id,"warning_summaries":warning_summaries,"text_redacted_or_truncated":altered});
-                        match report {
-                            Ok(Some(reference)) => {
-                                let report_id = reference["id"].as_u64().unwrap();
-                                let observed = session
-                                    .execution_report(
-                                        repository,
-                                        &record,
-                                        &reference,
-                                        &comment["user"],
-                                    )
-                                    .await;
-                                let (availability, reason) = match observed {
-                                    Ok(()) => ("available", None),
-                                    Err(failure) => {
-                                        outcomes.fail(failure);
-                                        (failure.availability, Some(failure.reason))
-                                    }
-                                };
-                                let collection = if record["parent"]["kind"] == "pull_request" {
-                                    "pull"
-                                } else {
-                                    "issues"
-                                };
-                                item["report"] = json!({"comment_id":report_id,"sha256":reference["sha256"],
-                                    "native_url":format!("https://github.com/{repository}/{collection}/{target}#issuecomment-{report_id}"),
-                                    "availability":availability,"reason":reason});
-                            }
-                            Ok(None) => {}
-                            Err(reason) => outcomes.fail(Failure::unavailable(reason)),
-                        }
-                        runtime_items.push(item);
+                        runtime_items.push(json!({"comment_id":id,"issue_number":target,"head_sha":sha,"actor":writer_actor,
+                            "native_url":format!("https://github.com/{repository}/issues/{target}#issuecomment-{id}"),"workflow_run_id":run_id,"warning_summaries":warning_summaries,"text_redacted_or_truncated":altered}));
                         continue;
                     }
                     Err(error) => {

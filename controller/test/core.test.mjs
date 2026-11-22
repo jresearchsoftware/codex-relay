@@ -19,6 +19,8 @@ import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { serializeWriterFailure } from '../src/privileged-writer-helper.mjs';
 import { admissionWarningSummary, emitAdmissionWarnings, terminalOutcomeBody, workerOutcomeClaims } from '../src/outcome.mjs';
 import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
+import { extractAuthorityRecord } from '../../contracts/src/github-authority.mjs';
+import { normalizeCodexSemanticResult } from '../../runtime/src/codex-result-schema.mjs';
 
 import { fixture, memoryStore } from './fixture.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
@@ -129,10 +131,58 @@ test('one terminal Outcome retains substantive worker evidence separately from t
 test('untrusted Outcome claims remain redacted and bounded after presentation escaping', () => {
   const secret = 'ghp_' + 'Z'.repeat(32);
   const claims = workerOutcomeClaims({ summary: secret + '<script>_*'.repeat(20000),
-    validation: Array(70).fill(secret + '<script>_*'.repeat(1000)), head: 'forged', actualModel: 'forged' });
-  assert.ok(Buffer.byteLength(claims, 'utf8') < 52 * 1024);
+    validation: Array(70).fill(secret + '<script>_*'.repeat(1000)), head: 'forged', actualModel: 'forged' }).text;
+  assert.ok(Buffer.byteLength(claims, 'utf8') <= 60 * 1024);
   assert.ok(!claims.includes(secret)); assert.ok(!claims.includes('<script>'));
   assert.ok(!claims.includes('forged')); assert.match(claims, /TRUNCATED/);
+});
+
+for (const withPr of [false, true]) {
+  test(`automatic ${withPr ? 'PR' : 'no-change'} result publishes one bounded Outcome with the original journal evidence`, async t => {
+    const f = await fixture(t);
+    // The PR input fits as raw UTF-8 but overflows after HTML entity escaping.
+    const summary = withPr ? 'a' + '<'.repeat(16_382) + '😀' : '漢'.repeat(16_370) + ' decision';
+    const validation = Array.from({ length: 64 }, (_, index) => `Check ${index}: ${'é'.repeat(247)}`);
+    const result = normalizeCodexSemanticResult({ status: 'success', summary, validation, blockedReason: '' });
+    let executions = 0;
+    const args = { ...f, execute: async () => {
+      executions++;
+      if (withPr) await f.commit();
+      return { version: VERSION, attemptId: f.envelope.attemptId, child: 'started', containment: 'reaped', result };
+    } };
+    const receipt = await runAttempt(args);
+    assert.equal(receipt.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    assert.equal(f.comments.length, 1);
+    assert.equal(receipt.prNumber === null, !withPr);
+    assert.equal(f.pushes(), withPr ? 1 : 0);
+    const { body } = f.comments[0];
+    assert.ok(Buffer.byteLength(body) <= 60 * 1024);
+    assert.match(body, /Completion: COMPLETED\n/);
+    assert.equal(body.includes('Publication warning: Worker summary shortened'), withPr);
+    assert.equal(body.includes(safePublicationText(summary)), !withPr);
+    if (withPr) {
+      assert.ok(body.includes('a' + '&lt;'.repeat(12_287) + '\n\nPublication warning'));
+      assert.doesNotMatch(body, /&lt\n|&l\n|&\n|\uFFFD/);
+    }
+    assert.ok(body.includes(safePublicationText(validation[0])));
+    assert.match(body, /Additional worker validation claims omitted/);
+    const record = extractAuthorityRecord(body);
+    assert.deepEqual(record.result.identities.map(identity => identity.kind), ['github-actions-run']);
+    assert.equal(record.result.kind, withPr ? 'git' : 'no-change');
+    assert.match(record.limitations.at(-1), /Worker claims were shortened/);
+    assert.equal((await f.journal.get(99)).execution.result.summary, summary);
+    assert.deepEqual(await runAttempt(args), receipt);
+    assert.equal(executions, 1);
+    assert.equal(f.comments.length, 1);
+    assert.equal(f.comments[0].body, body);
+  });
+}
+
+test('summary clipping keeps whole multibyte code points at the publication boundary', () => {
+  const summary = 'a' + '😀'.repeat(12_289);
+  const claim = workerOutcomeClaims({ summary }).text.split('\n')[0];
+  assert.equal(claim, 'Worker summary (claim): a' + '😀'.repeat(12_287));
+  assert.match(workerOutcomeClaims({ summary }).text, /The complete summary is not included/);
 });
 test('automatic finish still refuses a stale PR-head observation before readiness', async t => {
   const f = await fixture(t); const journal = f.journal;

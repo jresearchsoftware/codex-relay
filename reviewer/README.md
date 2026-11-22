@@ -205,15 +205,6 @@ context and Outcome without reopening. Reviewer creates no PR, merges no PR and
 closes no Issue. Missing or conflicting charter closure metadata remains
 `keep-open` with a visible warning.
 
-When a v4 Writer Outcome links a full automatic execution report, open that
-native comment on the same Issue or PR to assess the complete result.
-The `github-report-comment` result identity binds the comment ID and SHA-256 of
-its exact native body. The Reviewer re-reads the report for Task Approval,
-native PR APPROVE and protected PR continuation. It verifies the Writer
-identity, parent, Task, Step, attempt, result head and body digest. Missing,
-inaccessible or changed bytes prevent acceptance. Task Review Findings and PR
-Change Requests can record the evidence gap.
-
 Validated records render human-readable English substance before one collapsed
 `Machine-readable authority (JSON)` details block. Findings, corrections,
 acceptance criteria, warning impact/disposition/next action/evidence gaps and
@@ -719,12 +710,11 @@ require native identity, parent and body-hash readback.
 Execution-warning acquisition scans Outcome history within the existing shared
 40-request, 2 MiB and 30-second evidence budget. Only candidate-related Writer
 records consume the 75-item retained Outcome budget; unrelated discussion can
-precede a current result. The advertised per-surface page ceiling is 40 while
+precede a current result. Authority history and execution-warning acquisition
+retry oversized comment pages at smaller sizes from the same unread offset.
+The advertised per-surface page ceiling is 40 while
 ordinary check/run/annotation listings retain their three-page limits. Exhausted
 budget remains an explicit evidence gap and cannot establish absence of warnings.
-For exact-head Outcomes with a full report identity, the evidence reader also
-checks the native report in that same budget. It returns the link, digest and
-readback availability, and marks the evidence incomplete when readback fails.
 
 Current typed authority string lengths count Unicode scalar values, matching
 JSON Schema, while payload/body and transfer bounds count UTF-8 bytes. Retained
