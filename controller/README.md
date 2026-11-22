@@ -1468,8 +1468,12 @@ existing bounded diagnostic store and independent capsule implementation, **not*
 the attempt/publication store as a new reservation. Host-only fallback capsules
 use `paths.claimRoot/runtime-diagnostics`; runner capsules continue under
 `paths.attemptRoot/runtime-diagnostics`. A rejected unbound target receives no
-Writer Outcome, label mutation or execution reservation. Normal output carries
-only the safe code/reason, known worker state and diagnostic reference.
+Writer Outcome, label mutation or execution reservation. Actions and bound
+Outcomes explain the failed operation, observed cause, recovery attempts,
+verified progress and the next supported action. They use fixed endpoint and
+operation names, typed status and predicate values, and diagnostic references.
+Raw URLs, credentials, response text, host paths and configuration values
+stay in the protected channel.
 
 Normal primary bundles expose protected `causalEvidence`: operation/phase,
 exception cause chain, observed OS/HTTP code and native response, bounded original
@@ -1510,15 +1514,50 @@ it is not the full diagnostic reader. An App's absence does not itself remove
 an already authorized host shell route. No new reader credential, ACL, mandatory
 operator command or debug-mode switch is introduced.
 
-For example, a future `OWNER_RUN_NOT_ADMITTED (status)` rejection states that no
-worker started, exits 1 and points to a protected bundle whose observation can
-show expected `in_progress` and the actual observed `queued`. Inspect that
-original run/owner command before selecting a supported correction. A GitHub
-403 preserves its bounded original native error and operation privately; verify
-the configured actor's existing repository permission rather than blindly
-repeating a mutation. A missing body remains explicitly unavailable. See the
-[Task 244 boundary matrix](../docs/qualification/task-244-step-1.md) for source
-coverage, representative tests and installed-runtime limits.
+### Actionable terminal failures and safe request recovery
+
+Read the Actions error first. An ordinary terminal result identifies the
+original run and its trusted target when available. The Outcome carries the
+same cause on a bound target. If delivery itself fails, Actions identifies
+delivery as a separate failure and states whether publication is confirmed.
+
+| Boundary | Ordinary evidence and recovery |
+| --- | --- |
+| Event and owner admission | Failed predicate and safe expected/observed values where available. Use the original run and trusted owner command to correct the failed check. A reserved but partially projected Step is visible separately. |
+| Writer API and checkout | Named preflight or checkout operation, GitHub method and endpoint category or recognized OS cause, observed HTTP status and exact request attempts. If no Codex child started, the report says so. |
+| Child and runtime | Available child start, exit or signal and the failed runtime boundary. Invalid results are distinguishable from transport failure and from unverified containment. Use the original attempt to reconcile retained work. |
+| Trusted Git and finalization | The verified collected or published head when available, an unresolved external effect or receipt when applicable, and a separate report of any later Outcome or recorder failure. Use **Inspect** in the **Relay recovery** workflow for the original run and attempt before any authorized recovery. |
+| Apply and lifecycle | The CLI explains the last verified lifecycle boundary, dependency failure and available installation, activation and admission evidence. See [deployment diagnostics](../deploy/README.md#owner-lifecycle-failure-diagnostics). |
+
+Safe GitHub GETs can make up to three attempts within a 48-second request
+budget, with each attempt limited to 15 seconds. Relay backs off with jitter
+between transient network errors, timeouts and retryable server responses.
+When present, provider retry guidance takes precedence over the shorter
+local backoff. If the wait would overrun the budget, Relay stops and reports
+why. Cancellation stops additional request attempts. A failed authority or
+permission check stops promptly. Provider policy is documented in
+[GitHub REST API rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+
+The retry stays within the original operation. It does not allocate another
+Step or restart Codex. Writer reads back uncertain writes against the reserved
+target and exact expected effect. A matching comment, PR, label or readiness
+state can confirm a lost acknowledgement. An inconclusive readback leaves
+the original intent for supported recovery. The request helper never retries
+a mutation.
+
+For a synthetic admission rejection, ordinary output can show
+`Expected GitHub run.status in_progress, observed queued` and say that no
+Codex child started and no target-bound Outcome was authorized. An absent or
+unsupported status is identified as such. This example supplies no historical
+run status.
+
+For a synthetic checkout preflight failure after three HTTP 504 responses,
+the Actions error and BLOCKED Outcome can show `GitHub GET (Issues) returned
+HTTP 504 Gateway Timeout`, `3 request attempts (2 retries)` and the observed
+absence of a Codex child. The host operator verifies the runner can reach the
+selected GitHub API before pursuing recovery for the original run. The HTTP
+status by itself supplies no evidence of a service-wide outage. Use the
+authorized protected read path above only if more detail is needed.
 
 
 A later dirty-checkout or incomplete-observation result does not replace an

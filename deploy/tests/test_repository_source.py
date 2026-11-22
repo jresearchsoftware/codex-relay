@@ -1,6 +1,7 @@
 """Configured private consumer credentials are read-only, narrow and transient."""
 import base64
 import copy
+import http.client
 import json
 import os
 from pathlib import Path
@@ -178,7 +179,7 @@ class RepositorySourceTests(unittest.TestCase):
                 pass
 
     def test_http_unknown_403_is_fixed_and_does_not_expose_response_or_credential(self):
-        with patch.object(source.http.client, 'HTTPSConnection') as connection:
+        with patch.object(http.client, 'HTTPSConnection') as connection:
             connection.return_value.getresponse.return_value.status = 403
             connection.return_value.getresponse.return_value.read.return_value = TOKEN.encode()
             with self.assertRaisesRegex(source.ConsumerSourceError, '^CONSUMER_SOURCE_HTTP_403$') as caught:
@@ -191,7 +192,7 @@ class RepositorySourceTests(unittest.TestCase):
 class GitSourceTransportTests(unittest.TestCase):
     def test_rfc6750_credentials_reach_header_and_git_env_with_no_prefix_assumptions(self):
         opaque = 'opaque-part_value.~+/=='
-        with patch.object(source.http.client, 'HTTPSConnection') as connection:
+        with patch.object(http.client, 'HTTPSConnection') as connection:
             connection.return_value.getresponse.return_value.status = 200
             connection.return_value.getresponse.return_value.read.return_value = b'{}'
             source.github_api('GET', '/repos/' + REPOSITORY, opaque)
@@ -206,7 +207,7 @@ class GitSourceTransportTests(unittest.TestCase):
             'opaque\r\nInjected: true', 'opaque\x00value', 'opaque\x7f', 'opaque\u00e9',
             'opaque=middle', '=padding', 'opaque@host', 'opaque?query')
         for token in invalid:
-            with patch.object(source.http.client, 'HTTPSConnection') as connection:
+            with patch.object(http.client, 'HTTPSConnection') as connection:
                 with self.assertRaisesRegex(source.ConsumerSourceError, '^CONSUMER_SOURCE_CREDENTIAL_INVALID$'):
                     source.github_api('GET', '/repos/' + REPOSITORY, token)
                 connection.assert_not_called()

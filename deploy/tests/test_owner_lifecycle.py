@@ -509,14 +509,14 @@ class OwnerLifecycleTests(unittest.TestCase):
 class PublicMainTests(unittest.TestCase):
     def response(self, payload, status=200):
         connection = Mock()
-        connection.getresponse.return_value = SimpleNamespace(status=status,
+        connection.getresponse.return_value = SimpleNamespace(status=status, getheader=lambda _name: None,
             read=lambda limit: payload[:limit])
         return connection
 
     def test_anonymous_exact_public_main_read_has_no_redirect_or_token_surface(self):
         body = json.dumps({'ref': 'refs/heads/main', 'object': {'type': 'commit', 'sha': HEAD}}).encode()
         connection = self.response(body)
-        with patch.object(owner.http.client, 'HTTPSConnection', return_value=connection) as transport:
+        with patch.object(owner.git_intent.http.client, 'HTTPSConnection', return_value=connection) as transport:
             self.assertEqual(owner.public_main('example-org/sample-project'), HEAD)
         transport.assert_called_once()
         self.assertEqual(transport.call_args.args, ('api.github.com',))
@@ -537,7 +537,7 @@ class PublicMainTests(unittest.TestCase):
             with self.subTest(payload=payload if isinstance(payload, dict) else 'oversized', status=status):
                 raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
                 connection = self.response(raw, status)
-                with patch.object(owner.http.client, 'HTTPSConnection', return_value=connection):
+                with patch.object(owner.git_intent.http.client, 'HTTPSConnection', return_value=connection):
                     with self.assertRaises(ValueError):
                         owner.public_main('example-org/sample-project')
                 connection.close.assert_called_once()

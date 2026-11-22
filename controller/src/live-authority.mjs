@@ -1,3 +1,4 @@
+import { failureFacts } from './failure-report.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, requireCurrentProtocol, branchName, exactSha, positive, isAdmissionDomainBlock, DEFAULT_NATIVE_VALIDATIONS, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, launchStep } from './launch-metadata.mjs';
@@ -214,13 +215,16 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
       ...(a.continuation ? { continuation: a.continuation } : {}) };
   } catch (error) {
     if (!isAdmissionDomainBlock(error)) throw error;
-    const diagnosticStore = await recordFailure({ error, phase: 'authority', operation: 'admit-authority', runId, workerStarted: false });
+    let diagnosticStore;
+    let diagnosticRecorderFailed = false;
+    try { diagnosticStore = await recordFailure({ error, phase: 'authority', operation: 'admit-authority', runId, workerStarted: false }); }
+    catch { diagnosticRecorderFailed = true; }
     // The event identity is known, but executable authority is not. Preserve
     // only safe structured blocker data; never manufacture a branch,
     // profile, or reviewed/remediation head for the terminal Outcome.
     return { blocked: true, version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
       target, number, issueNumber, route, step: null, targetBase, ...command,
-      block: { diagnosticStore, code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code ?? '') ? error.code : 'ADMISSION_BLOCKED',
+      block: { ...failureFacts(error), diagnosticStore, ...(diagnosticRecorderFailed ? { diagnosticRecorderFailed } : {}), code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code ?? '') ? error.code : 'ADMISSION_BLOCKED',
         ...(typeof error.details?.field === 'string' ? { field: error.details.field } : {}) } };
   }
 }

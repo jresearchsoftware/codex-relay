@@ -5,11 +5,19 @@ credentials, follows redirects, or accepts a caller-selected network endpoint.
 """
 import base64
 import binascii
+from contextlib import contextmanager
+from email.utils import parsedate_to_datetime
+import errno
 import hashlib
 import http.client
 import json
+import random
 import re
+import signal
+import socket
 import ssl
+import threading
+import time
 
 
 MAX_CONFIG_BYTES = 256 * 1024
@@ -68,8 +76,130 @@ def _unique_object(pairs):
     return value
 
 
+class GitHubRequestError(ValueError):
+    """Boundary facts are safe to render. The request and response body are excluded."""
+    def __init__(self, method, endpoint, status, reason, attempts, stopped, os_code=None):
+        super().__init__('GITHUB_REQUEST_FAILED')
+        self.status = status
+        self.observation = dict(method=method, endpoint=endpoint, status=status, reason=reason,
+                                attempts=attempts, stopped=stopped, osCode=os_code)
+
+
+@contextmanager
+def request_deadline(seconds):
+    # The Linux owner CLI runs these reads on its main thread. Bound DNS, TLS,
+    # headers and body together even if the socket keeps receiving partial data.
+    # Library use with another signal owner retains the socket timeout.
+    can_arm = (threading.current_thread() is threading.main_thread()
+               and signal.getsignal(signal.SIGALRM) == signal.SIG_DFL
+               and signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0))
+    if not can_arm:
+        yield
+        return
+    def timeout(_signum, _frame):
+        raise TimeoutError()
+    signal.signal(signal.SIGALRM, timeout)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, signal.SIG_DFL)
+
+
+def _endpoint(path):
+    parts = path.split('?', 1)[0].split('/')[1:]
+    if parts[0] == 'repos':
+        return {'actions': 'Actions runs', 'git': 'Git refs or objects', 'contents': 'repository contents',
+                'installation': 'App installation'}.get(parts[3] if len(parts) > 3 else '', 'repositories')
+    return 'App installation'
+
+
+def _provider_delay(response, rate_limited):
+    after = response.getheader('Retry-After')
+    reset = response.getheader('X-RateLimit-Reset')
+    delay = None
+    now = time.time()
+    if isinstance(after, str) and re.fullmatch('[0-9]{1,20}', after):
+        delay = int(after)
+    elif isinstance(after, str) and len(after) < 100:
+        try:
+            delay = max(0, parsedate_to_datetime(after).timestamp() - now)
+        except (ValueError, TypeError, OverflowError):
+            pass
+    if (rate_limited and response.getheader('X-RateLimit-Remaining') == '0'
+            and isinstance(reset, str) and re.fullmatch('[0-9]{1,20}', reset)):
+        delay = max(delay or 0, int(reset) - now)
+    return delay if delay is not None else 60 if rate_limited else 0
+
+
+def github_response(method, path, headers, *, limit, expected, body=None):
+    """Perform an existing fixed-host request. Only GET may retry."""
+    read = method == 'GET'
+    deadline = time.monotonic() + (48 if read else 15)
+    context = ssl.create_default_context()
+    status = reason = cause = os_code = None
+    attempts = 0
+    for attempt in range(1, 4 if read else 2):
+        seconds = min(15, deadline - time.monotonic())
+        if seconds <= 0:
+            stopped = 'deadline'
+            break
+        attempts = attempt
+        status = cause = os_code = None
+        delay = 0
+        connection = http.client.HTTPSConnection('api.github.com', timeout=seconds, context=context)
+        try:
+            with request_deadline(seconds):
+                parameters = {'headers': headers}
+                if body is not None:
+                    parameters['body'] = body
+                connection.request(method, path, **parameters)
+                response = connection.getresponse()
+                status = response.status
+                if status == expected:
+                    return response.read(limit + 1), attempts
+                limited = status == 429 or (status == 403 and (
+                    isinstance(response.getheader('Retry-After'), str)
+                    or response.getheader('X-RateLimit-Remaining') == '0'))
+                reason = 'rate-limit' if limited else 'http'
+                delay = _provider_delay(response, limited)
+        except InterruptedError:
+            # Owner cancellation must exit without another dependency call.
+            raise
+        except (OSError, http.client.HTTPException) as error:
+            cause = error
+            if isinstance(error, TimeoutError):
+                reason = 'timeout'
+            elif isinstance(error, (ConnectionError, http.client.IncompleteRead)) or (
+                    isinstance(error, socket.gaierror) and error.errno == socket.EAI_AGAIN):
+                reason = 'network'
+            else:
+                reason = 'transport-unknown'
+            os_code = errno.errorcode.get(getattr(error, 'errno', None))
+        finally:
+            connection.close()
+        retryable = reason in {'rate-limit', 'timeout', 'network'} or (
+            reason == 'http' and status in {408, 500, 502, 503, 504})
+        if not read:
+            stopped = 'mutation'
+            break
+        if not retryable:
+            stopped = 'non-transient'
+            break
+        if attempt == 3:
+            stopped = 'attempt-limit'
+            break
+        backoff = delay + random.uniform(.25, .5) * 2 ** (attempt - 1)
+        if backoff >= deadline - time.monotonic():
+            stopped = 'provider-delay' if delay else 'deadline'
+            break
+        time.sleep(backoff)
+    raise GitHubRequestError(method, _endpoint(path), status, reason or 'timeout', attempts, stopped, os_code) from cause
+
+
 def github_api(path, token=None):
-    """One bounded HTTPS GET to GitHub; http.client never follows redirects."""
+    """Bounded HTTPS GET to GitHub; http.client never follows redirects."""
     require(isinstance(path, str) and path.startswith('/repos/')
             and re.fullmatch(r'/[A-Za-z0-9_./?=&-]+', path) is not None,
             'GIT_INTENT_PATH_INVALID')
@@ -78,23 +208,21 @@ def github_api(path, token=None):
                'User-Agent': 'codex-relay-git-intent'}
     if token is not None:
         headers['Authorization'] = 'Bearer ' + _token(token)
-    connection = http.client.HTTPSConnection('api.github.com', timeout=30,
-                                             context=ssl.create_default_context())
     try:
-        connection.request('GET', path, headers=headers)
-        response = connection.getresponse()
-        require(response.status == 200, 'GIT_INTENT_HTTP_STATUS')
-        raw = response.read(MAX_RESPONSE_BYTES + 1)
-        require(len(raw) <= MAX_RESPONSE_BYTES, 'GIT_INTENT_RESPONSE_TOO_LARGE')
+        raw, attempts = github_response('GET', path, headers, limit=MAX_RESPONSE_BYTES, expected=200)
+    except GitHubRequestError as error:
+        raise GitIntentError('GIT_INTENT_HTTP_STATUS' if error.observation['reason'] in {'http', 'rate-limit'}
+                             else 'GIT_INTENT_HTTP_FAILED') from error
+    require(len(raw) <= MAX_RESPONSE_BYTES, 'GIT_INTENT_RESPONSE_TOO_LARGE')
+    try:
         result = json.loads(raw.decode('utf-8'), object_pairs_hook=_unique_object)
-        require(isinstance(result, dict), 'GIT_INTENT_RESPONSE_INVALID')
-        return result
-    except GitIntentError:
-        raise
-    except (OSError, http.client.HTTPException, UnicodeError, ValueError):
-        raise GitIntentError('GIT_INTENT_HTTP_FAILED') from None
-    finally:
-        connection.close()
+    except (UnicodeError, json.JSONDecodeError):
+        # JSON exceptions can include deployment payload bytes. The cause on
+        # this boundary is that the selected API response did not decode.
+        error = GitHubRequestError('GET', _endpoint(path), 200, 'invalid-response', attempts, 'non-transient')
+        raise GitIntentError('GIT_INTENT_HTTP_FAILED') from error
+    require(isinstance(result, dict), 'GIT_INTENT_RESPONSE_INVALID')
+    return result
 
 
 def _repository(api, repository, token, private):

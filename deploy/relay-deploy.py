@@ -21,7 +21,10 @@ import uuid
 sys.dont_write_bytecode = True
 from config import load, loads, compile_inputs, require, selector, deployment_repository, unique_object, InvalidConfig
 from git_source_locator import expected_locator, resume_receipt
-from lifecycle import progress, report_failure, public_log_reference
+from lifecycle import (progress, report_failure, public_log_reference, start_failure_observation,
+                       stop_failure_observation, print_terminal_failure, observe_failure_state,
+                       observe_admission_call, observe_admission_result, observe_backend_start,
+                       observe_target_mutation)
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
@@ -179,13 +182,19 @@ def apply_guard(target, key, namespace):
 
 def remote_admission(target, key, namespace, *arguments):
     remote = ['/opt/' + namespace + '/relay-admission', *arguments]
+    observe_admission_call(arguments[0])
     result = run_target(target, key, remote, timeout=1860,
                         **({'progress': True} if arguments[0] == 'drain' else {}))
     if result.returncode:
         codes = re.findall(r'(?m)^ADMISSION_[A-Z_]{1,100}$', result.stderr)
         raise ValueError((codes[-1] if codes else 'trusted-admission-operation-failed') + ';inspect-before-recovery') from subprocess.CalledProcessError(
             result.returncode, 'fixed-admission-operation', output=result.stdout, stderr=result.stderr)
-    return json.loads(result.stdout)
+    decoded = json.loads(result.stdout)
+    action = arguments[0]
+    phase = arguments[arguments.index('--phase') + 1] if '--phase' in arguments else None
+    if isinstance(decoded, dict) and (action != 'drain' or decoded.get('drained') is True):
+        observe_admission_result(action, phase)
+    return decoded
 
 
 def release_guard(guard):
@@ -205,7 +214,10 @@ def release_guard(guard):
 def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
     log.flush()
     offset = os.fstat(log.fileno()).st_size
+    if '--check' not in argv:
+        observe_target_mutation()
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    observe_backend_start()
     started = time.monotonic()
     next_progress = started + 30
     # The existing private Ansible log remains the primary diagnostic source.
@@ -264,10 +276,13 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
         if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
             raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
         observe()
+        observe_failure_state(boundary='backend-returned', backend=dependency, backend_exit=process.returncode)
         print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state={"completed" if process.returncode == 0 else "failed"};exit={process.returncode};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
         return process.returncode
     finally:
         primary = sys.exc_info()[1]
+        if primary is not None:
+            observe_failure_state(backend=dependency, backend_exit=process.returncode)
         try:
             if process.poll() is None or primary is not None:
                 try:
@@ -302,7 +317,12 @@ def arguments():
     class DiagnosticParser(argparse.ArgumentParser):
         def error(self, message):
             report_failure(ValueError(message), 'deployment-arguments')
-            super().error(message)
+            # argparse messages can contain raw argument values. Only the class
+            # of parse failure reaches the ordinary command output.
+            category = 'invalid choice' if 'invalid choice:' in message else (
+                'unrecognized arguments' if message.startswith('unrecognized arguments:') else 'invalid or missing arguments')
+            super().error(category + '. Check the selected operation and deployment options with --help.')
+
     p = DiagnosticParser(description=__doc__)
     p.add_argument('--config', required=True, type=Path)
     p.add_argument('--connection', choices=['ssh', 'local'],
@@ -381,7 +401,9 @@ def run(args):
         identity = source_identity(ROOT)
         require(args.resolved_revision == identity['revision'], 'bootstrap-exact-source-required')
         from owner_lifecycle_bootstrap import bootstrap
-        result = bootstrap(load(args.config, ROOT), identity['revision'])
+        config = load(args.config, ROOT)
+        observe_target_mutation()
+        result = bootstrap(config, identity['revision'])
         print('RELAY_OWNER_LIFECYCLE_BOOTSTRAPPED=' + result + ';services=unchanged;admission=unchanged')
         return
     require(not getattr(args, 'authorize_owner_lifecycle_bootstrap', False), 'bootstrap-interface-only')
@@ -608,6 +630,7 @@ def run(args):
     values['relay_deployment_source'] = expected_locator(
         config, revision, getattr(args, 'git_intent', None),
         config_path.read_bytes() if getattr(args, 'git_intent', None) else None)
+    observe_failure_state(boundary='configuration', requested=revision)
     target = dict(config['target'])
     if getattr(args, 'connection', None) is not None:
         target['connection'] = args.connection
@@ -623,6 +646,7 @@ def run(args):
     if not args.local_reconcile and not args.local_lifecycle:
         from ansible_transport import qualify_target
         qualify_target(target, key)
+    observe_failure_state(boundary='host-preflight')
     install_flow = args.phase in ['bootstrap', 'reinstall']
     pool_reinstall_proof = None
     if args.phase == 'inventory' or install_flow:
@@ -661,6 +685,7 @@ def run(args):
                           and args.intent_expected_installed_revision != 'none'))
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
         (args.lifecycle_recovery_operation or str(uuid.uuid4()) if lifecycle_required or pool_reinstall else ''))
+    observe_failure_state(operation_id=admission_operation_id, config=consumer_revision if not git_readonly else None)
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
@@ -754,6 +779,7 @@ def run(args):
                     if holder is not None and holder.poll() is not None:
                         return holder.poll()
                 return None
+            observe_target_mutation()
             proof = register_runner(target, key, values, revision, token,
                                     SimpleNamespace(poll=registration_poll))
         finally:
@@ -765,6 +791,7 @@ def run(args):
     args.log_root.mkdir(parents=True, exist_ok=True, mode=0o700)
     log_fd, log_name = tempfile.mkstemp(prefix=f'relay-{revision[:12]}-{args.phase}-', suffix='.log', dir=args.log_root)
     log_ref = public_log_reference(log_name)
+    observe_failure_state(log=log_ref)
     if intent_install:
         args._intent_log_path = log_name
     consumer_label = 'receiving_revision' if git_readonly else 'consumer_revision'
@@ -787,6 +814,7 @@ def run(args):
                 from clean_reinstall import remote_action
                 guard = apply_guard(target, key, values['relay_namespace'])
                 try:
+                    observe_target_mutation()
                     recovered = remote_action(target, key, config, args.reinstall_recovery_target,
                                               action='recover', guard=guard)
                     log.write(json.dumps(recovered, sort_keys=True) + '\n')
@@ -1033,6 +1061,7 @@ def run(args):
                             and not args.authorize_lifecycle_recovery):
                         from consumer_drift import prepare as restore_consumer_drift
                         previous_mutation = getattr(args, '_intent_mutation_started', False)
+                        observe_target_mutation()
                         args._intent_mutation_started = True
                         # The helper may quiesce before a transport failure. Keep
                         # that SAME UUID for diagnosis and normal continuation.
@@ -1156,6 +1185,7 @@ def run(args):
                         if intent_install:
                             args._intent_mutation_started = True
                         if args.authorize_lifecycle_recovery:
+                            observe_target_mutation()
                             pool_reinstall_proof = remote_action(target, key, config, revision, action='continue',
                                 guard=guard, operation_id=lifecycle_operation)
                             completed_pool_reinstall = pool_reinstall_proof['completed']
@@ -1225,6 +1255,7 @@ def run(args):
                                 # installing any candidate helpers/configuration.
                                 if preparation is not None:
                                     preparation.release_writer()
+                                observe_target_mutation()
                                 retired = remote_action(target, key, config, revision, observed,
                                     action='decommission', guard=guard,
                                     **({'git_desired': True} if intent_install else {}),
@@ -1248,6 +1279,7 @@ def run(args):
                         return None
                     fast_source = preparation is not None and getattr(preparation, 'source_reuse', False)
                     if args.phase in ['apply', 'upgrade', 'bootstrap', 'reinstall'] and not completed_pool_reinstall:
+                        observe_target_mutation()
                         progress('APPLY', revision)
                     if fast_source:
                         args._intent_mutation_started = True
@@ -1294,6 +1326,9 @@ def run(args):
                         if lifecycle_required:
                             require(f'RELAY_UPGRADE_ACTIVATION_VALIDATED={revision}' in apply_evidence,
                                     'upgrade-same-operation-activation-proof')
+                            observe_failure_state(boundary='activation', installed=revision, activation='verified')
+                        else:
+                            observe_failure_state(boundary='installed', installed=revision)
                         # Bootstrap/reinstall keep their independent qualification
                         # check; ordinary upgrades already establish final proof.
                     if install_flow:
@@ -1358,6 +1393,7 @@ def run(args):
                             args._intent_mutation_started = False
                             args._intent_old_availability_restored = True
                             restored_old = True
+                            observe_failure_state(boundary='original-open', admission='open', installed=args.intent_expected_installed_revision)
                             print('RELAY_INSTALL_PREFLIGHT=aborted;old-availability=verified;operation=' + lifecycle_operation,
                                   flush=True)
                         except Exception as recovery_error:
@@ -1418,6 +1454,7 @@ def run(args):
                     previous = re.search(r'RELAY_INSTALLED_REVISION=[0-9a-f]{40};consumer=[0-9a-f]{40};previous=([a-z0-9]+)', evidence)
                     require(previous is not None, 'previous-revision-proof')
                     previous_revision = previous[1]
+                observe_failure_state(installed=revision, **({'boundary': 'installed'} if not lifecycle_operation else {}))
                 print(f'installed_revision={revision}\nprevious_revision={previous_revision}\nRELAY_INSTALL_RESULT=PASS')
             if args.phase == 'upgrade':
                 print(f'RELAY_UPGRADE_RESULT=PASS;installed={revision};projection={revision};verification=same-operation')
@@ -1446,11 +1483,14 @@ def main():
         def interrupted(_signum, _frame):
             raise InterruptedError('deployment-interrupted')
         signal.signal(signal.SIGTERM, interrupted)
+    observation = start_failure_observation('deployment')
     try:
-        run(arguments())
+        args = arguments()
+        observe_failure_state(phase=getattr(args, 'phase', None))
+        run(args)
         return 0
     except (Exception, KeyboardInterrupt) as error:
-        report_failure(error, 'deployment-entrypoint')
+        print_terminal_failure(error, 'deployment-entrypoint', report_failure)
         # Avoid dumping subprocess output or a full consumer/environment input.
         candidate = str(error) if isinstance(error, (ValueError, RuntimeError)) else ''
         field = (re.fullmatch(r'INVALID_DEPLOYMENT_CONFIG:([A-Za-z][A-Za-z0-9_.-]{0,159})(?:([:;]).*)?', candidate)
@@ -1467,10 +1507,16 @@ def main():
                 if re.search(r'(?:;|;next=)' + action + r'(?:;|$)', candidate):
                     message += ';next=' + action
         else:
-            message = candidate if re.fullmatch(r'(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)(?:;[A-Za-z0-9_./:;= -]{0,450})?', candidate) else type(error).__name__
+            code = candidate.split(';', 1)[0]
+            known = code in {'BACKEND_FAILED', 'RELAY_INSTALL_FAILED', 'recovery-requires-disposition',
+                             'host-operation-guard-lost'}
+            if type(error).__name__ == 'PoolError':
+                known = re.fullmatch(r'MANAGED_POOL_[A-Z_]{1,100}', code)
+            message = code if known else type(error).__name__
         print('RELAY_DEPLOYMENT_BLOCKED=' + message, file=sys.stderr)
         return 1
     finally:
+        stop_failure_observation(observation)
         if installed_handler:
             signal.signal(signal.SIGTERM, previous)
 

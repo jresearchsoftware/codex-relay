@@ -13,6 +13,16 @@ unset BASH_ENV CDPATH ENV GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG_COUNT \
 
 fail() {
   printf 'PRODUCTION_LOCAL_APPLY_BLOCKED=%s\n' "$1" >&2
+  case "$1" in
+    ROOT_REQUIRED) action='Use the configured production local Apply entrypoint through its existing runner authorization.' ;;
+    ARGUMENT_CONTRACT_INVALID|EXACT_HEAD_INVALID) action='Verify the workflow supplied the exact admitted revision arguments.' ;;
+    INSTALLED_CODE_UNSAFE|INSTALLED_DEPLOYMENT_MISSING) action='Have the host operator verify the protected installed release identity and the generated workflow projection.' ;;
+    CHECKOUT_*) action='Verify the admitted clean consumer checkout and its repository binding in the Apply job.' ;;
+    GIT_DIR_*|ADMITTED_COMMIT_*) action='Verify that the job checked out the exact admitted consumer commit and can read its Git object.' ;;
+    STAGED_CONFIG_MISSING) action='Verify the selected consumer commit contains the configured deployment input.' ;;
+    *) action='Have the host operator check the protected staging directory and exact source staging before choosing recovery.' ;;
+  esac
+  printf 'Relay production local Apply failed during preflight. The deployment backend did not start. Installation and activation were not verified by this invocation. No Apply retry was attempted. Next action: %s\n' "$action" >&2
   exit 64
 }
 
@@ -53,7 +63,7 @@ try:
             assert stat.S_ISREG(info.st_mode) and info.st_nlink == 1 if entry == path else stat.S_ISDIR(info.st_mode)
     print(head)
 except (OSError, AssertionError):
-    raise SystemExit('PRODUCTION_LOCAL_APPLY_BLOCKED=INSTALLED_CODE_UNSAFE')
+    raise SystemExit(64)
 PY
 )" || fail INSTALLED_CODE_UNSAFE
 PRODUCT_ROOT='{{ relay_install_root }}/releases/'"$INSTALLED_HEAD"'/reviewed-source'

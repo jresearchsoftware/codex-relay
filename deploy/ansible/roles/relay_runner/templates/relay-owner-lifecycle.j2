@@ -3,11 +3,20 @@ set -euo pipefail
 umask 077
 export PATH=/usr/bin:/bin
 unset BASH_ENV CDPATH ENV
-[[ "$#" -eq 1 ]] || exit 64
-[[ "$1" =~ ^(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}$ || "$1" =~ ^git:(apply|stop|resume|recover):[0-9a-f]{40}:[0-9a-f]{40}:[1-9][0-9]{0,19}$ ]] || exit 64
-[[ "$(/usr/bin/id -u)" == 0 ]] || exit 64
+fail() {
+  case "$1" in
+    ROOT_REQUIRED) action='Use the installed owner lifecycle command through its configured host authorization.' ;;
+    ARGUMENT_CONTRACT_INVALID) action='Verify the action and exact revision arguments in the owner workflow.' ;;
+    *) action='Have the host operator verify the protected installed source and its release identity.' ;;
+  esac
+  printf 'RELAY_OWNER_LIFECYCLE_BLOCKED=%s\nRelay owner lifecycle failed during startup. The lifecycle helper did not start. No Apply retry was attempted. Next action: %s\n' "$1" "$action" >&2
+  exit 64
+}
+[[ "$#" -eq 1 ]] || fail ARGUMENT_CONTRACT_INVALID
+[[ "$1" =~ ^(apply|stop|resume):[0-9a-f]{40}:[0-9a-f]{40}$ || "$1" =~ ^git:(apply|stop|resume|recover):[0-9a-f]{40}:[0-9a-f]{40}:[1-9][0-9]{0,19}$ ]] || fail ARGUMENT_CONTRACT_INVALID
+[[ "$(/usr/bin/id -u)" == 0 ]] || fail ROOT_REQUIRED
 # Never use runner-controlled Git, Python environment or executable paths.
-PRODUCT_ROOT="$(/usr/bin/python3 -I - '{{ relay_install_root }}' "$1" <<'PY'
+PRODUCT_ROOT="$(/usr/bin/python3 -I - '{{ relay_install_root }}' "$1" 2>/dev/null <<'PY'
 import os, re, stat, sys
 from pathlib import Path
 install = Path(sys.argv[1])
@@ -35,7 +44,7 @@ for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'conf
             assert (stat.S_ISREG(info.st_mode) and info.st_nlink == 1) if entry == path else stat.S_ISDIR(info.st_mode)
 print(root)
 PY
-)"
+)" || fail INSTALLED_CODE_UNSAFE
 cd /
 {% if relay_owner_lifecycle_recovery_root | default('') %}
 if [[ "$1" == git:recover:* ]]; then

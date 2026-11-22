@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Fixed protected owner apply/stop/resume composition; no caller-selected paths."""
-import http.client
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import signal
-import ssl
 import stat
 import subprocess
 import sys
@@ -18,7 +16,9 @@ sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
 from deployment_lock import acquire
 from installed_config import verify as installed_config, read_protected, protected_parents
-from lifecycle import execute, require, progress, report_failure, failure_reporting_source
+from lifecycle import (execute, require, progress, report_failure, failure_reporting_source,
+                       start_failure_observation, stop_failure_observation, observe_failure_state,
+                       observe_target_mutation, print_terminal_failure, LifecycleCheckError)
 from lifecycle_process import run as run_child, retain_failure
 import git_intent
 import repository_source
@@ -126,24 +126,21 @@ def pool_preflight(source, config):
 
 def public_main(repository):
     require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository), 'product-repository')
-    connection = http.client.HTTPSConnection('api.github.com', timeout=15,
-                                              context=ssl.create_default_context())
+    path = '/repos/' + repository + '/git/ref/heads/main'
+    headers = {'Accept': 'application/vnd.github+json', 'User-Agent': 'codex-relay-owner-lifecycle',
+               'Cache-Control': 'no-cache'}
+    raw, attempts = git_intent.github_response('GET', path, headers, limit=8192, expected=200)
+    require(len(raw) <= 8192, 'accepted-main-unavailable')
     try:
-        connection.request('GET', '/repos/' + repository + '/git/ref/heads/main', headers={
-            'Accept': 'application/vnd.github+json', 'User-Agent': 'codex-relay-owner-lifecycle',
-            'Cache-Control': 'no-cache'})
-        response = connection.getresponse()
-        require(response.status == 200, 'accepted-main-unavailable')
-        raw = response.read(8193)
-        require(len(raw) <= 8192, 'accepted-main-unavailable')
         value = json.loads(raw)
-        require(value.get('ref') == 'refs/heads/main'
-                and value.get('object', {}).get('type') == 'commit', 'accepted-main-unavailable')
-        head = value['object']['sha']
-        require(re.fullmatch('[0-9a-f]{40}', head), 'accepted-main-unavailable')
-        return head
-    finally:
-        connection.close()
+    except (ValueError, UnicodeError):
+        raise ValueError('accepted-main-unavailable') from git_intent.GitHubRequestError(
+            'GET', 'Git refs or objects', 200, 'invalid-response', attempts, 'non-transient')
+    obj = value.get('object') if isinstance(value, dict) else None
+    require(isinstance(obj, dict) and value.get('ref') == 'refs/heads/main' and obj.get('type') == 'commit'
+            and re.fullmatch('[0-9a-f]{40}', obj.get('sha') if isinstance(obj.get('sha'), str) else ''),
+            'accepted-main-unavailable')
+    return obj['sha']
 
 
 def clean_environment():
@@ -417,16 +414,19 @@ def run_git(request, token, *, installed_source=None):
     match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
+    observe_failure_state(phase=action, run=run_id, config=config_sha)
     progress('PREFLIGHT', installed)
     require(installed_source is None or action == 'recover', 'recovery-bootstrap-route-only')
     install, binding, previous_manifest = (git_anchor(installed) if installed_source is None
                                           else git_anchor(installed, installed_source))
+    observe_failure_state(boundary='installed-anchor', installed=installed)
     frozen = git_intent.resolve_pair(binding, {'action': action, 'configSha': config_sha, 'runId': int(run_id)}, token)
     maintenance = git_intent.recovery_declaration(binding, config_sha, token) if action == 'recover' else None
     # The private native token is used only by resolve_pair; public Git is anonymous.
     token = None
     receipt = frozen['receipt']
     target = receipt['product_sha'] if action in ['apply', 'recover'] else installed
+    observe_failure_state(requested=target)
     print(('RELAY_GIT_PAIR=' if action in ['apply', 'recover'] else 'RELAY_GIT_DISPATCH_PAIR=')
           + json.dumps(receipt, sort_keys=True), flush=True)
     stage = Path('/var/lib') / install.name / 'production-apply'
@@ -523,6 +523,7 @@ def run_git(request, token, *, installed_source=None):
             if retained is not None:
                 argv += ['--continue-install-recovery']
                 target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
+        observe_target_mutation()
         public_primitive(argv, env=clean_environment())
         progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)
@@ -539,8 +540,10 @@ def run(request):
     match = re.fullmatch(r'(apply|stop|resume):([0-9a-f]{40}):([0-9a-f]{40})', request)
     require(match is not None, 'argument-contract')
     action, installed, consumer_head = match.groups()
+    observe_failure_state(phase=action, config=consumer_head)
     progress('PREFLIGHT', installed)
     config, _, _ = installed_config(ROOT, installed)
+    observe_failure_state(boundary='installed-anchor', installed=installed)
     values = compile_inputs(config)
     repository = deployment_repository(config)
     source_repository = config['source']['repository'].removeprefix('https://github.com/').removeprefix(
@@ -566,6 +569,7 @@ def run(request):
         else:
             require(public_main(repository) == consumer_head, 'consumer-dispatch-stale')
         target = selected if action == 'apply' else installed
+        observe_failure_state(requested=target)
         print(f'RELAY_LIFECYCLE_SELECTED={target};installed={installed};consumer={consumer_head}', flush=True)
         if action == 'stop':
             execute(gate, target, None, None, stop=True)
@@ -633,6 +637,7 @@ def main(arguments=None, token_stream=None):
         def interrupted(_signum, _frame):
             raise InterruptedError('owner-lifecycle-interrupted')
         signal.signal(signal.SIGTERM, interrupted)
+    observation = start_failure_observation('owner')
     try:
         require(len(arguments) == 1 or (len(arguments) == 3 and arguments[0].startswith('git:recover:')
                 and arguments[1] == '--installed-source' and Path(arguments[2]).is_absolute()), 'argument-contract')
@@ -646,16 +651,19 @@ def main(arguments=None, token_stream=None):
             run(arguments[0])
         return 0
     except Exception as error:
-        report_failure(error, 'owner-lifecycle')
+        print_terminal_failure(error, 'owner-lifecycle', report_failure)
         # Protected logs retain backend evidence; no private config or transport
         # stderr is copied into public errors. Admission is never reopened here.
         from git_intent import GitIntentError
-        code = str(error).split(';')[0] if type(error) is ValueError or isinstance(error, (GitIntentError, repository_source.ConsumerSourceError)) else 'input-or-io'
+        known = isinstance(error, (LifecycleCheckError, GitIntentError, repository_source.ConsumerSourceError))
+        candidate = str(error).split(';', 1)[0] if isinstance(error, ValueError) else ''
+        code = candidate if known or candidate == 'WORKFLOW_REVIEW_REQUIRED' or re.fullmatch('MANAGED_POOL_[A-Z_]{1,100}', candidate) else 'input-or-io'
         if not re.fullmatch(r'[A-Za-z][A-Za-z-]{0,79}|WORKFLOW_REVIEW_REQUIRED|MANAGED_POOL_[A-Z_]{1,100}|GIT_INTENT_[A-Z_]{1,100}|CONSUMER_SOURCE_[A-Z0-9_]{1,100}', code):
             code = 'input-or-io'
         print(f'RELAY_OWNER_LIFECYCLE_BLOCKED={code};inspect-state-and-protected-deployment-log', file=sys.stderr)
         return 1
     finally:
+        stop_failure_observation(observation)
         if previous_termination is not None:
             signal.signal(signal.SIGTERM, previous_termination)
 

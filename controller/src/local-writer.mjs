@@ -1,8 +1,10 @@
+import { safeOutcomePublicationReceipt } from './outcome.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { spawn as nodeSpawn } from "node:child_process";
 import { WriterBlockedError } from "../../runtime/src/contracts.mjs";
 import { createBoundedUtf8Capture } from "./utf8-capture.mjs";
 import { failureDiagnosticFromDetails, safeDiagnosticStoreReference, safeFallbackReference } from "./diagnostics.mjs";
+import { safeFailureFacts, safeWriterFailure } from './failure-report.mjs';
 import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 
 const DEFAULT_HELPER = CONSUMER.paths.writerHelper;
@@ -23,6 +25,7 @@ function requestError(error, operation) {
   const failureDiagnostic = failureDiagnosticFromDetails(payload);
   const reason = ownerRunRejectionReason(code, payload?.reason);
   const result = new WriterBlockedError(code, "The privileged Writer helper failed", {
+    ...safeFailureFacts(payload), outcomePublication: safeOutcomePublicationReceipt(payload?.outcomePublication), ...(payload?.diagnosticRecorderFailed === true ? { diagnosticRecorderFailed: true } : {}), writerFailure: safeWriterFailure({ operation, exit: error.exitCode, signal: error.signal, osCode: error.code }),
     ...(reason ? { reason } : {}), ...(safeDiagnosticStoreReference(payload?.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(payload.diagnosticStore) } : {}), ...(safeFallbackReference(payload?.fallbackReference) ? { fallbackReference: safeFallbackReference(payload.fallbackReference) } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {})
   });
   Object.defineProperty(result, 'cause', { value: error, writable: true });

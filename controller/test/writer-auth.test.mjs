@@ -14,7 +14,7 @@ test('Writer publication token requests exactly the admitted permissions plus wo
     workflows: 'write'
   });
   const source = await readFile(SOURCE, 'utf8');
-  assert.match(source, /installationToken\(CONSUMER.repository, WRITER_TOKEN_PERMISSIONS\)/);
+  assert.match(source, /installationToken\(CONSUMER.repository, WRITER_TOKEN_PERMISSIONS, options\)/);
 });
 
 test('historical Task reads include private PR authority without any publication permission', () => {

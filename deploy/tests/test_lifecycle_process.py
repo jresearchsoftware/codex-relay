@@ -314,7 +314,9 @@ def test_owner_unexpected_failure_keeps_private_cause_behind_safe_terminal(monke
     assert owner.main(['fixture']) == 1
     assert recorded == [(original, 'owner-lifecycle')]
     output = capsys.readouterr()
-    assert output.err == 'RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;inspect-state-and-protected-deployment-log\n'
+    assert 'Owner Relay lifecycle operation failed. Last verified boundary was input selection.' in output.err
+    assert 'The cause at the failed boundary is unconfirmed.' in output.err
+    assert 'RELAY_OWNER_LIFECYCLE_BLOCKED=input-or-io;inspect-state-and-protected-deployment-log' in output.err
     assert 'private-unexpected-cause' not in output.out + output.err
 
 

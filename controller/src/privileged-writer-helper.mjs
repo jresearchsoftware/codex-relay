@@ -1,3 +1,4 @@
+import { safeOutcomePublicationReceipt } from './outcome.mjs';
 import { assertRootConsumer } from '../../consumer/consumer-config.mjs';
 import { CONSUMER, unixUserId } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
@@ -11,6 +12,7 @@ import { checkoutPath } from './attempt-runtime.mjs';
 import { token } from './writer-auth.mjs';
 import { fail } from './execution-contract.mjs';
 import { failureDiagnosticFromDetails, safeDiagnosticStoreReference, safeFallbackReference } from './diagnostics.mjs';
+import { failureFacts } from './failure-report.mjs';
 import { recordHostFailure } from './host-failure-diagnostic.mjs';
 import { ownerRunRejectionReason } from './owner-run-rejection.mjs';
 import { installedAdmissionControl } from './admission-cli.mjs';
@@ -71,7 +73,7 @@ export function resolveWriterDeploymentContract(env = process.env) {
   }
   return profile;
 }
-export async function main(selectedRequest) {
+export async function main(selectedRequest, { signal } = {}) {
   if (process.argv.length !== 2 || process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
   assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);
   const deployment = resolveWriterDeploymentContract();
@@ -96,17 +98,17 @@ export async function main(selectedRequest) {
   if (request?.operation === 'complete-execution') {
     return { version: VERSION, repository: REPOSITORY, ...await admission.complete(request) };
   }
-  return (await protectedWriterBroker({ deployment, runToken: request.workflowReadToken, admission })).dispatch(request);
+  return (await protectedWriterBroker({ deployment, runToken: request.workflowReadToken, admission, signal })).dispatch(request);
 }
-export async function protectedWriterBroker({ deployment = resolveWriterDeploymentContract(), runToken, admission = installedAdmissionControl(), allowManualOutcome = false } = {}) {
+export async function protectedWriterBroker({ deployment = resolveWriterDeploymentContract(), runToken, admission = installedAdmissionControl(), allowManualOutcome = false, signal } = {}) {
   if (process.getuid?.() !== 0) fail('FIXED_ROOT_BROKER_REQUIRED');
-  const value = await token();
+  const value = await token({ signal });
   const compatibility = await loadSerialPoolCompatibility({ consumer: CONSUMER });
   const store = compatibility ? createCompatibilityStore({ compatibility,
     currentStore: createPublicationStore(compatibility.current.storeRoot),
     originalStore: createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository }) })
     : createPublicationStore(`${deployment.claimRoot}/publication-v2`);
-  return createPublicationBroker({ api: { ...createGithubApi({ token: value, runToken }),
+  return createPublicationBroker({ api: { ...createGithubApi({ token: value, runToken, signal }),
       recordFailure: input => recordHostFailure({ ...input, secrets: { knownSecrets: [value, runToken].filter(Boolean) } }) },
     store,
     lifecycleStore: compatibility?.currentConsumer.repositories ? createSerialPrLifecycleStore(compatibility)
@@ -128,11 +130,15 @@ export function serializeWriterFailure(error) {
   const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'WRITER_FAILED';
   const failureDiagnostic = failureDiagnosticFromDetails(error?.details);
   const reason = ownerRunRejectionReason(code, error?.details?.reason);
-  return { code, ...(safeDiagnosticStoreReference(error?.details?.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(error.details.diagnosticStore) } : {}),
+  const outcomePublication = safeOutcomePublicationReceipt(error?.details?.outcomePublication);
+  return { code, ...failureFacts(error), ...(outcomePublication ? { outcomePublication } : {}), ...(error?.details?.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}), ...(safeDiagnosticStoreReference(error?.details?.diagnosticStore) ? { diagnosticStore: safeDiagnosticStoreReference(error.details.diagnosticStore) } : {}),
     ...(safeFallbackReference(error?.details?.diagnosticStore?.fallbackReference) ? { fallbackReference: safeFallbackReference(error.details.diagnosticStore.fallbackReference) } : {}), ...(reason ? { reason } : {}), ...(failureDiagnostic ? { failureDiagnostic } : {}) };
 }
 function isMain() { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } }
 if (isMain()) main().then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(async error => {
-  if (!error.details?.diagnosticStore) error.details = { ...error.details, diagnosticStore: await recordHostFailure({ error, operation: 'writer-entrypoint', phase: 'writer-publication' }) };
+  if (!error.details?.diagnosticStore) {
+    try { error.details = { ...error.details, diagnosticStore: await recordHostFailure({ error, operation: 'writer-entrypoint', phase: 'writer-publication' }) }; }
+    catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
+  }
   process.stderr.write(JSON.stringify(serializeWriterFailure(error)) + '\n'); process.exitCode = 1;
 });

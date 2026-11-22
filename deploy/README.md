@@ -1472,6 +1472,40 @@ A missing proof retains the bounded original streams and identifies missing
 expected lines in protected causal evidence; inspect that evidence and the
 retained operation before recovery.
 
+#### Owner lifecycle failure diagnostics
+
+The ordinary command output names the selected operation and its last verified
+boundary. For a backend failure, it includes the last reported dependency
+and the observed exit or signal. Apply progress describes attempted work.
+Installation and activation are verified only by the existing exact receipts.
+The report identifies the last acknowledged admission gate state or marks it
+unverified. In particular, a lost acknowledgement while resuming admission
+does not invalidate earlier verified installation and activation.
+
+For example, a failed upgrade can report that Ansible exited with code 7
+while reporting `controller-entrypoints`, the last acknowledged gate state
+was closed, and installation and activation are unverified. Run the supported
+read-only `relay-deploy.py --phase diagnose` against the same target using the
+existing selected deployment inputs. Reconcile the original operation before
+using the supported recovery or Resume path. An input validation failure
+instead names the failed field and the correction to make before another
+command. CLI diagnostics report the existing Actions run and protected
+admission operation when those identifiers are available.
+
+The fixed GitHub reads used to resolve the selected owner workflow inputs,
+repository and refs use the same bounded attempt, backoff and provider
+guidance described in the
+[controller failure contract](../controller/README.md#actionable-terminal-failures-and-safe-request-recovery).
+Relay does not repeat Apply, activation, runner registration or credential
+mutations when their effects are unconfirmed.
+
+If more detail is needed, use the authorized host shell or SSH channel to
+read the exact basename from the command’s configured protected log root.
+For an early failure recorded in the host journal, use the
+`codex-relay-deployment` identifier and correlate the invocation time and
+available run ID. A `causal` fallback basename identifies a private temporary
+log on the controller host. Keep the evidence in the protected session.
+
 Failed Python deployment, owner lifecycle, host preflight and source/package
 qualification operations retain bounded original messages, stacks, OS causes and
 child stdout/stderr with credential redaction, including partial output from

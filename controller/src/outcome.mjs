@@ -4,11 +4,11 @@ import { normalizeCodexUsage } from './codex-usage.mjs';
 import { boundedDiagnosticText, safeFailureDiagnosticReference, safeDiagnosticStoreReference, safeFallbackReference, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { admissionBinding, renderAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { safePublicationText } from '../../contracts/src/publication-rendering.mjs';
+import { failureExplanation, failureFacts, safeFailureFacts } from './failure-report.mjs';
 import { redactDiagnosticText } from './diagnostic-redaction.mjs';
 
 const SAFE_CODE = /^[A-Z][A-Z0-9_]{0,79}$/;
 const SAFE_BOUNDARY = /^[a-z][a-z0-9-]{0,39}$/;
-const SAFE_ACTION = /^[a-z][a-z0-9-]{0,127}$/;
 const SAFE_TEXT = /^[^\u0000-\u001f\u007f]{1,512}$/;
 const OUTCOME_BYTES = 60 * 1024;
 const SUMMARY_BYTES = 48 * 1024;
@@ -59,10 +59,6 @@ function safeCode(value) {
 
 function safeBoundary(value) {
   return typeof value === 'string' && SAFE_BOUNDARY.test(value) ? value : 'UNAVAILABLE';
-}
-
-function safeAction(value) {
-  return typeof value === 'string' && SAFE_ACTION.test(value) ? value : 'UNAVAILABLE';
 }
 
 function safeText(value, fallback = 'UNAVAILABLE') {
@@ -182,7 +178,6 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
   const head = exactSha(publishedHead) ? publishedHead : 'NONE PUBLISHED';
   const integrationBase = exactSha(pr?.base?.sha) ? pr.base.sha : 'UNAVAILABLE';
   const cause = safeCode(d.primaryCause);
-  const next = safeAction(d.nextAction);
   const profile = e?.profile && typeof e.profile === 'object' ? e.profile : {};
   const warnings = [admissionWarningSummary(e?.admission?.warnings ?? e?.warnings),
     executionWarningSummary(executionWarnings)].filter(Boolean).join('; ');
@@ -207,6 +202,8 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
     `Durable/published head: ${head}`,
     `Observed integration base: ${integrationBase}`,
     `Terminal code: ${safeCode(terminalCode)}`,
+    failureExplanation(terminalCode, { ...d, durable: { ...d.durable, publishedHead } },
+      { runId: e?.runId, target: { kind: pr ? 'pull_request' : e?.target, number: pr?.number ?? e?.number } }),
     ...(d.admissionSummary ? [`Admission diagnostic: ${safeText(d.admissionSummary)}`] : []),
     `Classification: ${diagnosticCode(d)}`,
     `Last successful boundary: ${safeBoundary(d.lastSuccessfulBoundary)}`,
@@ -223,7 +220,6 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
   const after = [
     ...(d.blockerSummary ? [`Worker blocker (claim): ${publicationClaim(d.blockerSummary, 16 * 1024, secrets).text}`] : []),
     `Result class: ${d.orchestration === 'COMPLETED' ? 'DOMAIN_BLOCKED (task remains incomplete)' : 'ORCHESTRATION_FAILURE_OR_UNCONFIRMED'}`,
-    `Next action: ${next}`,
     `Admission status: ${admissionStatus}`,
     ...(warnings ? [`Warning summary: ${warnings}`] : []),
     'Validation: automatic execution terminated without a successful terminal completion; no readiness, review, merge, or production action is implied.',
@@ -236,6 +232,12 @@ export function terminalOutcomeBody(e, { publishedHead, pr, terminalCode, diagno
 
 export function safeOutcomePublication(error, status = 'failed') {
   if (status === 'published') return { status: 'published' };
-  const code = safeCode(error?.code);
-  return { status, code: code === 'UNAVAILABLE' ? 'OUTCOME_PUBLICATION_FAILED' : code };
+  return safeOutcomePublicationReceipt({ status, code: error?.code, ...failureFacts(error) });
+}
+export function safeOutcomePublicationReceipt(value) {
+  if (value?.status === 'published') return { status: 'published' };
+  if (value?.status !== 'failed') return undefined;
+  const code = safeCode(value.code);
+  const { githubFailure } = safeFailureFacts(value);
+  return { status: 'failed', code: code === 'UNAVAILABLE' ? 'OUTCOME_PUBLICATION_FAILED' : code, ...(githubFailure ? { githubFailure } : {}) };
 }

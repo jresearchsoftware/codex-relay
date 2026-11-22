@@ -1,5 +1,4 @@
-// Public admission diagnostics contain only a fixed predicate category. Never
-// forward native API values, consumer configuration or arbitrary helper text.
+// Public admission diagnostics allowlist the check and project typed values separately.
 const REASONS = new Set([
   'run_id', 'repository', 'actor', 'triggering_actor', 'status',
   'workflow_path', 'event', 'head_branch', 'run_attempt', 'run_title',
@@ -15,7 +14,7 @@ export function rejectOwnerRun(reason, expected, observed) {
   const error = new Error('OWNER_RUN_NOT_ADMITTED');
   error.code = error.message;
   error.details = { reason: ownerRunRejectionReason(error.code, reason) };
-  // Protected evidence only; serializers expose the fixed reason, never values.
+  // Retain the observation privately. Public serializers select only typed facts.
   error.observation = { check: reason, expected, observed: observed === undefined ? null : observed,
     availability: observed === undefined ? 'unavailable' : 'available' };
   throw error;

@@ -2,15 +2,15 @@
 import base64
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-import http.client
 import json
 import os
 from pathlib import Path
 import re
-import ssl
 import stat
 import subprocess
 import time
+
+from git_intent import GitHubRequestError, github_response
 
 
 class ConsumerSourceError(ValueError):
@@ -56,27 +56,26 @@ def github_api(method, path, token=None, body=None):
     if token is not None:
         require(_bearer(token, 16384), 'CREDENTIAL_INVALID')
         headers['Authorization'] = 'Bearer ' + token
-    connection = http.client.HTTPSConnection('api.github.com', timeout=30, context=ssl.create_default_context())
+    expected = {'GET': 200, 'POST': 201, 'DELETE': 204}[method]
     try:
-        connection.request(method, path, body=None if body is None else json.dumps(body).encode(), headers=headers)
-        response = connection.getresponse()
-        expected = {'GET': 200, 'POST': 201, 'DELETE': 204}[method]
-        if response.status != expected:
-            raise APIError(response.status)
-        raw = response.read(1024 * 1024 + 1)
-        require(len(raw) <= 1024 * 1024, 'API_RESPONSE_TOO_LARGE')
-        if method == 'DELETE':
-            require(not raw, 'API_RESPONSE_INVALID')
-            return None
+        raw, attempts = github_response(method, path, headers, limit=1024 * 1024, expected=expected,
+                              body=None if body is None else json.dumps(body).encode())
+    except GitHubRequestError as error:
+        if error.observation['reason'] in {'http', 'rate-limit'}:
+            raise APIError(error.status) from error
+        raise ConsumerSourceError('CONSUMER_SOURCE_API_UNAVAILABLE') from error
+    require(len(raw) <= 1024 * 1024, 'API_RESPONSE_TOO_LARGE')
+    if method == 'DELETE':
+        require(not raw, 'API_RESPONSE_INVALID')
+        return None
+    try:
         value = json.loads(raw)
-        require(isinstance(value, dict), 'API_RESPONSE_INVALID')
-        return value
-    except ConsumerSourceError:
-        raise
-    except (OSError, http.client.HTTPException, ValueError):
-        raise ConsumerSourceError('CONSUMER_SOURCE_API_UNAVAILABLE') from None
-    finally:
-        connection.close()
+    except (ValueError, UnicodeError):
+        error = GitHubRequestError(method, 'App installation', expected, 'invalid-response', attempts,
+                                   'non-transient' if method == 'GET' else 'mutation')
+        raise ConsumerSourceError('CONSUMER_SOURCE_API_UNAVAILABLE') from error
+    require(isinstance(value, dict), 'API_RESPONSE_INVALID')
+    return value
 
 
 def _jwt(key_path, app_id, *, owner_uid=0, boundary=Path('/')):
