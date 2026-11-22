@@ -7,7 +7,8 @@ import { createLocalWriterAdapter } from '../src/local-writer.mjs';
 import { reportRoutingResult } from '../src/entrypoint.mjs';
 import { admissionCliFailure, drainAdmission } from '../src/admission-cli.mjs';
 import { runAttempt } from '../src/attempt.mjs';
-import { REPOSITORY } from '../src/execution-contract.mjs';
+import { causalEvidence, REPOSITORY } from '../src/execution-contract.mjs';
+import { serializeWriterFailure } from '../src/privileged-writer-helper.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 
 const canary = 'private-fixture-value-never-published';
@@ -16,6 +17,24 @@ const capture = async run => {
   const write = text => { output += text; };
   return { status: await reportRoutingResult(run, { write, writeError: write, writeAnnotation: write }), output };
 };
+
+test('fresh admission reports the retained slot conflict without exposing private evidence', async () => {
+  const cause = Object.assign(new Error(canary), {
+    code: 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE',
+    details: { resource: 'pool-2', conflictingRunId: 99, repository: 'example-org/docs-review', cause: canary }
+  });
+  const wire = serializeWriterFailure(cause);
+  assert.deepEqual(wire.slotConflict, { slot: 'pool-2', runId: 99, repository: 'example-org/docs-review', state: 'unreadable' });
+  const detail = { ...wire, runId: 100, childState: 'not_started' };
+  const error = Object.assign(new Error(wire.code), { code: wire.code, details: detail });
+  detail.diagnostic = causalEvidence(error, { stage: 'authority' });
+  const { status, output } = await capture(async () => { throw error; });
+  assert.equal(status, 1);
+  assert.match(output, /Slot pool-2.*evidence for example-org\/docs-review run-99 is unreadable/);
+  assert.match(output, /Codex child did not start/);
+  assert.match(output, /verify the prior run’s retained Writer record, runner journal and checkout/);
+  assert.doesNotMatch(output, new RegExp(canary));
+});
 
 // Use the real API client and Writer wire serializer in another process. The
 // GitHub dependency and installed sudo entrypoint are synthetic in this test.

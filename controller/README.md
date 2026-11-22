@@ -610,7 +610,13 @@ with the reservation before projecting the Step. It retains the marker through
 the ready-label DELETE intent and stores the durable `readyConsumed` receipt
 without removing the marker before returning a launchable envelope. Before that
 receipt, the exact original marker with no journal or checkout proves that the
-controller did not receive worker launch authority. After consumption, the
+controller did not receive worker launch authority. Writer resolves that
+evidence in the retained record's configured repository and original slot,
+including when admission is for a different repository. The scan grants no
+execution or recovery authority over the retained attempt. If inventory
+blocks a fresh admission, the pre-worker diagnostic identifies the conflicting
+run, its verified repository and slot, and whether the reservation is active,
+release is unproven or the evidence is unreadable. After consumption, the
 marker alone does not prove whether the returned envelope reached a worker;
 inventory keeps the attempt active/unknown until trusted controller completion
 provides the matching terminal journal and containment proof. Only then does the

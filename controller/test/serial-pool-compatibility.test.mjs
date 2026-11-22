@@ -9,11 +9,12 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { createAttemptStore } from '../src/attempt-store.mjs';
 import { createAdmissionControl } from '../src/admission-control.mjs';
-import { supplementOriginalInventory } from '../src/admission-cli.mjs';
-import { consumerDigest, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
+import { retainedCheckoutAbsent, supplementOriginalInventory } from '../src/admission-cli.mjs';
+import { consumerDigest, resolveExecutionConsumer, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
 import { createCompatibilityStore, historicalOperationContext, invokeOriginalReader, loadSerialPoolCompatibility,
   protectedSourceTreeSha256, verifySerialPoolCompatibility } from '../src/serial-pool-compatibility.mjs';
 import { serialPoolFixture as fixture } from './serial-pool-fixture.mjs';
+import { currentEnvelope } from './fixture.mjs';
 
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const linux = process.platform === 'linux';
@@ -42,6 +43,47 @@ test('plural migration binds raw installation digest and namespaces current reco
   await assert.rejects(otherComposite.put(201, { envelope: { ...other.envelope, repository: repositories[0], runId: 201 } }));
   assert.deepEqual(await readFile(join(ctx.original.storeRoot, '99.json')), before);
   await assert.rejects(store.get(99, 'foreign/repository'), { code: 'ATTEMPT_REPOSITORY_MISMATCH' });
+});
+
+test('SERIAL compatibility keeps original primary evidence and inspects foreign pending work in the current pool', { skip: !linux }, async t => {
+  const [foreign, local] = repositories;
+  const f = await fixture(t, { repositories, repository: local });
+  const ctx = await f.load();
+  const slot = 'pool-2';
+  const originalPath = join(ctx.original.storeRoot, '99.json');
+  const originalBytes = await readFile(originalPath);
+  const installation = structuredClone(f.installationConsumer);
+  for (const executionSlot of installation.executionSlots) executionSlot.paths.workRoot = f.at(executionSlot.paths.workRoot);
+  const workRoot = resolveExecutionConsumer(selectRepositoryConsumer(installation, foreign), slot).paths.workRoot;
+  const envelope = currentEnvelope({ runId: 201, consumerDigest: ctx.currentConsumerDigest, executionSlot: slot,
+    transport: 'label', readyEventId: 123, readyLabel: 'codex-ready-auto' });
+  assert.equal(envelope.repository, foreign);
+  const retained = { envelope, nativeAdmission: true, predispatchPending: { version: 1, projectionFrom: [] },
+    controllerLifecycle: { version: 1, status: 'active' } };
+  const foreignStore = createAttemptStore(ctx.current.storeRoot, { repository: foreign, repositories, namespace: true });
+  await foreignStore.put(envelope.runId, retained);
+  const journal = createAttemptStore(f.at(resolveExecutionConsumer(selectRepositoryConsumer(f.installationConsumer, foreign),
+    slot).paths.attemptRoot), { repository: foreign });
+  const gate = createAdmissionControl({ root: dirname(ctx.current.gatePath), stateName: 'admission-pool-v1.json',
+    consumerDigest: ctx.currentConsumerDigest, installation, store: f.currentStore, journal, protectedRoot: false,
+    checkoutAbsent: e => retainedCheckoutAbsent(e, installation),
+    supplementalInventory: options => invokeOriginalReader(ctx, { ...options, operation: 'inventory' }),
+    supplementalVerify: () => verifySerialPoolCompatibility(ctx, { privateChecks: true }) });
+
+  await gate.assertOpen();
+  const checkout = join(workRoot, envelope.attemptId);
+  await mkdir(checkout, { recursive: true });
+  await assert.rejects(gate.assertSlotComplete(slot), error => {
+    assert.equal(error.code, 'EXECUTION_SLOT_UNAVAILABLE');
+    assert.deepEqual(error.details.unknown, [envelope.runId]);
+    assert.ok(error.details.pending.some(item => item.repository === foreign && item.runId === envelope.runId));
+    return true;
+  });
+  await rm(checkout, { recursive: true });
+  await gate.assertSlotComplete(slot);
+  assert.equal(await f.currentStore.get(envelope.runId), null);
+  assert.deepEqual(await foreignStore.get(envelope.runId), retained);
+  assert.deepEqual(await readFile(originalPath), originalBytes);
 });
 
 test('plural compatibility composes actual process-selected publication store for every configured repository', { skip: !linux }, async t => {

@@ -1,8 +1,8 @@
 import { CONSUMER, CONSUMER_DIGEST, INSTALLATION_CONSUMER } from '../../consumer/consumer.mjs';
-import { assertRootConsumer, parseConsumerJson } from '../../consumer/consumer-config.mjs';
+import { assertRootConsumer, parseConsumerJson, resolveExecutionConsumer, selectRepositoryConsumer } from '../../consumer/consumer-config.mjs';
 import { realpathSync } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import { checkoutPath } from './attempt-runtime.mjs';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
@@ -18,10 +18,32 @@ import { traceConsumerTransition } from './transition-timing.mjs';
 import { assertPredispatchTargetCompatible } from './predispatch-target-compatibility.mjs';
 
 const exec = promisify(execFile);
-const checkoutAbsent = async envelope => {
-  try { await lstat(checkoutPath(envelope)); return false; }
-  catch (error) { if (error.code === 'ENOENT') return true; throw error; }
-};
+// Inventory receives protected store records. Their original repository and
+// slot locate evidence, but do not authorize execution in this process.
+export async function retainedCheckoutAbsent(envelope, installation = INSTALLATION_CONSUMER) {
+  const { repository, executionSlot, runId, attemptId, route } = envelope ?? {};
+  if (typeof repository !== 'string' || !positive(runId) || attemptId !== `run-${runId}` || route !== 'auto')
+    fail('ADMISSION_RESOURCE_IDENTITY_INVALID');
+  if (Object.hasOwn(envelope, 'executionSlot')
+    && (typeof executionSlot !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(executionSlot)))
+    fail('ADMISSION_RESOURCE_IDENTITY_INVALID');
+  const selected = selectRepositoryConsumer(installation, repository);
+  const base = resolveExecutionConsumer(installation, executionSlot).paths.workRoot;
+  const root = resolveExecutionConsumer(selected, executionSlot).paths.workRoot;
+  if (root !== base && !root.startsWith(base + sep)) fail('ADMISSION_RESOURCE_IDENTITY_INVALID');
+  const parents = [root];
+  while (parents[0] !== base) parents.unshift(dirname(parents[0]));
+  try {
+    for (const parent of parents) {
+      if (!(await lstat(parent)).isDirectory()) fail('ADMISSION_CHECKOUT_ROOT_UNSAFE');
+    }
+    await lstat(join(root, attemptId));
+    return false;
+  } catch (error) {
+    if (error.code === 'ENOENT') return true;
+    throw error;
+  }
+}
 const commands = {
   initialize: [], status: ['operation?'], quiesce: ['operation', 'target', 'target-source?'],
   drain: ['operation', 'timeout'], 'drain-check': ['operation'],
@@ -103,7 +125,7 @@ export function installedAdmissionControl() {
     if (!compatibility) {
       const originalStore = createPublicationStore(`${CONSUMER.paths.claimRoot}/publication-v2`);
       const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-        store: originalStore, journal: createSlotJournal(originalStore), checkoutAbsent });
+        store: originalStore, journal: createSlotJournal(originalStore), checkoutAbsent: retainedCheckoutAbsent });
       return invoke(admission, () => originalStore.all());
     }
     const originalStore = createAttemptStore(compatibility.original.storeRoot, { repository: compatibility.receipt.repository });
@@ -116,7 +138,7 @@ export function installedAdmissionControl() {
       : `${compatibility.root}${compatibility.originalConsumer.paths.attemptRoot}`;
     const originalJournal = createAttemptStore(originalJournalRoot, { repository: compatibility.receipt.repository });
     const admission = createAdmissionControl({ root: CONSUMER.paths.claimRoot, consumerDigest: CONSUMER_DIGEST,
-      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, checkoutAbsent,
+      stateName: 'admission-pool-v1.json', store: currentStore, journal: currentJournal, checkoutAbsent: retainedCheckoutAbsent,
       supplementalVerify: async () => {
         await verifySerialPoolCompatibility(compatibility, { privateChecks: true });
       },
@@ -124,7 +146,11 @@ export function installedAdmissionControl() {
         const records = task === null && slot === null ? await compositeRecords() : null;
         const inventory = await invokeOriginalReader(compatibility, { operation: 'inventory', task, slot, resourceOnly });
         if (task !== null && CONSUMER.repository !== compatibility.receipt.repository) return { active: [], unknown: [] };
-        if (resourceOnly) return inventory;
+        if (resourceOnly) {
+          const runId = inventory.active[0] ?? inventory.unknown[0];
+          return { ...inventory, ...(runId ? { slotConflict: { slot, runId, repository: compatibility.receipt.repository,
+            state: inventory.active.length ? 'active' : 'unknown' } } : {}) };
+        }
         const originalRecords = (records ?? await compositeRecords()).filter(record =>
           record.envelope.repository === compatibility.receipt.repository
           && compatibility.receipt.original.runs.some(run => run.runId === record.envelope.runId));

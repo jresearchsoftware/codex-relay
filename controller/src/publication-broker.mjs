@@ -566,8 +566,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         return result;
       } catch (error) {
         try {
+          const preWorkerFailure = ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)
+            || Boolean(failureFacts(error).slotConflict);
           const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
-            runId: request?.runId, workerStarted: request?.operation === 'admit' && ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code) ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
+            runId: request?.runId, workerStarted: request?.operation === 'admit' && preWorkerFailure ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
           if (diagnosticStore) error.details = { ...error.details, diagnosticStore };
         } catch { error.details = { ...error.details, diagnosticRecorderFailed: true }; }
         throw error;
