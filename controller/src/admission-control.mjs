@@ -436,9 +436,11 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
             && (lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'));
           const safeEffects = !attemptHasPendingPublicationEffects(record)
             && (!record.prIntent || positive(record.prNumber)) && record.handoffComplete !== false;
-          // Maintenance requires completed operations and resolved effects.
-          // Exact Outcome evidence remains required for Task continuation.
-          if (!containedChild || !safeEffects || task !== null && !terminalAdmissionOutcome(record)) unknown.push(e);
+          // Maintenance can tolerate missing Outcome evidence once the
+          // operation is safely complete. Conflicting or malformed evidence
+          // still blocks, and Task continuation requires the exact receipt.
+          const outcomeSafe = record.outcome == null && task === null || terminalAdmissionOutcome(record);
+          if (!containedChild || !safeEffects || !outcomeSafe) unknown.push(e);
           continue;
         }
         // A terminal record with unknown containment or external mutation is
