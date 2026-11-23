@@ -17,6 +17,9 @@ relay_reviewer_user: relay-reviewer
 relay_reviewer_group: relay-reviewer
 relay_reviewer_proxy_group: www-data
 relay_reviewer_service_name: reviewer-mcp.service
+relay_reviewer_socket_activation: true
+relay_reviewer_socket_service_name: reviewer-mcp.socket
+relay_reviewer_maintenance_timeout: 300
 relay_reviewer_service_unit_path: '/etc/systemd/system/{{ relay_reviewer_service_name }}'
 relay_reviewer_activation_marker: '{{ relay_config_root }}/reviewer-activation-authorized'
 relay_reviewer_recovery_off_marker: '{{ relay_config_root }}/reviewer-recovery-requires-activation'

@@ -439,6 +439,7 @@ def compile_inputs(c):
     })
     instance = e.get('instance')
     result['relay_reviewer_bind_port'] = instance['reviewerPort'] if instance else 8787
+    result['relay_reviewer_socket_service_name'] = ns + '-reviewer.socket' if instance else 'reviewer-mcp.socket'
     result['relay_reviewer_relay_enabled'] = instance['publicationEnabled'] if instance else True
     if instance:
         # Legacy consumers retain their installed unit identities. Opting in

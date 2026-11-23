@@ -34,3 +34,8 @@ read -r marker_owner marker_mode < <(/usr/bin/stat -c '%U %a' "$activation_marke
 [[ "$(<"$activation_marker")" == authorized ]]
 [[ "$(/bin/systemctl is-active "$reviewer_service" 2>/dev/null || true)" == "active" ]]
 ss -H -ltn 2>/dev/null | awk -v expected="$expected_listener" '$4 == expected { found=1 } END { exit !found }'
+{% if relay_reviewer_socket_activation | default(false) %}
+# A socket-owned TCP listener remains present even with no ready service.
+# Require a response from the exact non-root systemd MainPID as well.
+'{{ relay_install_root }}/relay-reviewer-maintenance' ready --timeout 1 >/dev/null
+{% endif %}

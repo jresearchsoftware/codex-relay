@@ -10,6 +10,7 @@
       - '{{ relay_reviewer_repositories | to_json }}'
       - '{{ relay_reviewer_user }}'
       - '{{ relay_reviewer_service_name }}'
+      - '{{ relay_reviewer_socket_service_name | default(relay_reviewer_service_name | replace(".service", ".socket")) }}'
       - '{{ relay_reviewer_recovery_service_name }}'
       - '{{ relay_reviewer_recovery_timer_name }}'
       - '{{ relay_production_runner_service_name }}'

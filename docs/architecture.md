@@ -511,8 +511,13 @@ to reviewed configuration main; the public product revision is frozen
 independently. Installed snapshots attest the result rather than selecting
 desired configuration. The existing host/pool and Writer publication locks bind
 the operation and any consumer-digest transition to its exact UUID. The
-coordinator quiesces and drains admission before managed updates. Registered
-runners remain online. Only explicit
+coordinator withdraws native routing eligibility and drains the managed General
+pool before quiescing admission for ordinary managed-pool Apply. Where the
+owner invocation itself is running on that pool, its proven transport stays
+alive. On resume, verified runtime readiness and an open gate precede
+restoration of scheduling labels. Relay reconnects an originally active,
+drained runner after restoring those labels so GitHub can see eligible capacity.
+GitHub retains the waiting jobs. Only explicit
 same-operation verification of the installed revision permits resume; a
 restart, failed or unknown transition retains quiesce and recovery evidence.
 Graceful stop retains quiesced admission without stopping registered runners.

@@ -432,10 +432,13 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       if (lifecycle) {
         if (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status)) fail('ADMISSION_ATTEMPT_INVALID');
         if (lifecycle.status === 'complete') {
-          if (!['started', 'not_started'].includes(lifecycle.child)
-            || !(lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))
-            || !terminalAdmissionOutcome(record) || record.publicationIntent || (record.prIntent && !positive(record.prNumber)) || record.commentIntent
-            || record.lifecycleIntent || record.handoffComplete === false) unknown.push(e);
+          const containedChild = ['started', 'not_started'].includes(lifecycle.child)
+            && (lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'));
+          const safeEffects = !attemptHasPendingPublicationEffects(record)
+            && (!record.prIntent || positive(record.prNumber)) && record.handoffComplete !== false;
+          // Maintenance requires completed operations and resolved effects.
+          // Exact Outcome evidence remains required for Task continuation.
+          if (!containedChild || !safeEffects || task !== null && !terminalAdmissionOutcome(record)) unknown.push(e);
           continue;
         }
         // A terminal record with unknown containment or external mutation is

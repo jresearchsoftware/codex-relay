@@ -254,7 +254,7 @@ def destination_specs(v):
     helpers = ('relay-reviewer-credential-check', 'relay-production-operation-state', 'relay-reviewer-start-guard',
         'relay-reviewer-activation-start', 'relay-runner-enable-start', 'relay-reviewer-operation-restart',
         'relay-app-qualification.py', 'relay-reviewer-app-qualification', 'relay-credential-provision',
-        'relay-reviewer-recovery', 'relay-reviewer-stop-runner', 'relay-reviewer-readiness',
+        'relay-reviewer-recovery', 'relay-reviewer-stop-runner', 'relay-reviewer-readiness', 'relay-reviewer-maintenance',
         'relay-diagnostics-control', 'relay-qualification-diagnostic-snapshot', 'relay-writer-credential-check',
         'relay-qualification-codex-probe', 'relay-writer-app-qualification', 'relay-writer-controller',
         'relay-manual-outcome', 'relay-manual-outcome-writer', 'relay-admission', 'relay-production-local-apply',

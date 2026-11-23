@@ -1448,6 +1448,35 @@ completion, creates no lifecycle authority and never launches the helper again.
 A progress-channel or cleanup failure reports a visible warning while retaining
 the original operation result and private evidence.
 
+The owner preparation interval reports the native Actions run ID. The installer
+reports its own preparation, intake pause and runner drain durations in
+`RELAY_APPLY_TIMING`. The installer operation UUID joins these durations to
+its Ansible timing records. The outer Actions setup and teardown and process
+handoff gaps are outside these measurements.
+
+Apply also emits bounded `RELAY_ANSIBLE_TIMING` records through the existing
+private backend log and public progress filter. Each record carries the lifecycle
+operation UUID and a distinct backend invocation UUID. Task records expose only
+an opaque source identifier, fixed role category, outcome and monotonic start/end
+milliseconds since callback initialization; names, host identities, arguments,
+variables, paths and result data are excluded. `no_log` task identifiers and roles
+are redacted. Resolve an identifier locally with the exact observed product
+checkout: `python3 deploy/timing.py --resolve-task <12-hex-id>`.
+
+Task observations cover one host's whole task (including loop and retry time),
+with handlers and dynamic includes retaining normal Ansible semantics. They are
+wall observations, not exclusive execution costs: hosts, roles and includes may
+overlap, so never sum them as exclusive costs. Role records span first observed
+start through last completion, including intervening work. The summary reports
+the union of completed task intervals and remaining callback wall-clock gaps;
+gaps can include scheduling, parsing, callbacks and unobserved work. Separate
+backend wall time includes process startup/shutdown and transport overhead;
+subtracting callback wall time indicates an unattributed wrapper gap, not a
+specific task cost. Completed task records flush immediately, including failures;
+abrupt termination may omit summaries and leave active tasks unmeasured. Timing
+is diagnostic evidence and supplies no success or installation proof. The default
+Ansible stdout callback is unchanged, and no extra probe or deployment pass runs.
+
 Backend progress names the observed package, artifact, activation or verification
 dependency without copying task output or configuration into Actions. Long waits
 report elapsed time for that child/dependency. `child-completed` or a zero backend
@@ -1579,7 +1608,42 @@ lock. Already admitted automatic controllers retain their reservation through
 child containment, publication and terminal evidence; queued/new Tasks and CRs
 cannot launch Codex. Drain releases that lock between observations, waits up to
 30 minutes for valid work and rejects unknown execution or publication evidence.
-No service or runner is stopped to drain. Registered runners remain online.
+For ordinary managed-pool Apply, the owner preflight first preserves the live
+installation while the candidate is prepared. Relay then reserves maintenance
+under the existing pool lock and withdraws custom GitHub scheduling labels
+from the exact registered General runners. Admission stays open while assigned
+jobs finish, including Controller and Writer publication. The drain stops the
+idle General units and keeps the cgroup-proven owner transport alive when the
+current owner invocation itself uses the pool. It leaves the dedicated
+Production Runner outside this pool operation.
+
+After the existing gate, backend and installed-state checks succeed, Relay
+verifies Reviewer readiness and stages the originally active General units.
+It keeps one drained runner offline if available. After opening admission, it
+restores the original labels and connects that runner with its labels already
+in place. In TEST, restoring labels on online runners alone left original jobs
+queued until a matching runner reconnected. GitHub dispatches eligible original
+events from its queue. Relay allocates a Step only after admission. The managed
+operation requires the same physical pool binding and capacity. Plain graceful
+stop and the separate recovery and reinstall paths retain their existing
+operational contracts.
+
+The live pause boundary combines observed label withdrawal, runner job state
+and a cgroup freeze before signaling an idle listener. GitHub does not
+document an atomic pause API for persistent runners. Assignment readback can
+lag, unclaimed assignments can be requeued and GitHub applies finite queue
+limits. A single rehearsal establishes its observed timings only. Treat an
+uncertain stop, label mutation or restart as an original-operation blocker.
+Inspect the pool receipt, native jobs and admission gate before recovery.
+
+An active Reviewer with the maintenance control acknowledges a Writer-only pause
+and drains its accepted Writer submissions before replacement. Review and
+Decision requests keep using the Reviewer during preparation. The service
+owns its existing SQLite and native publication records throughout a compatible
+socket-activated restart. An active legacy service without a proved request
+drain stops Apply before the runner pause. See
+[Reviewer planned maintenance](../reviewer/README.md#planned-apply-and-accepted-http-calls) for
+readiness, backlog limits and the 503 fallback.
 
 Manual Outcome socket helpers keep stderr in the protected host journal while
 stdout remains the bounded socket response. This retains early failures before

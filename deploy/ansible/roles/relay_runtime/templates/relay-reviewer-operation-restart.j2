@@ -143,6 +143,33 @@ if [[ "$maintained_config_adoption" == true &&
   echo 'REVIEWER_OPERATION_RESTART_MAINTAINED_PROCESS_LOST' >&2
   exit 48
 fi
+{% if relay_reviewer_socket_activation | default(false) %}
+# A legacy process has no graceful-request boundary. Never infer that it is
+# idle from its TCP listener or restart it while publication may be in flight.
+maintenance='{{ relay_install_root }}/relay-reviewer-maintenance'
+previous_pid=''
+if [[ "$reviewer_was_active" == true ]]; then
+  current_status="$("$maintenance" status)" || {
+    echo 'REVIEWER_LEGACY_DRAIN_UNPROVEN: retain the running Reviewer; qualify authenticated ingress pause and old-request drain before the first socket-activation migration' >&2
+    exit 50
+  }
+  previous_pid="$(/usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["pid"])' <<<"$current_status")"
+fi
+if [[ "$recover_active" == true && "$reviewer_was_active" == false ]]; then
+  /bin/systemctl --no-block start "$reviewer_service"
+else
+  /bin/systemctl --no-block try-restart "$reviewer_service"
+fi
+if [[ "$reviewer_was_active" == true || "$recover_active" == true ]]; then
+  expected_revision="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["artifact"]["commit"])' '{{ relay_config_root }}/reviewer-mcp.json')"
+  readiness=("$maintenance" ready --expected-commit "$expected_revision" --timeout '{{ relay_reviewer_maintenance_timeout | default(300) }}')
+  if [[ -n "$previous_pid" ]]; then readiness+=(--previous-pid "$previous_pid"); fi
+  "${readiness[@]}" || {
+    echo 'REVIEWER_OPERATION_RESTART_READINESS_FAILED: accepted calls remain owned by the draining process; retain the listener and inspect exact process/activity state before recovery' >&2
+    exit 46
+  }
+fi
+{% else %}
 if [[ "$recover_active" == true && "$reviewer_was_active" == false ]]; then
   /bin/systemctl start "$reviewer_service"
 else
@@ -165,6 +192,7 @@ if [[ "$runner_should_activate" == true || "$recover_active" == true ]]; then
     exit 46
   }
 fi
+{% endif %}
 if [[ "$runner_should_activate" == true ]]; then
   if [[ "$recover_active" == true && "$reviewer_was_active" == false && "$runner_was_active" == true ]]; then
     /bin/systemctl try-restart "$runner_service"

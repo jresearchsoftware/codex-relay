@@ -30,7 +30,8 @@ try:
         sys.modules[name] = module
         exec(compile(payload['sources'][name], module.__file__, 'exec'), module.__dict__)
     pool = sys.modules['managed_pool']
-    pool.require(payload['action'] in ['preflight', 'reconcile'], 'ACTION_UNSUPPORTED')
+    action = payload['action']
+    pool.require(action in ['preflight', 'reconcile', 'pause', 'drain', 'restart', 'resume'], 'ACTION_UNSUPPORTED')
     installation = sys.modules['serial_pool_installation']
     contract = payload['contract']
     auth = sys.modules['pool_authorization'].installation_authorization(payload['config'])
@@ -40,7 +41,33 @@ try:
     pool.require(isinstance(payload['targetDigest'], str)
                  and re.fullmatch('[0-9a-f]{64}', payload['targetDigest']), 'TARGET_DIGEST_UNPROVEN')
     github = pool.GitHub(auth['installationToken'], contract['organization'])
-    if payload['action'] == 'reconcile':
+    if action in ['pause', 'drain', 'restart', 'resume']:
+        import fcntl, stat, subprocess
+        from pathlib import Path
+        operation = payload['operation']
+        pool.require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation), 'MAINTENANCE_OPERATION_INVALID')
+        root = Path('/var/lib/codex-relay-pools') / contract['name']
+        pool.protected_parents(root)
+        fd = os.open(root / 'pool.lock', os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            info = os.fstat(fd)
+            pool.require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1
+                         and stat.S_IMODE(info.st_mode) == 0o600, 'LOCK_UNSAFE')
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def admission_open():
+                pool.protected(contract['admission'])
+                result = subprocess.run([contract['admission'], 'status'], text=True,
+                                        capture_output=True, check=True, timeout=60)
+                return json.loads(result.stdout)['phase'] == 'open'
+
+            report = pool.maintenance(contract, pool.State(root), github, pool.Host(contract),
+                operation=operation, action=action, owner_pid=payload['ownerPid'], admission_open=admission_open)
+            print('MANAGED_POOL_MAINTENANCE=' + json.dumps(report, sort_keys=True))
+        finally:
+            os.close(fd)
+        sys.exit(0)
+    if action == 'reconcile':
         import hashlib, subprocess
         pool.require(re.fullmatch('[0-9a-f]{40}', payload['revision']), 'EXACT_REVISION_REQUIRED')
         helper = '/opt/' + payload['config']['environment']['namespace'] + '/relay-managed-pool'
@@ -151,7 +178,7 @@ def projected_consumer(config, source_root=None):
         return json.loads(destination.read_text())
 
 
-def _owner_payload(config, action, revision=None):
+def _owner_payload(config, action, revision=None, operation=None, owner_pid=None):
     from managed_pool import pool_contract
     contract = pool_contract(config)
     source_root = Path(__file__).parent
@@ -160,6 +187,8 @@ def _owner_payload(config, action, revision=None):
                           for name in OWNER_POOL_SOURCES},
                'contract': contract, 'config': config, 'targetDigest': digest,
                'action': action, 'revision': revision}
+    if operation is not None:
+        payload.update(operation=operation, ownerPid=owner_pid)
     require(len(json.dumps(payload).encode()) <= OWNER_POOL_INPUT_BYTES - 8192, 'OWNER_PREFLIGHT_INPUT_SIZE')
     pending = json.dumps(payload)
     require(len(pending.encode()) <= OWNER_POOL_INPUT_BYTES, 'OWNER_PREFLIGHT_INPUT_SIZE')
@@ -220,3 +249,17 @@ def reconcile_pool(target, key, config, revision, guard=None, *, local=False, ex
     require(result.get('capacity') == config['consumer']['generalRunnerPool']['desiredCapacity'],
             'RESULT_CAPACITY_UNPROVEN')
     return output.strip()
+
+
+def maintain_pool(target, key, config, operation, action, guard=None, *, local=False, extra_guard=None):
+    """Run the exact owner Apply's maintenance under the existing host/pool locks."""
+    require(action in {'pause', 'drain', 'restart', 'resume'}, 'ACTION_UNSUPPORTED')
+    owner_pid = os.getpid() if local or (target or {}).get('connection') == 'local' else None
+    pending, _ = _owner_payload(config, action, operation=operation, owner_pid=owner_pid)
+    output = _owner_transport(target, key, pending, guard, local=local, extra_guard=extra_guard)
+    marker = 'MANAGED_POOL_MAINTENANCE='
+    require(output.startswith(marker), 'MAINTENANCE_RESULT_UNPROVEN')
+    result = json.loads(output.removeprefix(marker))
+    require(result.get('operation') == operation and result.get('action') == action,
+            'MAINTENANCE_RESULT_UNPROVEN')
+    return result

@@ -585,8 +585,11 @@ trusted controller operation asks root to complete this reservation; root reads
 the matching runner journal itself and requires known containment, matching
 terminal receipts and no unresolved publication intent. Caller JSON cannot
 assert that proof. Earlier attempts without `controllerLifecycle` require the
-same existing terminal journal evidence. Missing, mismatched or unknown
-execution and ambiguous publication fail closed.
+same existing terminal journal evidence. For already recorded controller
+completion with known containment and resolved effects, a missing Outcome
+alone does not block a lifecycle drain. Exact Outcome proof still applies to
+Task continuation. Missing, mismatched or unknown execution and ambiguous
+publication fail closed.
 
 Drain polls bounded snapshots and releases the Writer lock between snapshots,
 allowing admitted controllers to finish. Each snapshot allows
@@ -602,8 +605,10 @@ configured execution slot when known, including peers in a multi-repository
 installation. Historical absent locations stay absent. These fields are
 projections of the protected inventory, never caller-selected metadata. Timeout, unreadable state or an unknown attempt preserves quiesce for
 owner inspection. Drain neither relaunches Codex nor discards retained work or
-diagnostics. Registered runners remain online; graceful stop disables new
-automatic admission without stopping those runners.
+diagnostics. During ordinary managed-pool Apply, this gate follows the native
+runner eligibility pause and physical drain. Graceful stop continues to close
+admission while leaving the units online. See the
+[Apply contract](../deploy/README.md#shared-managed-general-runner-pool).
 
 For new native automatic label admissions, Writer stores a pre-dispatch marker
 with the reservation before projecting the Step. It retains the marker through

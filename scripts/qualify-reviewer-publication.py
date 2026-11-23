@@ -18,6 +18,7 @@ from pathlib import Path
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -149,10 +150,10 @@ class Github:
                               'user': REVIEWER, 'pull_request_url': f'https://api.github.com/repos/{REPOSITORY}/pulls/{number}',
                               'html_url': f'https://github.com/{REPOSITORY}/pull/{number}#pullrequestreview-{review_id}'}
                     reviews.append(native)
-                    if self.fault == 'crash-review' and not self.fired:
+                    if self.fault in ('crash-review', 'hold-review') and not self.fired:
                         self.fired = True
                         self.accepted.set()
-                        return 201, native, 'hold'
+                        return 201, native, 'hold' if self.fault == 'crash-review' else 'hold-success'
                     return 201, native, None
             if method == 'GET' and relative.startswith('commits/') and relative.endswith('/check-runs'):
                 assert query.get('filter') == ['all']
@@ -221,9 +222,9 @@ class MockServer:
                 payload = json.loads(body) if body else None
                 status, value, effect = state.route(self.command, self.path, payload,
                                                   self.headers.get('Authorization', ''))
-                if effect == 'hold':
+                if effect in ('hold', 'hold-success'):
                     state.release.wait(20)
-                    effect = 'drop'
+                    effect = 'drop' if effect == 'hold' else None
                 if effect == 'drop':
                     self.close_connection = True
                     try:
@@ -254,9 +255,9 @@ class MockServer:
 
 class Service:
     def __init__(self, binary, root, crypto, github_url, native=False, database=None,
-                 enabled=True, override=None):
+                 enabled=True, override=None, listener=None, maintenance_file=None):
         root.mkdir(parents=True, exist_ok=True)
-        self.port = free_port()
+        self.port = listener.getsockname()[1] if listener is not None else free_port()
         self.url = f'http://127.0.0.1:{self.port}/mcp'
         config = {'repository': REPOSITORY, 'owner': OWNER['login'], 'baseBranch': 'main',
                   'reviewCheckName': 'chatgpt-review', 'writerActor': WRITER['login'],
@@ -278,7 +279,23 @@ class Service:
                'GITHUB_APP_ID': '102', 'GITHUB_APP_INSTALLATION_ID': '202',
                'GITHUB_APP_PRIVATE_KEY_FILE': str(crypto / 'fake-app.pem'),
                'REVIEWER_SYNTHETIC_GITHUB_API': override or github_url}
-        self.process = subprocess.Popen([str(binary), '--config', str(path)], env=env,
+        self.control = root / 'm.sock'
+        env['REVIEWER_MAINTENANCE_SOCKET'] = str(self.control)
+        if maintenance_file is not None:
+            env['REVIEWER_MAINTENANCE_FILE'] = str(maintenance_file)
+        command = [str(binary), '--config', str(path)]
+        pass_fds = ()
+        if listener is not None:
+            # Emulate systemd's fd/PID transfer, without a preexec_fn in this
+            # multithreaded fixture. This wrapper immediately execs the service.
+            command = [sys.executable, '-c',
+                'import os,sys; fd=int(sys.argv[1]); '
+                'os.dup2(fd,3) if fd != 3 else None; '
+                'os.close(fd) if fd != 3 else None; os.set_inheritable(3,True); '
+                'os.environ.update(LISTEN_PID=str(os.getpid()),LISTEN_FDS="1"); '
+                'os.execv(sys.argv[2],sys.argv[2:])', str(listener.fileno()), *command]
+            pass_fds = (listener.fileno(),)
+        self.process = subprocess.Popen(command, env=env, pass_fds=pass_fds,
                                         stdout=self.log, stderr=subprocess.STDOUT)
         self.headers = {'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream',
                         'X-OpenAI-MTLS-Verified': '1',
@@ -302,6 +319,19 @@ class Service:
             headers=self.headers if headers is None else headers)
         with urllib.request.urlopen(request, timeout=12) as response:
             return json.load(response)
+
+    def control_command(self, command):
+        with socket.socket(socket.AF_UNIX) as control:
+            control.settimeout(3)
+            control.connect(str(self.control))
+            control.sendall(command.encode() + b'\n')
+            chunks = []
+            while True:
+                data = control.recv(4096)
+                if not data:
+                    break
+                chunks.append(data)
+        return json.loads(b''.join(chunks))
 
     def call(self, kind='approve', number=25):
         if kind == 'approve':
@@ -421,14 +451,116 @@ def run_case(binary, root, crypto, kind, fault):
         mock.close()
 
 
+def run_handover(binary, root, crypto):
+    """Real main/HTTP/mTLS/SQLite/native effects through inherited TCP handover."""
+    if os.geteuid() != 0:
+        return {'scenario': 'planned-handover', 'status': 'UNQUALIFIED',
+                'limitation': 'kernel-root-only maintenance control requires root in the disposable fixture'}
+    root.mkdir()
+    state = Github('hold-review')
+    mock = MockServer(state)
+    services = []
+    database = root / 'persistent.sqlite3'
+    marker = root / 'reviewer-maintenance.json'
+    retained = socket.socket()
+    retained.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    retained.bind(('127.0.0.1', 0))
+    retained.listen(16)
+    try:
+        old = Service(binary, root / 'old', crypto, mock.url, native=False,
+                      database=database, listener=retained, maintenance_file=marker).ready()
+        services.append(old)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as workers:
+            accepted = workers.submit(old.call, 'approve')
+            assert state.accepted.wait(8), 'Original Review did not reach the held native POST'
+            snapshot = old.control_command('status')
+            assert snapshot['activeRequests'] == snapshot['activeMutations'] == 1, snapshot
+            assert snapshot['activeWriter'] == 0, snapshot
+            old.process.terminate()
+            deadline = time.monotonic() + 3
+            while not old.control_command('status')['draining']:
+                assert time.monotonic() < deadline
+                time.sleep(.01)
+            # Main has closed its accept loop; the private listener still queues
+            # a distinct authenticated native Review mutation during drain.
+            time.sleep(.05)
+            pending = workers.submit(old.call, 'approve', 27)
+            time.sleep(.1)
+            assert not pending.done(), 'Queued call bypassed ordered process ownership'
+            assert old.process.poll() is None, 'SIGTERM interrupted the accepted publication'
+            state.release.set()
+            assert_complete(accepted.result(timeout=8))
+            old.process.wait(timeout=5)
+            assert len(state.reviews[25]) == 1
+            failed = Service(binary, root / 'failed-candidate', crypto, mock.url,
+                native=False, database=database, listener=retained, maintenance_file=marker,
+                override='https://api.github.com')
+            services.append(failed)
+            failed.process.wait(timeout=5)
+            assert failed.process.returncode != 0
+            assert not pending.done(), 'A failed candidate consumed or reset the pending request'
+            assert state.count('/check-runs') == 1 and len(state.reviews[25]) == 1
+            next_service = Service(binary, root / 'new', crypto, mock.url, native=False,
+                database=database, listener=retained, maintenance_file=marker)
+            services.append(next_service)
+            assert_complete(pending.result(timeout=8))
+            next_service.ready()
+            assert len(state.reviews[25]) == len(state.reviews[27]) == 1, state.reviews
+            assert state.count('/check-runs') == 2
+            # Exact original retry reports native recovery, without a third
+            # Review or Check after old/new process and SQLite ownership changed.
+            assert_complete(next_service.call('approve'))
+            assert_complete(next_service.call('approve', 27))
+            assert len(state.reviews[25]) == len(state.reviews[27]) == 1 and state.count('/check-runs') == 2
+            next_service.control_command('pause-writer')
+            listing = next_service.rpc('tools/list', {})
+            assert 'tools' in listing['result']
+            next_service.control_command('pause')
+            try:
+                next_service.rpc('tools/list', {})
+            except urllib.error.HTTPError as error:
+                assert error.code == 503 and error.headers['Retry-After'] == '5'
+            else:
+                raise AssertionError('Explicit authenticated pause did not return controlled 503')
+            try:
+                next_service.rpc('tools/list', {}, {'Content-Type': 'application/json'})
+            except urllib.error.HTTPError as error:
+                assert error.code == 403
+            else:
+                raise AssertionError('Maintenance bypassed caller authentication')
+            # A durable dependency pause is consumed by a replacement process.
+            marker.write_text(json.dumps({'schemaVersion': 1, 'operation': '12345678-1234-1234-1234-123456789abc',
+                                          'command': 'pause-writer'}))
+            marker.chmod(0o640)
+            next_service.stop()
+            preserved = Service(binary, root / 'preserved-pause', crypto, mock.url, native=False,
+                database=database, listener=retained, maintenance_file=marker).ready()
+            services.append(preserved)
+            assert preserved.control_command('status')['writerPaused'] is True
+        return {'scenario': 'planned-handover', 'status': 'PASS', 'old_pid': old.process.pid,
+                'new_pid': next_service.process.pid, 'original_call_completed': True,
+                'during_drain_call_served_by_replacement': True, 'decisive_reviews': 2,
+                'failed_restart_preserved_pending_connection': True,
+                'check_posts': 2, 'exact_retries_added_posts': 0, 'authenticated_pause_http': 503,
+                'retry_after': '5', 'unauthenticated_pause_http': 403, 'durable_writer_pause_survived': True,
+                'limitation': 'Inherited-fd process handover; installed systemd/nginx and real ChatGPT behavior remain separate proof.'}
+    finally:
+        state.release.set()
+        for service in reversed(services):
+            service.stop()
+        retained.close()
+        mock.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', type=Path, help='Prebuilt synthetic-github executable; otherwise build in disposable storage')
     parser.add_argument('--default-binary', type=Path, help='Optional default executable for override-is-ignored proof')
     parser.add_argument('--scenario', action='append', choices=['normal', 'token-before-check', 'reject-check',
                         'lost-check', 'delayed-check', 'missing-checks', 'concurrent', 'crash-review'])
+    parser.add_argument('--handover', action='store_true', help='Also qualify real-process inherited-listener handover and controlled pause')
     args = parser.parse_args()
-    with tempfile.TemporaryDirectory(prefix='relay-reviewer-publication-') as temporary:
+    with tempfile.TemporaryDirectory(prefix='relay-rp-') as temporary:
         root = Path(temporary)
         crypto = root / 'fixture-credentials'
         crypto.mkdir(mode=0o700)
@@ -463,6 +595,8 @@ def main():
                                      'delayed-check', 'missing-checks', 'concurrent', 'crash-review']
         evidence = [run_case(binary, root / f'{kind}-{scenario}', crypto, kind, scenario)
                     for kind in ['approve', 'cr'] for scenario in scenarios]
+        if args.handover:
+            evidence.append(run_handover(binary, root / 'planned-handover', crypto))
         assert sha256(binary.read_bytes()) == artifact
         print(json.dumps({'qualification': 'SYNTHETIC_REVIEWER_PUBLICATION_PASS',
                           'artifact_sha256': artifact, 'controls': controls, 'evidence': evidence,

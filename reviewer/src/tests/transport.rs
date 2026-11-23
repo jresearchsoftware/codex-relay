@@ -2,6 +2,68 @@
 //! These tests do not simulate or claim to qualify the ChatGPT connector adapter.
 use super::*;
 
+#[tokio::test]
+async fn maintenance_preserves_identity_checks_and_only_pauses_the_affected_boundary() {
+    let state = MockState::default();
+    let maintenance = maintenance::Maintenance::default();
+    maintenance.command("pause-writer").unwrap();
+    let app = router(App {
+        policy: state.policy.clone(),
+        repositories: BTreeSet::from([TEST_REPOSITORY.into()]),
+        observed_arguments: state.observed_arguments.clone(),
+        enabled: true,
+        store: state.store.clone(),
+        github: github::Github::new(),
+        trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance.clone(),
+    });
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let http = reqwest::Client::new();
+    let request = |payload: Value| {
+        http.post(&url)
+            .header(mtls_identity::VERIFIED_HEADER, "1")
+            .header(mtls_identity::CERT_HEADER, encoded_certificate())
+            .header("Accept", "application/json, text/event-stream")
+            .json(&payload)
+    };
+    let writer = request(json!({"jsonrpc":"2.0","id":1,"method":"tools/call",
+        "params":{"name":"submit_manual_outcome","arguments":{"repository":TEST_REPOSITORY,
+        "task":24,"run_id":7,"result":{"status":"implemented"}}}}))
+    .send()
+    .await
+    .unwrap();
+    assert_eq!(writer.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(writer.headers()["retry-after"], "5");
+    let listing = request(json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(listing.status(), StatusCode::OK);
+    maintenance.command("pause").unwrap();
+    let rejected = http
+        .post(&url)
+        .json(&json!({"method":"tools/list"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        rejected.status(),
+        StatusCode::FORBIDDEN,
+        "maintenance cannot bypass caller authentication"
+    );
+    let paused = request(json!({"jsonrpc":"2.0","id":3,"method":"tools/list"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(paused.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(paused.headers()["retry-after"], "5");
+    assert_eq!(maintenance.command("status").unwrap()["activeRequests"], 0);
+    assert_no_publication(&state);
+    server.abort();
+}
+
 fn assert_observed(state: &MockState, name: &str, arguments: &Value) {
     assert_eq!(
         state.observed_arguments.lock().unwrap().last(),

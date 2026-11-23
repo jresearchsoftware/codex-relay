@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 sys.dont_write_bytecode = True
 from config import compile_inputs, deployment_repository, loads
@@ -152,6 +153,12 @@ def clean_environment():
 def child_progress(line):
     """Forward bounded public progress only; backend text remains causal evidence."""
     from lifecycle import drain_progress
+    from timing import public_ansible_timing
+    if public_ansible_timing(line) or re.fullmatch(
+            r'RELAY_APPLY_TIMING=operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};phase=(?:preparation|intake-pause|runner-drain);wall_ms=[0-9]{1,12}(?:;owner_run=[1-9][0-9]{0,19})?', line) or re.fullmatch(
+            r'RELAY_POOL_MAINTENANCE=(?:pause|drain|restart|resume);operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};paused=[0-9]{1,2};stopped=[0-9]{1,2};preserved=[0-9]{1,2};ready=[0-9]{1,2};busy=[0-9]{1,2}', line):
+        print(line, flush=True)
+        return
     if drain_progress(line):
         return
     backend = {'ansible-playbook', 'apt-package-metadata', 'release-artifacts',
@@ -414,6 +421,7 @@ def run_git(request, token, *, installed_source=None):
     match = re.fullmatch(r'git:(apply|stop|resume|recover):([0-9a-f]{40}):([0-9a-f]{40}):([1-9][0-9]{0,19})', request)
     require(os.geteuid() == 0 and match is not None, 'git-argument-contract')
     action, installed, config_sha, run_id = match.groups()
+    owner_started = time.monotonic()
     observe_failure_state(phase=action, run=run_id, config=config_sha)
     progress('PREFLIGHT', installed)
     require(installed_source is None or action == 'recover', 'recovery-bootstrap-route-only')
@@ -524,6 +532,9 @@ def run_git(request, token, *, installed_source=None):
                 argv += ['--continue-install-recovery']
                 target, verified_receipt = retained['desiredRevision'], retained['gitConfigReceipt']
         observe_target_mutation()
+        if action == 'apply':
+            elapsed_ms = int((time.monotonic() - owner_started) * 1000)
+            print(f'RELAY_APPLY_TIMING=owner_run={run_id};phase=owner-preparation;wall_ms={elapsed_ms}', flush=True)
         public_primitive(argv, env=clean_environment())
         progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)

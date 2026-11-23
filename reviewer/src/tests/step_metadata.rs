@@ -305,6 +305,7 @@ async fn historical_durable_review_requires_explicit_reconciliation_before_ancho
         store: Arc::new(Mutex::new(store)),
         github: github::Github::mock_api(mock_api(state.clone()).await),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: Default::default(),
     };
     assert_eq!(
@@ -368,6 +369,7 @@ async fn historical_anchor_without_exact_title_only_upgrades_complete_unchanged_
             store: Arc::new(Mutex::new(store)),
             github: github::Github::mock_api(mock_api(state.clone()).await),
             trusted_client_ca: Arc::new(Vec::new()),
+            maintenance: maintenance::Maintenance::default(),
             observed_arguments: Default::default(),
         };
         step_sync::prepare(&app.target(&args).unwrap(), &operation, &args)
