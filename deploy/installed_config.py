@@ -9,6 +9,10 @@ import ssl
 import stat
 import sys
 
+if __name__ == '__main__':
+    # The operation-begin checker can run directly from the installed tree.
+    sys.dont_write_bytecode = True
+
 from config import loads, deployment_repository
 
 

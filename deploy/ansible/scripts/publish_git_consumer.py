@@ -420,6 +420,7 @@ def main():
             # Both Ansible and same-operation recovery invoke this script from
             # the protected complete reviewed source tree, never a loose copy.
             import importlib.util
+            sys.dont_write_bytecode = True
             spec = importlib.util.spec_from_file_location('relay_publication_failure_reporter',
                 Path(__file__).resolve().parents[2] / 'lifecycle.py')
             reporter = importlib.util.module_from_spec(spec)

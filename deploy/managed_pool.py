@@ -718,6 +718,8 @@ def preflight(payload):
 
 
 if __name__ == '__main__':
+    # Installed reconciliation imports siblings from the exact reviewed tree.
+    sys.dont_write_bytecode = True
     try:
         if sys.argv[1:] == ['--preflight']:
             preflight(json.loads(sys.stdin.read(1048577)))

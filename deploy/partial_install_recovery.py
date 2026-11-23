@@ -430,7 +430,7 @@ def _run(args, root, identity, *, guard_factory=None):
             final_command = ('import json,sys;sys.path.insert(0,sys.argv[1]);import partial_install_recovery as p;'
                 'v=json.load(sys.stdin);print(json.dumps(p.admission(**v)))')
             def admitted(command):
-                return preparation.execute(['/usr/bin/python3', '-I', '-c', final_command, preparation.source + '/deploy'],
+                return preparation.execute(['/usr/bin/python3', '-I', '-B', '-c', final_command, preparation.source + '/deploy'],
                     payload={'config': config, 'source': preparation.source, 'lease': preparation.lease_path,
                              'operation': binding['operationId'], 'command': command})
             publisher = preparation.source + '/deploy/ansible/scripts/publish_git_consumer.py'
@@ -482,7 +482,7 @@ def _run(args, root, identity, *, guard_factory=None):
             finish = ('import json,sys;sys.path.insert(0,sys.argv[1]);import bounded_recovery as b;'
                 'p=json.load(sys.stdin);probe=b.fixed_probe(p["config"],p["binding"],p["source"],p["lease"],p["desiredDigest"],controller_revision=p["controllerRevision"]);'
                 'print(json.dumps(b.finalize(p["config"],p["binding"],p["proof"],admission_probe=probe)))')
-            preparation.execute(['/usr/bin/python3', '-I', '-c', finish, preparation.source + '/deploy'],
+            preparation.execute(['/usr/bin/python3', '-I', '-B', '-c', finish, preparation.source + '/deploy'],
                 payload={'config': config, 'binding': binding, 'controllerRevision': identity['revision'],
                     'proof': receipt, 'source': preparation.source,
                     'lease': preparation.lease_path, 'desiredDigest': receipt['desiredDigest']})

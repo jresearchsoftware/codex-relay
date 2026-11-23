@@ -41,11 +41,10 @@ def recipe_digest(source_root):
 
 
 # Frozen against the reviewed recipe surface, not an observed installation.
-# Task 281 changes the public diagnostics of the two installed lifecycle
-# wrappers. The owned task, module, path, mode and identity catalogue is
-# unchanged. Every Ansible script remains part of this fingerprint, including
-# pre-install read helpers.
-RECIPE_SHA256 = '71de5b6c3920aa3feacad07d0710093c7a20e35b8b7bf4ce705cbc0d9718e028'
+# Task 289 suppresses Python bytecode writes in the Reviewer restart helper
+# and the consumer publication failure reporter. The owned task, module,
+# path, mode and identity catalogue is unchanged.
+RECIPE_SHA256 = '885fd46806001e136c15a700ebb6686dd6fd11e131b5ad718539aada15e7373e'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",
