@@ -332,7 +332,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
   async function noPredispatchResource(e) {
     return journal && !await journal.get(e.runId, e.repository) && checkoutAbsent && await checkoutAbsent(e);
   }
-  async function currentInventory(task = null, slot = null, resourceOnly = false) {
+  async function currentInventory({ task, slot, resourceOnly, requireTerminalOutcome }) {
     const active = []; const unknown = [];
     const rows = store.scan ? await store.scan()
       : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
@@ -438,8 +438,9 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
             && (!record.prIntent || positive(record.prNumber)) && record.handoffComplete !== false;
           // Maintenance can tolerate missing Outcome evidence once the
           // operation is safely complete. Conflicting or malformed evidence
-          // still blocks, and Task continuation requires the exact receipt.
-          const outcomeSafe = record.outcome == null && task === null || terminalAdmissionOutcome(record);
+          // still blocks. Task continuation and configuration replacement
+          // retain their terminal result requirement.
+          const outcomeSafe = (!requireTerminalOutcome && record.outcome == null) || terminalAdmissionOutcome(record);
           if (!containedChild || !safeEffects || !outcomeSafe) unknown.push(e);
           continue;
         }
@@ -466,8 +467,8 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       state: active.length ? 'active' : 'unknown' } : undefined;
     return { active: runIds(active), unknown: runIds(unknown), pending, ...(slotConflict ? { slotConflict } : {}) };
   }
-  async function inventory(task = null, slot = null, resourceOnly = false) {
-    const current = await currentInventory(task, slot, resourceOnly);
+  async function inventory({ task = null, slot = null, resourceOnly = false, requireTerminalOutcome = task !== null } = {}) {
+    const current = await currentInventory({ task, slot, resourceOnly, requireTerminalOutcome });
     if (!supplementalInventory) return { ...current,
       unknown: [...new Set(current.unknown)].sort((a, b) => a - b) };
     const supplemental = await supplementalInventory({ task, slot, resourceOnly });
@@ -486,13 +487,13 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     async assertOpen() { if ((await read()).phase !== 'open') fail('ADMISSION_QUIESCED'); },
     async assertTaskComplete(task) {
       if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
-      const pending = await inventory(task);
+      const pending = await inventory({ task });
       if (pending.active.length || pending.unknown.length) throw Object.assign(new Error('PRIOR_EXECUTION_UNRESOLVED'),
         { code: 'PRIOR_EXECUTION_UNRESOLVED', details: { task, ...pending } });
     },
     async assertSlotComplete(slot) {
       if (!/^[a-z][a-z0-9-]{0,31}$/.test(slot ?? '')) fail('EXECUTION_SLOT_INVALID');
-      const pending = await inventory(null, slot, true);
+      const pending = await inventory({ slot, resourceOnly: true });
       if (pending.active.length || pending.unknown.length) throw Object.assign(new Error('EXECUTION_SLOT_UNAVAILABLE'),
         { code: 'EXECUTION_SLOT_UNAVAILABLE', details: { resource: slot, ...pending } });
     },
@@ -519,7 +520,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       // active controllers may finish during the later bounded drain. Unknown
       // execution and pending external effects remain blockers; an absent old
       // manual Outcome does not reserve an execution resource or publication.
-      const pending = await inventory();
+      const pending = await inventory({ requireTerminalOutcome: consumerChange });
       const active = [...new Set(pending.active)].sort((a, b) => a - b);
       const unknown = [...new Set(pending.unknown)].sort((a, b) => a - b);
       return { currentDigest: state.consumerDigest, desiredDigest, consumerChange,
@@ -539,7 +540,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const state = bound(await read(), operationId);
       if (!exactSha(target) || state.target !== target) fail('ADMISSION_TARGET_MISMATCH');
       if (!['drained', 'applying'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
-      const pending = await inventory();
+      const pending = await inventory({ requireTerminalOutcome: true });
       if (pending.active.length || pending.unknown.length) fail('ADMISSION_NOT_DRAINED');
       return { operationId, target, previousDigest: state.consumerDigest };
     },
@@ -548,7 +549,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
       const state = bound(await read({ previousDigest }), operationId);
       if (!exactSha(target) || state.target !== target) fail('ADMISSION_TARGET_MISMATCH');
       if (!['drained', 'applying'].includes(state.phase)) fail('ADMISSION_PHASE_INVALID');
-      const pending = await inventory();
+      const pending = await inventory({ requireTerminalOutcome: true });
       if (pending.active.length || pending.unknown.length) fail('ADMISSION_NOT_DRAINED');
       // The caller holds the existing Writer mutex continuously from the old
       // precheck through consumer publication. Attempts and journals stay intact.

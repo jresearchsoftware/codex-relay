@@ -588,8 +588,8 @@ assert that proof. Earlier attempts without `controllerLifecycle` require the
 same existing terminal journal evidence. For already recorded controller
 completion with known containment and resolved effects, a missing Outcome
 alone does not block a lifecycle drain. Exact Outcome proof still applies to
-Task continuation. Missing, mismatched or unknown execution and ambiguous
-publication fail closed.
+Task continuation and consumer configuration replacement. Missing, mismatched
+or unknown execution and ambiguous publication fail closed.
 
 Drain polls bounded snapshots and releases the Writer lock between snapshots,
 allowing admitted controllers to finish. Each snapshot allows

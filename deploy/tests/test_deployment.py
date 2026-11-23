@@ -243,7 +243,9 @@ class EntrypointTests(unittest.TestCase):
                             ignore=shutil.ignore_patterns('__pycache__', 'target', '.pytest_cache'))
         (cls.product / 'deploy/managed_pool_transport.py').write_text(
             'def preflight_pool(*args, **kwargs): return "MANAGED_POOL_PREFLIGHT=PASS"\n'
-            'def reconcile_pool(*args, **kwargs): return \'MANAGED_POOL_RESULT={"capacity":1}\'\n')
+            'def reconcile_pool(*args, **kwargs): return \'MANAGED_POOL_RESULT={"capacity":1}\'\n'
+            'def maintain_pool(target, key, config, operation, action, guard, **options):\n'
+            '    return dict.fromkeys(["paused", "stopped", "preserved", "ready", "busy"], [])\n')
         # This fixture records every target command through its Ansible stub.
         # Running the suite as root on Debian must not select the real local
         # target adapter (or inspect/mutate the test runner's host).
@@ -288,6 +290,8 @@ elif '--hold' in sys.argv[-1]:
     print('BOOTSTRAP_GUARD_READY', flush=True)
     sys.stdin.read()
     if Path({str(cls.base / 'guard-fail')!r}).exists(): sys.exit(1)
+elif sys.argv[-1].startswith('/usr/bin/systemctl show '):
+    print('inactive')
 elif '/relay-admission' in sys.argv[-1]:
     with Path({str(cls.base / 'admission-calls')!r}).open('a') as stream:
         stream.write(sys.argv[-1]+'\\n')
