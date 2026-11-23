@@ -2069,6 +2069,8 @@ async fn v4_unsafe_closing_links_fail_before_approval_and_reservation() {
     for defect in [
         "keep-open",
         "invalid-policy",
+        "close-on-final-result",
+        "close-on-condition",
         "hold",
         "remaining-work",
         "foreign",
@@ -2076,14 +2078,19 @@ async fn v4_unsafe_closing_links_fail_before_approval_and_reservation() {
     ] {
         let state = source_pr_state(false);
         let mut charter = CHARTER.to_string();
-        if defect == "invalid-policy" {
+        let invalid_policy = match defect {
+            "invalid-policy" => Some("invalid"),
+            "close-on-final-result" | "close-on-condition" => Some(defect),
+            _ => None,
+        };
+        if let Some(policy) = invalid_policy {
             charter = charter.replace(
                 "Issue closure policy: keep-open",
-                "Issue closure policy: invalid",
+                &format!("Issue closure policy: {policy}"),
             );
             state.issue.lock().unwrap().as_mut().unwrap()["body"] = json!(charter);
         }
-        if !matches!(defect, "keep-open" | "invalid-policy") {
+        if defect != "keep-open" && invalid_policy.is_none() {
             let mut decision = decision_v4();
             if defect == "hold" {
                 decision["amendments"]["continuation"] = json!({"hold":true,"next":null});

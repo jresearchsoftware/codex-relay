@@ -1,10 +1,46 @@
 # Relay Skill and Shared Governance compatibility
 
-Relay **10.0.0** is the source candidate for Task #273. Its native dependency
-floor is **`>=12.1.0`** and the first-party root independently selects exact
-Shared **12.1.0**. Standalone and publisher closure evidence include the same
-frozen Shared distribution. Native product reads the consumer lock. Each
-consumer retains its own policy and compatibility review.
+Task #273 prepared Relay **10.0.0** with a native dependency floor of
+**`>=12.1.0`** and an exact **12.1.0** standalone and publisher snapshot.
+The first-party development root selects **12.5.0** in Task #295.
+Native product guidance reads the consumer lock. Each consumer retains its own
+policy and compatibility review.
+
+## Task 295: Shared 12.1.0 through 12.5.0
+
+The admitted baseline is the independently reviewed [PR #291](https://github.com/jresearchsoftware/codex-relay/pull/291)
+integration `3337e74b4a54846122eac9dc2111781b8a1056a7`, with Shared 12.1.0
+source `e4b5b738ae0918014dd06b5616fe37a5dcb93290` and distribution
+`8dfe533015339e560ba923bb58961595b9e544f3`. See the [selected identities](vibevm.md#selected-immutable-identities)
+and [Relay bindings](relay-guidance-ownership.md) for the candidate.
+
+| Shared change | Relay scenario and disposition |
+| --- | --- |
+| 12.2.0 · RA-007, TH-001, ChatGPT base | A bare foreign PR in Relay ChatGPT gets ownership resolution and a brief stop before diff or check reads. An explicitly requested external comparison or contribution stays within its requested scope. A foreign lifecycle request gets handed to that project's context. |
+| 12.2.0 · PV-004 | A possible package impact merits an advisory estimate in ordinary planning. Classify the actual result and explain any changed estimate in the existing assessment. Work proceeds if no forecast was recorded. |
+| 12.3.0 · PC-014, RA-006, IR-009 | A workflow producer qualifies its generated workflow and the distribution system owns propagation under its contract. Relay still validates the identity and authority it promises. A timeout on a protected write needs uncertain-effect reconciliation under the owning contract. The temporary local duplicate is removed and runtime audit #283 retains its scope. |
+| 12.4.0 · PC-009, RA-006, IR-009/016 | A prescribed control with a disputed premise calls for comparing the existing path, smallest adequate correction and proposed design when the difference matters. Resolve consequential adjacent assumptions and coupled paths in the same assessment or rereview. Existing optional methods and native reviewer identity apply. |
+| 12.4.1 · Onboarding guide | A chat can start from an Outcome and lead to a Decision or later Step. Use the existing authority and records for any resulting action. |
+| 12.4.2 · GH-005/011, IR-007/008 | Required CI remains required. An idle unsolicited suite adds no wait. Inspect an observed deliberately enabled optional-check failure for credible defects or missing required proof. State any evidence gap and its concrete impact. |
+| 12.5.0 · TH-026 | Existing and new names pair by meaning. An intermediate PR stays neutral. A completing PR or authorized no-PR result closes only at whole-Task completion. A condition-based Task closes after verified completion and acceptance. An authorized non-completion disposition preserves the actual work and unmet conditions. |
+
+Package impact is **NONE** for Relay 10.0.0. The selected native dependency
+satisfies the existing floor and both supported legacy closure literals retain
+their meaning. No product authoring source, shipped bytes or owned runtime
+interface needs to change. The standalone snapshot, publisher evidence, local
+registry package and native Skill projection retain their frozen bytes.
+Relay 10.0.0 requires no new publication for Task #295.
+
+Fresh Relay authoring still uses `close-authorized` or `keep-open`. Current
+JS/Rust/schema paths reject or fail safe on the new literals. [Proposal #294](https://github.com/jresearchsoftware/codex-relay/issues/294)
+would need its own product authority. Qualify any alias support across the
+applicable readers, schemas, authoring client and Skill before preferring it,
+and version and publish any changed product delivery through its release path.
+Retain historical and admitted metadata under the original binding.
+
+The complete Relay ChatGPT Instructions change. After accepted integration,
+apply the [live reconciliation procedure](../chatgpt/README.md#acceptance-and-owner-settings-handoff).
+Task #295 keeps #258 with its allocated receiving Task #234 and PR #293.
 
 ## Task 273: Shared 10.0.0 through 12.1.0
 
@@ -18,8 +54,8 @@ its incoming 11.0.0 proposal and preserves
 [Shared Task #110 / PR #111](https://github.com/jresearchsoftware/shared-governance/pull/111)
 and its [Relay adoption handoff](https://github.com/jresearchsoftware/shared-governance/blob/f8d77b16ab9e92b31ae9a9390acabd9be9e962a7/docs/task-110/step-1/relay-adoption-handoff.md).
 The exact 12.1.0 target and full payload identity are in the
-[native identity contract](vibevm.md#selected-immutable-identities). The frozen
-accepted baseline governs work and review until this candidate is integrated.
+[native identity contract at the Task #295 baseline](https://github.com/jresearchsoftware/codex-relay/blob/3337e74b4a54846122eac9dc2111781b8a1056a7/docs/vibevm.md#selected-immutable-identities).
+Task #273 used its own frozen accepted baseline during work and review.
 
 | Shared delta | Relay disposition |
 | --- | --- |

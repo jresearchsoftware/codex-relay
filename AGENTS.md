@@ -10,22 +10,22 @@ a change.
 
 ## Shared governance and Relay routing
 
-Relay explicitly adopts all eleven complete applicable Shared Governance **12.1.0**
-protocols, accepted source `e4b5b738ae0918014dd06b5616fe37a5dcb93290`,
-distribution `8dfe533015339e560ba923bb58961595b9e544f3`.
+Relay explicitly adopts all eleven complete applicable Shared Governance **12.5.0**
+protocols, accepted source `f51fd0ab22ff61fab48bd1e5af96918d77af1ec6`,
+distribution `e19ceeaa3ffe608fe078d37171ddd7cd5a940dda`.
 Read each complete topic when triggered; conditional loading excludes no clauses:
 
-- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
-- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
-- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
-- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
-- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
-- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
-- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
-- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
-- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow and protection decisions, including GH-014 for relevant optional settings choices.
-- [Small improvements](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/small-improvements.md): deferred capture, discovery and standing inclusion at the first suitable source-changing opportunity. Analysis-only work skips the scan.
-- [Human command interaction](vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/human-command-interaction.md): one self-contained next action and one coherent copyback when asking a person to run commands or perform administration.
+- [Context loading](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/context-loading.md): startup, complete relevant context and mutable refresh.
+- [Task handoff](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/task-handoff.md): Task execution, results, acceptance and continuation.
+- [Independent review](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/independent-review.md): substantive assessment, evidence, findings and rereview.
+- [Contract/decision maintenance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/contract-and-decision-maintenance.md): material operator changes, durable decisions and same-change guidance.
+- [Proportional controls](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/proportional-controls.md): controls, operator cost and existing proof.
+- [Requirement authority](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/requirement-authority.md): binding requirements versus engineering choices.
+- [Package versioning](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/package-versioning.md): Relay Skill/package release and dependency lifecycle.
+- [Producer self-adoption](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/self-adoption.md): Relay instruction, Skill and boot candidates.
+- [GitHub repository governance](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/github-repository-governance.md): workflow and protection decisions, including GH-014 for relevant optional settings choices.
+- [Small improvements](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/small-improvements.md): deferred capture, discovery and standing inclusion at the first suitable source-changing opportunity. Analysis-only work skips the scan.
+- [Human command interaction](vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/human-command-interaction.md): one self-contained next action and one coherent copyback when asking a person to run commands or perform administration.
 
 These are the single portable rule owners. The
 [Relay bindings](docs/relay-guidance-ownership.md) retain native authority,
@@ -49,10 +49,12 @@ they must not become a competing current Task contract. Native Change Requests
 retain their existing remediation authority.
 
 Apply Shared RA-007 to project context: this conversation acts for the declared
-Relay project scope. Access, common ownership, dependencies and external links do
-not transfer lifecycle authority. Cross-project reads and ordinary contribution
-proposals remain permitted within scope; controlling a separately governed
-project requires a compact handoff to its own project context, even when requested.
+Relay project scope. In ChatGPT, route a bare project link with no stated or
+established purpose before substantive inspection. For a foreign link, name
+both projects and stop there. Explicit cross-project reads, relevant external
+evidence and ordinary contribution proposals remain permitted within scope.
+Controlling a separately governed project requires a compact handoff to its own
+project context, even when requested.
 Unqualified Task/status/priority queries default to Relay. Preserve explicitly
 accepted multi-repository scope and already authorized local work.
 
@@ -73,7 +75,8 @@ Task #199; the old manual-executor labeling workaround is superseded.
 
 `Task N` is canonical GitHub Issue `#N`, not a separately allocated number.
 A Task/Issue defines the authorized goal, boundaries, and completion/closure
-intent. Under the bounded product closure transition, canonical Task producers
+intent. Shared TH-026 defines equivalent names for both closure modes. Qualified
+Relay tooling requires the existing spellings. Canonical Task producers
 must include exactly one explicit
 `Issue closure policy: keep-open` or `Issue closure policy: close-authorized`
 field in the live Issue body, using `close-authorized` only with owner authority.
@@ -83,11 +86,12 @@ closure metadata prevents automatic closure with a visible warning; it is not
 evidence of an owner-selected indefinite hold.
 Author concrete completion/closure conditions beside that single field through
 [Relay closure authoring](contracts/README.md#closure-policy-authoring), binding
-TH-002/003/026 to trusted v4 Decisions. Use `close-authorized` only when merge of the designated completing PR will
-complete all Task obligations; owner continuation verifies completion and native
-closing linkage before the guarded merge. Use `keep-open` with a non-closing
-reference when publication, Apply or another stated obligation remains after
-merge. Once that preauthorized condition and all other obligations are verified,
+TH-002/003/026 to trusted v4 Decisions. Use `close-authorized` for whole-Task
+completion on the designated final merge or through the authorized no-PR
+completion path. Before a guarded merge, owner continuation verifies completion
+and native closing linkage. Use `keep-open` with a stated condition for
+trusted continuation and a non-closing reference on any PR. Once that
+preauthorized condition and all other obligations are verified,
 trusted owner continuation closes without a policy-change Decision or another
 discretionary permission prompt. Preserve explicit holds and old admitted terms. A native CR cannot change Task-wide closure authority. Retained v3 keeps
 its original charter/Request rules; exact result acceptance and protected owner
@@ -351,6 +355,8 @@ retain required candidate checks and protected operations.
 
 Wait for required native CI, but leave reconstructible CI/status results in
 their native records instead of posting another PASS comment or Outcome update.
+Use GH-011 and IR-007/008 to trace requirements, assess completed optional-check
+failures and handle unsolicited App suites under the existing review.
 If CI fails and the next correction is clear, safe and in scope, correct it and
 rerun the relevant validation. Publish material evidence unavailable from those
 records, blockers, authority/boundary changes and required handoff information.

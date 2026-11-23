@@ -17,6 +17,24 @@ client setup and protected configuration remain separate decisions/actions.
 Use existing authorization where it covers an action; this procedure creates
 no additional approval gate or permission to mutate another project.
 
+## How owners and assistants discuss results
+
+In the relevant project's context, a working conversation often starts with a
+Codex Outcome, an independent review, a research report or a failed attempt.
+The owner and assistant examine the evidence, clarify uncertainties and weigh
+findings and alternatives. They may settle on acceptance, a correction, a Task
+Decision, an authorized next Step, further inquiry or no further work. Necessary
+Decisions, result links and handoffs are recorded in the project's existing
+canonical records.
+
+A common example is Outcome → discussion → Decision → authorized continuation
+→ later Outcome. A chat is a place to collaborate. It can cover several actions
+and artifacts, stay open for discussion after a result, or be followed by a
+fresh chat that starts with a later Outcome. Permission, scope, Task and Step
+identity, formal acceptance, publication and completion follow the project's
+accepted binding and its applicable [Task Handoff](../protocols/task-handoff.md)
+and [Independent Review](../protocols/independent-review.md) rules.
+
 ## 1. Discover the project and agree the intended scope
 
 <a id="ON-002"></a>

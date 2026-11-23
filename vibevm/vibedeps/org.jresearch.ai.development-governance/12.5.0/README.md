@@ -31,14 +31,17 @@ optional and separately authorized, preserving supported workflow exceptions.
 This is MAJOR against 11.0.0 because it adds mandatory operator work; see the
 [worked choices](vibevm/vibespecs/guides/onboarding-examples.md) and changelog.
 
-Version 7.0.0 changes the existing [TH-026 closure clause](vibevm/vibespecs/protocols/task-handoff.md#TH-026):
-`close-authorized` closes on merge of the designated completing PR; `keep-open`
-uses a non-closing reference and closes after its stated condition is verified.
-The one existing Issue field controls timing, with no repeated permission prompt
-or second field. Publication deliverables use `keep-open` until the exact accepted
-package is published. This is MAJOR against 6.0.0's separate post-completion
-closure and policy-release path. Existing/admitted authority and immutable releases
-retain their meaning; consumer runtime adoption/qualification remains separate.
+Version 12.5.0 adds equally valid spellings to the single
+[`Issue closure policy` field](vibevm/vibespecs/protocols/task-handoff.md#TH-026).
+`close-on-final-result` or `close-authorized` closes at the accepted result that
+completes the whole Task, via the designated completing PR's default-branch merge
+or the existing authorized no-PR path. `close-on-condition` or `keep-open` uses
+a non-closing reference and trusted continuation after the stated condition and
+required acceptance are verified. Package publication uses the condition-based
+mode and verifies the exact accepted version/revision. Consumers may prefer new
+spellings where their effective guidance and tools support them. Existing spellings,
+historical authority, ordinary owner-authorized dispositions and supported
+workflows remain valid, making this a MINOR change against 12.4.2.
 See the [closure examples](vibevm/vibespecs/guides/onboarding-examples.md#9-single-field-task-closure)
 and changelog for operator impact and migration.
 

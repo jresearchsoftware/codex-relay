@@ -374,7 +374,7 @@ class CommittedFlowTests(unittest.TestCase):
     def test_small_improvements_routes_cannot_use_unselected_or_bundled_protocols(self):
         policy = (QUALIFICATION.SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
         for name, before, after in (
-                ("AGENTS.md", policy, policy.replace("/12.1.0/", "/7.0.1/")),
+                ("AGENTS.md", policy, policy.replace(f"/{QUALIFICATION.VERSION}/", "/12.1.0/")),
                 ("AGENTS.md", "Relay explicitly adopts all eleven", "Relay merely installs all eleven"),
                 (QUALIFICATION.LOCAL_GOVERNANCE, "../" + policy,
                  "../guidance/artifacts/standalone/codex-relay/references/shared/small-improvements.md"),

@@ -21,7 +21,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py"
+GENERATOR = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/tools/chatgpt/project.py"
 SPEC = importlib.util.spec_from_file_location("shared_chatgpt_project", GENERATOR)
 PROJECTOR = importlib.util.module_from_spec(SPEC)
 # The installed slot is verified as a complete immutable file set.
@@ -329,7 +329,7 @@ class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
             text = (ROOT / "chatgpt" / name).read_text()
             with self.subTest(surface=name):
                 for phrase in (
-                    "docs/relay-guidance-ownership.md", "locked Shared 12.1.0",
+                    "docs/relay-guidance-ownership.md", "locked Shared 12.5.0",
                     "repo:jresearchsoftware/codex-relay is:issue is:open label:small-improvement",
                     "first source Step after analysis, relevant CR or newly commencing PR",
                     "Include all eligible same-repository candidates, including unrelated topics",
@@ -339,7 +339,7 @@ class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
                 ):
                     self.assertIn(phrase, text)
         binding = (ROOT / "docs/relay-guidance-ownership.md").read_text()
-        self.assertIn("/12.1.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
+        self.assertIn("/12.5.0/vibevm/vibespecs/protocols/small-improvements.md", binding)
         self.assertIn("Include both bounded fixes", binding)
         self.assertIn("record the protected candidate's ordinary authorized route", binding)
 
@@ -374,12 +374,24 @@ class SmallImprovementPlanningGuidanceTests(unittest.TestCase):
             self.assertIn("Use the Skill's execution-capability distinction and accepted shell routing",
                           (ROOT / "chatgpt" / name).read_text())
 
-    def test_current_bootstrap_preserves_closure_and_project_context_boundaries(self):
+    def test_current_bootstrap_routes_bare_links_before_substantive_reads(self):
         text = (ROOT / "chatgpt/instructions.md").read_text()
-        for clause in ("Even explicit requests cannot transfer context", "ordinary Issue proposals and contribution PRs",
-                       "A foreign Outcome/PR link is evidence", "Only genuinely completing close-authorized PRs",
-                       "keep-open stays neutral until its adjacent preauthorized condition is verified",
-                       "without policy conversion or renewed permission", "Preserve old admitted terms/holds"):
+        for clause in ("For a bare project link without a stated or established purpose",
+                       "resolve ownership from the URL or minimal lookup before substantive reads",
+                       "If foreign, briefly name both projects, say you will stop here and stop",
+                       "ordinary Issue proposals and contribution PRs",
+                       "For explicit foreign control requests, hand off the canonical Issue/PR"):
+            self.assertIn(clause, text)
+
+    def test_current_bootstrap_keeps_qualified_closure_and_existing_check_obligations(self):
+        text = (ROOT / "chatgpt/instructions.md").read_text()
+        for clause in ("Trace required CI and optional or unsolicited suites through GH-011 and IR-007/008",
+                       "Assess actual optional failures",
+                       "Author with close-authorized or keep-open while Relay requires them",
+                       "Only genuinely completing close-authorized PRs get verified closing linkage",
+                       "keep-open PRs stay neutral",
+                       "on verified conditions and acceptance without policy conversion or renewed permission",
+                       "Preserve old admitted terms/holds"):
             self.assertIn(clause, text)
         self.assertLess(len(text), json.loads((ROOT / "chatgpt/binding.json").read_text())["character_budget"])
 

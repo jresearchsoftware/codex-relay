@@ -1,5 +1,67 @@
 # Development Governance changelog
 
+## 12.5.0
+
+MINOR. [TH-026](vibevm/vibespecs/protocols/task-handoff.md#TH-026) accepts
+`close-on-final-result` alongside `close-authorized` and `close-on-condition`
+alongside `keep-open` in the existing single closure-policy field. Each pair
+has identical semantics. Supported legacy authoring and retained authority,
+whole-Task completion on the designated merge or authorized no-PR path, and
+verified condition-based continuation are preserved. The guidance clarifies
+ordinary authorized Issue disposition and allows each compatible consumer to
+choose its authoring preference without adding operator work or a gate.
+
+## 12.4.2
+
+PATCH. [GH-005 and GH-011](vibevm/vibespecs/protocols/github-repository-governance.md#GH-011)
+clarify which checks govern merge or acceptance and how to identify intentionally
+enabled optional checks and unsolicited App suites. [IR-007 and IR-008](vibevm/vibespecs/protocols/independent-review.md#IR-007)
+clarify how to assess completed failures in existing exact-result review.
+Existing validation obligations, native enforcement, review identity and
+event-directed evidence reuse apply without an additional gate or operator step.
+
+## 12.4.1
+
+PATCH. The [onboarding guide](vibevm/vibespecs/guides/onboarding.md#how-owners-and-assistants-discuss-results)
+describes how owners and assistants already discuss results and choose what to do
+next. Existing project bindings govern authority and lifecycle actions.
+
+## 12.4.0
+
+MINOR. [PC-009](vibevm/vibespecs/protocols/proportional-controls.md#PC-009),
+RA-006 and IR-009 clarify how to challenge material design premises and compare
+sufficient alternatives in existing authoring and review. IR-016 clarifies
+how to follow adjacent assumptions and coupled paths when the owner identifies
+an unsupported premise. Existing obligation, evidence and optional-change
+distinctions apply. The guidance adds no operator action or approval gate.
+
+## 12.3.0
+
+MINOR. [PC-014](vibevm/vibespecs/protocols/proportional-controls.md#PC-014)
+places each cross-system guarantee at its owning boundary. It covers interface
+validation, observed results and justified exceptions. RA-006 and IR-009 route
+Task authoring and independent assessment to the same criterion. Existing
+protected obligations, supported workflows and adoption boundaries still apply.
+The change adds no mandatory operator action or lifecycle gate.
+
+## 12.2.0
+
+MINOR. [RA-007](vibevm/vibespecs/protocols/requirement-authority.md#RA-007)
+defines the first response to a standalone, unqualified project link in a bound
+ChatGPT conversation. Resolve ownership with minimal lookup, and for a foreign
+link without cross-project intent, warn and stop before substantive inspection.
+TH-001 and the ChatGPT bootstrap follow that routing. The rule preserves
+requested external reads and contributions, relevant local dependencies,
+declared multi-repository scope and the receiving-project handoff for foreign
+lifecycle control.
+
+[PV-004](vibevm/vibespecs/protocols/package-versioning.md#PV-004) adds an advisory
+package-impact forecast in existing owner planning discussion and explains how
+to account for differences in the existing independent assessment. These
+additions preserve supported workflows and require no new operator action,
+launch approval, Task field or release gate. Consumers own their adoption
+and live settings.
+
 ## 12.1.0
 
 MINOR: adds the separately adopted [Human Command Interaction topic](vibevm/vibespecs/protocols/human-command-interaction.md#HC-001)

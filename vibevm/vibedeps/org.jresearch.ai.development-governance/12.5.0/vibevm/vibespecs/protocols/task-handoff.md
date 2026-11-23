@@ -14,9 +14,10 @@ This protocol works manually; it grants no execution, review, merge, release,
 installation, consumer-adoption or closure permission.
 Before routing a result or controlling continuation, resolve its ownership against
 the acting project's accepted binding under [RA-007](requirement-authority.md#RA-007).
-A bare foreign Outcome/PR link is evidence or discussion, not an automatic review,
-CR or continuation trigger; hand foreign control to the receiving project. Local
-results retain the existing handoff and authorized execution routes.
+For a bare Outcome/PR link in ChatGPT, use RA-007's initial link routing before
+substantive inspection. Foreign result links do not trigger review, CR or
+continuation. Hand explicit foreign lifecycle requests to the receiving project.
+Local results retain the existing handoff and authorized execution routes.
 
 An Issue alone does not adopt this workflow. Standalone/manual work outside an
 adopted Task Handoff binding needs no synthetic Step numbering or Outcome protocol;
@@ -538,19 +539,34 @@ treating an intermediate publication or command submission as its completion. A 
 a cleared blocker does not establish Task completion, and accepted source does
 not prove deployment or release. Apply [RA-006](requirement-authority.md#RA-006) before admitting continuation;
 reconcile apparent self-expansion through existing Decisions. Reassess concrete
-completion conditions, remaining work and holds at meaningful transitions; do
-not close with known remaining work or copy a stale disposition indefinitely.
+completion conditions, remaining work and holds at meaningful transitions. Keep
+successful completion pending while required work remains, and keep its
+disposition current.
 
-For a binding using `Issue closure policy`, retain that one existing attribute:
-`Issue closure policy: close-authorized` or `Issue closure policy: keep-open`.
-It selects **when** the Issue closes; neither value asks the owner to authorize
-the same completion again. Add no second machine-readable closure field or
-closure-type system. Non-GitHub/no-PR work uses its supported project binding.
+For a binding using `Issue closure policy`, keep that single field and select
+one value. The spellings in each row are equally valid and have identical
+meaning under this contract:
 
-`close-authorized` means closure on successful merge of the designated completing
-PR. On GitHub, use `Closes #N` or its supported native closing link so GitHub
-closes the Issue when that PR merges to the default branch. Merely closing an
-unmerged or abandoned PR does not close the Task. Designate a closing PR only
+| New spelling | Existing spelling | Successful Task completion |
+| --- | --- | --- |
+| `close-on-final-result` | `close-authorized` | Close when the accepted final result completes the whole Task. |
+| `close-on-condition` | `keep-open` | Close by owner-facing continuation after verification of the Task's stated condition and required acceptance. |
+
+Projects may prefer the new spellings when their accepted shared version,
+effective authoring guidance and applicable client/Skill and runtime support
+them together. Continue authoring with the existing spellings in combinations
+that currently require them. A runtime upgrade or Apply makes its supported
+inputs available there but leaves a consumer's pins, Skill and effective
+Instructions to that consumer's own adoption. Any retirement from this shared
+contract requires a separate accepted change informed by actual consumer use.
+Add no second machine-readable closure field or closure type. Non-GitHub/no-PR
+work uses its supported project binding.
+
+`close-on-final-result` (equivalently `close-authorized`) closes on successful
+merge of the designated completing PR. On GitHub, use `Closes #N` or its
+supported native closing link so GitHub closes the Issue when that PR merges
+to the default branch. Closing an unmerged or abandoned PR leaves the Issue open.
+Designate a closing PR only
 when the actual work has reached the accepted completion boundary and that merge
 will complete the Task. Required independent exact-head acceptance, checks and
 protected merge authority still apply. With multiple PRs, only the PR that
@@ -558,35 +574,48 @@ genuinely completes all Task work may carry the closing link; intermediate PRs
 use non-closing references. Where there is no result PR, use the existing
 owner-authorized completion path without fabricating a PR.
 
-`keep-open` means no closure on merge, followed by closure when the explicitly
-stated condition is verified. Use `Related to #N` or another non-closing PR
-reference. State the actual remaining obligation and sufficient evidence in
-ordinary human-readable text adjacent to the one closure field, in the charter
+`close-on-condition` (equivalently `keep-open`) keeps merge non-closing.
+Use `Related to #N` or another non-closing PR reference. Close through trusted
+continuation when the explicitly stated condition is verified. State the actual
+remaining obligation and sufficient evidence in ordinary human-readable text
+adjacent to the one closure field, in the charter
 or applicable trusted Decision. Once that preauthorized condition is satisfied,
 required acceptance/integration is complete and no actual Task work or protected
 hold remains, the owner-facing continuation closes the Issue through the
 supported trusted mechanism. Record the verification in the existing Task
-chronology; no new owner-choice prompt, policy-change Decision or conversion to
-`close-authorized` is required merely to carry out that permission. A genuine
+chronology without another owner-choice prompt, policy-change Decision or change
+to the closure-policy value merely to carry out that permission. A genuine
 later change to scope, conditions or authority still uses the existing trusted
 owner Decision process. Executors, CRs and reviewers cannot silently waive it.
 Report missing capability or authority without bypassing protected boundaries.
 
-Choose `keep-open` with the publication condition for a producer Task whose
-deliverable includes publishing the accepted package. Source acceptance and PR
-merge do not prove successful publication of the exact accepted revision/version;
-failed, delayed or unknown publication leaves that obligation outstanding.
+Choose the condition-based mode with the publication condition for a producer
+Task whose deliverable includes publishing the accepted package. Source
+acceptance and PR merge do not prove successful publication of the exact
+accepted revision/version. Failed, delayed or unknown publication leaves
+that obligation outstanding.
 Likewise, an owner-run Apply condition requires the actual successful run,
 intended revision/target and material warning disposition. A failed or unknown
 Apply does not satisfy it. Later consumer adoption is separate unless actually
 included in the Task. Unrelated repository PRs and optional future usage or
 observation do not invent completion holds.
 
+The owner may also use the project's supported Issue closure and status-reason
+path to record completed/fixed after actual completion is established, or to
+dispose of an Issue as duplicate/superseded, cancelled or not planned under
+current owner authority. Preserve outstanding protected or admitted work and
+use the existing Decision path for a substantive authority change when it
+applies. For a non-completion disposition, record a concise reason and link
+the duplicate or replacement when known. Preserve the actual work and condition
+status, without a fabricated PR, Step or Outcome. Recording an ordinary authorized
+disposition needs no extra closure-policy value or Decision. Executors and
+reviewers gain no termination authority from this path.
+
 Missing, invalid or conflicting metadata must fail safe against automatic
 closure. Reconcile genuinely missing intent through existing Task authority at
 the relevant authoring/review/continuation point. A protective refusal to close
-is not evidence that the owner selected `keep-open`, and must not become a
-perpetual procedural hold, invented condition or second approval ritual. Reuse
+is not evidence that the owner selected the condition-based mode, and must not
+become a perpetual procedural hold, invented condition or second approval ritual. Reuse
 clear existing permission; obtain an actual missing owner decision only when
 needed. This adds no scheduled review duty, universal form or checker.
 

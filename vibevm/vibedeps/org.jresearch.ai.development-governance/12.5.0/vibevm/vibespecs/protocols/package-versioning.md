@@ -41,10 +41,25 @@ addition, numerical label, or inability to inspect unknown private policies.
 <a id="PV-004"></a>
 **PV-004 — Disclose impact and retain history.**
 
+When work may affect a versioned package, a brief provisional forecast is
+recommended in the existing owner discussion before implementation handoff. Estimate
+NONE, PATCH, MINOR or MAJOR from the likely consumer-contract effect under
+PV-002. Give one short compatibility rationale and note material uncertainty.
+NONE means no package version change is expected. A category is advisory and
+reserves no version number. Use the ordinary exchange without adding a Task
+field, approval or wait, and proceed with already authorized work without
+pausing to backfill a forecast.
+
 Explain the intended category and mandatory-work impact in the existing PR or
 release decision; multiple edits require at least the highest-impact category.
-Apply proportional controls to new release gates. Do not disguise mandatory
-operator controls as fixes. Versioned README/payload documentation describes
+At ordinary independent review, classify the complete result under PV-002–004.
+If the category differs from a prior forecast in either direction, explain the
+difference and its cause in the owner-facing assessment. A revised estimate
+alone does not block acceptance, require a CR or change any review condition.
+Reconcile the numeric version against the then-current accepted baseline at
+integration under [PV-009](#PV-009). Apply proportional controls to new release
+gates. Do not disguise mandatory operator controls as fixes. Versioned
+README/payload documentation describes
 stable version-scoped facts and dated provenance; current approval, publication
 and task status lives in its authoritative Issue/PR, workflow, tags or registry.
 Repair misleading frozen documentation in a later version, retaining history.

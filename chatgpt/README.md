@@ -1,7 +1,7 @@
 # Relay's ChatGPT Project Instructions
 
-This directory is Relay's consumer binding for the accepted Shared Governance
-12.1.0 generator. The overlay is Relay repository guidance. The separate
+This directory is Relay's consumer binding for the selected Shared Governance
+12.5.0 generator. The overlay is Relay repository guidance. The separate
 [Skill release contract](../docs/relay-guidance.md#version-and-provenance)
 owns changes to distributed product guidance. The [Task 101 Decision](https://github.com/jresearchsoftware/codex-relay/issues/101#issuecomment-6718773565)
 authorizes this integration. Candidate files do not govern their own execution
@@ -22,7 +22,7 @@ the generator nor duplicates the product bundle owned by Task 91.
 Use Python 3.11+ and Git only at maintenance time. Ordinary chats read accepted
 files through supported GitHub capabilities. No VibeVM binary, new registry,
 background service or per-message integrity check is required. Read the
-[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/README.md)
+[generic interface](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/tools/chatgpt/README.md)
 for input validation, exit codes, exact diffs and cache removal behavior.
 
 First establish the independently accepted exact source and authority through
@@ -31,7 +31,7 @@ the current Task/review and Git evidence. Freeze that source for the effort;
 from the repository root (replace both placeholders with verified values):
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py update \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/tools/chatgpt/project.py update \
   --repository . --binding chatgpt/binding.json \
   --accepted-sha <accepted-full-SHA> --authority-anchor <current-authority-URL>
 ```
@@ -60,6 +60,14 @@ selection with the frozen admitted Relay baseline
 [Task charter](https://github.com/jresearchsoftware/codex-relay/issues/273).
 The new local SI, GH and HC routes change complete Instructions. Follow the
 full-text post-integration Settings handoff below.
+
+Task #295 projects against independently accepted Relay
+`3337e74b4a54846122eac9dc2111781b8a1056a7` and the
+[Task charter](https://github.com/jresearchsoftware/codex-relay/issues/295).
+The selected Shared 12.5.0 base changes bare-link routing and the local
+instructions clarify check evidence and closure spelling. The complete output
+changes. Current live text is unconfirmed, so use the post-integration Settings
+handoff below.
 
 The first projection used accepted starting source
 `b9de15342525da0144edf18b457f7e640a9bf087` (Shared 7.0.0 adoption, PR 214),
@@ -117,7 +125,7 @@ Instructions text or selected Sources need owner action.
 For an owner-provided export, exact comparison is available without UI writes:
 
 ```sh
-python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/tools/chatgpt/project.py compare \
+python3 vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/tools/chatgpt/project.py compare \
   --repository . --binding chatgpt/binding.json --live-export /path/to/owner-export.md --live-format raw
 ```
 
@@ -139,7 +147,7 @@ are local implementation evidence, not independent acceptance or live-client pro
 
 The authored and generated Instructions route complete policy through the
 [Relay governance bindings](../docs/relay-guidance-ownership.md) and selected
-Shared 12.1.0 slot. In the scenario checks below, the already-authorized
+Shared 12.5.0 slot. In the scenario checks below, the already-authorized
 receiving work and its native trust boundaries remain in force.
 
 | Situation | Expected disposition |

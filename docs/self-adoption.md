@@ -2,14 +2,14 @@
 
 Relay authors and consumes its product Skill. Portable producer/candidate
 semantics belong to the complete adopted pinned
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md).
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/self-adoption.md).
 This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
 The first-party `org.jresearch.ai/codex-relay` **10.0.0** candidate uses the
 native export. Registry, slot, lock, boot index and projected native Skill travel
-together. Root [AGENTS](../AGENTS.md) adopts Shared **12.1.0**, independently
+together. Root [AGENTS](../AGENTS.md) adopts Shared **12.5.0**, independently
 pinned at the exact Git identity in [the identity contract](vibevm.md#selected-immutable-identities).
 The native product's `>=12.1.0` floor covers GH-014 and HC-001–003. Standalone
 and publisher evidence include exact 12.1.0. The
@@ -56,6 +56,12 @@ Its generated 10.0.0 package remains a candidate until independent acceptance
 and integration. Historical and admitted guidance stay at their selected
 revisions.
 
+Task #295 freezes the independently accepted PR #291 integration
+`3337e74b4a54846122eac9dc2111781b8a1056a7` with its Shared 12.1.0
+development lock before editing candidate routes. Shared 12.5.0 is the proposed
+development selection. The projected native Relay Skill still comes from the
+same 10.0.0 package and reads the selected Shared slot through the root lock.
+
 Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
@@ -89,7 +95,7 @@ another Skill projection or startup command.
 The single `build-relay-guidance.py` builder reads the pinned Shared 12.1.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
 disposable input adapter or unselected root slot. This retains the accepted
-builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph selects Shared 12.1.0.
+builder provenance mechanism while preserving frozen older registry payloads. The active root policy graph selects Shared 12.5.0.
 The verifier
 compares the complete standalone snapshot with its own accepted distribution
 and separately validates the root consumer lock/slot. Native install prunes retired active slots. Git and the frozen registry

@@ -18,7 +18,8 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "12.1.0"
+VERSION = "12.5.0"
+STANDALONE_SHARED_VERSION = "12.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
 SELF_VERSION = "10.0.0"
@@ -36,6 +37,8 @@ PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
                   ("package-versioning", "proportional-controls", "requirement-authority",
                    "task-handoff", "self-adoption", "github-repository-governance",
                    "independent-review", "contract-and-decision-maintenance", "context-loading"))
+ADOPTED_PROTOCOLS = PROTOCOLS + tuple("vibevm/vibespecs/protocols/" + name + ".md"
+                                     for name in ("small-improvements", "human-command-interaction"))
 GUIDES = tuple("vibevm/vibespecs/guides/" + name + ".md" for name in
                ("engineering-methods", "onboarding", "onboarding-examples"))
 HISTORICAL_PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
@@ -50,12 +53,18 @@ SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/IND
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
+DISTRIBUTION_REVISION = "e19ceeaa3ffe608fe078d37171ddd7cd5a940dda"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
-PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
-RECEIPT_HASH = "86d63eb311906dde6593e81c65a32274be3e31463e8b84268ba20759c43117f7"
-TREE_HASH = "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89"
+SOURCE_REVISION = "f51fd0ab22ff61fab48bd1e5af96918d77af1ec6"
+PAYLOAD_HASH = "4c0738f63d3169ea6ae460e0af0bc24e83218172d69e6e7cd54df92db121f854"
+RECEIPT_HASH = "86e75cb5e43e86c9528fca02cc75e4659eb2adaf0f864199b5927eb34b45270f"
+TREE_HASH = "sha256:57792a91e04ccf0e40e22e8778e10304d93a408f23376ae5627b23df2bfd9258"
+# Relay 10.0.0's published surface has its own immutable selection.
+STANDALONE_DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
+STANDALONE_SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
+STANDALONE_PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
+STANDALONE_RECEIPT_HASH = "86d63eb311906dde6593e81c65a32274be3e31463e8b84268ba20759c43117f7"
+STANDALONE_TREE_HASH = "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "7ee75b41d178fd639d3bc97521cf950a96915ba0bfae29269b564e9ea515df3a"
 NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
@@ -245,8 +254,10 @@ def check_small_improvements_adoption(root):
     _, human = managed(read_file(root, "AGENTS.md"))
     human = " ".join(human.decode().split())
     policy = (SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
-    require("Relay explicitly adopts all eleven complete applicable Shared Governance **12.1.0** protocols" in human
-            and "[Small improvements](" + policy + ")" in human,
+    require(f"Relay explicitly adopts all eleven complete applicable Shared Governance **{VERSION}** protocols" in human
+            and all(f"({(SLOT / name).as_posix()})" in human for name in ADOPTED_PROTOCOLS),
+            "Human-owned adoption must select all eleven complete installed Shared protocols")
+    require("[Small improvements](" + policy + ")" in human,
             "Human-owned adoption must select the complete installed Small Improvements protocol")
     boot = " ".join(read_file(root, BOOT / "90-user.md").decode().split())
     require("Small Improvements is adopted" in boot
@@ -323,6 +334,10 @@ def check_package(directory, *, standalone=False, historical=False):
     # Build/release evidence is a separate frozen delivery, never a policy fallback.
     version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
         VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH)
+    if standalone:
+        version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
+            STANDALONE_SHARED_VERSION, STANDALONE_SOURCE_REVISION, STANDALONE_PAYLOAD_HASH,
+            STANDALONE_RECEIPT_HASH, STANDALONE_TREE_HASH)
     if historical:
         require(not standalone, "Historical project evidence is not standalone delivery")
         version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
@@ -376,7 +391,8 @@ def check_package(directory, *, standalone=False, historical=False):
                         if url.path else name)
             require(resolved in materialized, "Missing or escaping passive reference: " + name)
     pointer = files[PACKAGE_BOOT].decode()
-    require(all("../protocols/" + Path(name).name in pointer for name in PROTOCOLS)
+    require(all("../protocols/" + Path(name).name in pointer
+                for name in (PROTOCOLS if historical else ADOPTED_PROTOCOLS))
             and "Unrelated tasks" in pointer and "explicitly adopted" in pointer,
             "Conditional full-procedure navigation is missing")
     return files
@@ -446,13 +462,12 @@ def check_first_party_registry(root, expected):
 
 def check_standalone_snapshot(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
-    require(metadata["shared_version"] == VERSION
-            and metadata["shared_source_revision"] == SOURCE_REVISION
-            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
-            and metadata["shared_distribution_tree_hash"] ==
-                TREE_HASH,
+    require(metadata["shared_version"] == STANDALONE_SHARED_VERSION
+            and metadata["shared_source_revision"] == STANDALONE_SOURCE_REVISION
+            and metadata["shared_distribution_revision"] == STANDALONE_DISTRIBUTION_REVISION
+            and metadata["shared_distribution_tree_hash"] == STANDALONE_TREE_HASH,
             "Standalone selection differs from the accepted immutable Shared snapshot")
-    snapshot = SLOT
+    snapshot = SLOT.with_name(STANDALONE_SHARED_VERSION)
     files = check_package(root / "guidance/artifacts/vpm" / snapshot, standalone=True)
     files.pop(MARKER)
     standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
@@ -640,7 +655,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "standalone_snapshot": VERSION,
+            "project_skill": "PASS", "standalone_snapshot": STANDALONE_SHARED_VERSION,
             "landscape": {selection["coordinate"]: {
                 "version": selection["version"], "distribution_revision": selection["revision"],
                 "tree_hash": selection["tree_hash"], "payload_files": len(selection["payload"]),

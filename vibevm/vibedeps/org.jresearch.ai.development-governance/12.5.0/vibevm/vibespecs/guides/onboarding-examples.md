@@ -347,12 +347,12 @@ consumer migration, release, native test result or independent acceptance.
 Iris has deliberately adopted Task Handoff and uses ordinary GitHub Issues and
 independent PR review, without Relay. These synthetic walks apply
 [TH-026](../protocols/task-handoff.md#TH-026); they grant no execution or merge
-authority and assert no live GitHub test result. The field selects closure
-timing, not whether to ask permission again. For example, a publication Task's
-charter contains one field followed by ordinary text:
+authority and assert no live GitHub test result. Iris's adopted version and
+authoring tools support both spellings. A publication Task's charter contains
+one field followed by ordinary text:
 
 ```text
-Issue closure policy: keep-open
+Issue closure policy: close-on-condition
 
 Keep this Issue open until the accepted package version is successfully
 published from its verified accepted revision. Once that is verified and
@@ -361,19 +361,27 @@ no Task work remains, close through the ordinary authorized continuation.
 
 | Actual Task/result boundary | Supported action and expected disposition |
 | --- | --- |
-| `close-authorized`; the designated final PR contains all work, exact-head acceptance and required checks are satisfied, and merge completes the Task. | Use `Closes #N` or the supported native closing link. The authorized default-branch merge closes the Issue. No second owner-choice prompt or separate closure ritual follows. |
-| That PR is closed without merging, including abandonment. | The Issue stays open. PR closure proves neither integration nor Task completion. Reconcile any cancellation or changed goal through actual owner authority. |
-| Two implementation PRs are needed; the first is accepted and merged but the second remains unfinished. | The first uses `Related to #N`. Only the PR that genuinely reaches the accepted completion boundary may carry the closing link. Each result keeps its own exact-head review/checks; an intermediate merge does not complete the Task. |
-| An accepted analytical result has no PR and no remaining work or protected hold. | Use the existing owner-authorized no-PR completion path and exact-result evidence. Invent no PR, commit or closing link. |
-| The publication charter above has an accepted, merged source PR, but the package publication is delayed, failed or unknown. | Use a non-closing PR reference and retain the open Issue. Verify the exact accepted revision/version's publication through normal release evidence; source merge alone is insufficient. Once all stated conditions pass, record that evidence and close without a new Decision merely releasing the condition. |
-| `keep-open` names a required Apply; it fails, targets the wrong revision/environment, or its result is unknown. | Keep the Issue open. A successful run at the intended revision/target and disposition of material warnings must satisfy the real condition. A genuine later change or cancellation needs an owner Decision, not an invented success claim. |
-| An old admitted Task used `close-authorized` for separate closure after a required Apply, or retained an explicit earlier hold. | Preserve its historical charter, admitted authority and qualified mechanism. Do not retrofit merge closure, rewrite the body, waive the hold or replay a terminal Step. Reconcile any actual authority change through its trusted Decision path. |
-| Closure metadata is absent or contradictory. | Prevent automatic closure and reconcile genuinely missing intent from current authority. Do not attribute an invented `keep-open` choice to the owner or turn the fail-safe into a permanent procedural hold. Clear existing permission needs no second confirmation. |
+| `close-authorized` or `close-on-final-result`. The designated final PR contains all remaining work, exact-head acceptance and required checks are satisfied, and merge completes the whole Task. | Use `Closes #N` or the supported native closing link. The authorized default-branch merge closes the Issue without another owner choice. |
+| That PR is abandoned and closes without merging. | The Issue stays open unless the owner separately authorizes an Issue disposition. The unmerged PR supplies no completion evidence. |
+| Two PRs are needed. The first Step publishes its Outcome and its PR is accepted and merged. The second PR is unfinished. | The first uses `Related to #N`. Only the PR that genuinely completes the Task may carry the closing link. Apply each result's exact-head review and checks. |
+| `close-authorized` or `close-on-final-result`. An accepted analytical result has no PR and no remaining work or protected hold. | Use the existing owner-authorized no-PR completion path and exact-result evidence. |
+| `keep-open` or `close-on-condition`. An accepted no-PR result also satisfies the stated condition. | Record the verification in the existing chronology and use the authorized no-PR completion path. |
+| `keep-open` or `close-on-condition`. The source PR merged, but exact-version publication is delayed, failed, unknown or for the wrong revision. | The PR uses a non-closing reference and the Issue stays open. Verify publication of the exact accepted version/revision. When the condition, required acceptance and all other obligations are verified, record the evidence and close through trusted continuation without policy conversion. |
+| Either condition spelling names a required Apply that fails, targets the wrong revision/environment, or has an unknown result. | Keep the Issue open. Verify a successful run at the intended revision/target and disposition of material warnings before successful completion. |
+| The owner verifies actual completion and records completed/fixed through the supported Issue path. | Use the actual completion evidence and preserve applicable acceptance and protected authority. |
+| The owner authorizes duplicate/superseded, cancellation or not-planned disposition while a completion condition remains unmet. Existing admitted or protected work has been reconciled. | Record the actual disposition through the supported status-reason path with a brief reason and the duplicate or replacement reference when available. Preserve the unmet condition and actual result history without claiming completion. |
+| An old admitted Task used `close-authorized` for separate closure after a required Apply, or a trusted Decision preserved an explicit earlier hold. | Read back the original field and applicable Decision in order under the then-qualified binding. Preserve their literal, authority and meaning, the hold and the terminal identity. A genuine change uses the trusted Decision path. |
+| The field is absent, invalid or has conflicting entries. | Prevent automatic closure and reconcile genuinely missing intent through current authority. The safeguard supplies no owner choice or new completion condition. |
+
+| Effective authoring combination for a fresh Task | Valid authoring choice |
+| --- | --- |
+| This Shared contract with manual authoring and locally supported aliases, as in Iris's example | Either spelling of the selected mode. |
+| This Shared contract with a client or runtime that recognizes only the existing spellings | Use `close-authorized` or `keep-open` as applicable. |
+| Alias-capable runtime but the project's accepted Shared guidance or pinned Skill still requires the existing spellings | Continue using the existing spellings. Runtime Apply alone changes no authoring guidance. |
+| Accepted Shared guidance, effective authoring tools, Skill and applicable runtime all support both spellings | The project may prefer the new spelling. The existing spelling remains equally valid during coexistence. |
 
 Iris's package publication does not adopt the package in another consumer.
 Unrelated PRs and optional future usage are not remaining Task obligations.
-Consumer automation must separately implement and qualify changed timing; these
-walks do not create a compatibility exception for an older runtime.
 
 
 ## 10. Continuation preserves the Task objective

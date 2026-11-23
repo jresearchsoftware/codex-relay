@@ -66,6 +66,10 @@ owner adoption, not an already authorized configuration or universal gate.
 | Changed head after review or integration conflict | Requalify affected checks and independent assessment for the changed result. Native stale-review dismissal or latest-push review may help where identity/workflow supports it. Strict up-to-date checks, merge queues, signed commits, deployments and extra reviews require their own risk/cost justification; they are not this protocol's baseline. |
 | Frozen publication ref overwritten or removed | Preserve existing version/commit/tag identity using the accepted release boundary and authorized writers. Where appropriate, tag rulesets can restrict updates/deletion while permitting new release refs. Do not block the supported publisher's new-tag/default-branch transaction or broadly exempt it from immutability without examining the existing no-overwrite mechanism. |
 
+A project can deliberately use a check for review evidence without selecting
+it as a merge requirement. Use [GH-011](#GH-011) to interpret the checks that
+appear on the ordinary path.
+
 <a id="GH-006"></a>
 **GH-006 — Authority and supported writer exceptions.**
 
@@ -189,7 +193,31 @@ Check that the chosen merge method and linear-history setting are compatible,
 that retained branches survive auto-delete, and that required check names,
 triggers and reporting identity support ordinary changes. Inspect existing run
 evidence rather than manufacturing a destructive push/deletion test. A configured
-required check does not prove that meaningful validation ran. See [merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github)
+required check does not prove that meaningful validation ran.
+
+Identify the concrete checking obligation independently of what appears on a
+PR. Effective branch protection and rulesets determine what GitHub enforces.
+Accepted project or Task authority can require validation even without GitHub
+enforcement. For a check with no identified requirement, use workflow or
+configuration, owner direction or reliable integration evidence to establish
+whether the project deliberately enabled it. An App installation, suite
+appearance, brand name or generic pending status is insufficient evidence.
+
+| Check or suite | Missing, pending or idle | Completed failure |
+| --- | --- | --- |
+| Required by effective GitHub policy or accepted project or Task authority | Hold the merge or acceptance governed by the unmet condition until it is satisfied or changed by its owner. | Inspect the cause and remediate or obtain an authorized disposition. Preserve actual GitHub enforcement. |
+| Deliberately enabled by the project and optional | No automatic wait or failed-check finding. Consider a missing proof only where a separate accepted obligation needs it. | Inspect the actual failure as review evidence, including its scope, credibility and affected behavior. Base any hold on an evidenced defect or unmet obligation. |
+| Automatically surfaced App suite without project adoption or a required check | No wait based on suite status alone. An idle or queued suite records no failed test. | Suite status alone creates no gate. Assess credible diagnostic evidence of an in-scope defect on its merits. Unrelated service setup is unnecessary. |
+
+In GitHub's default flow, a push can create a suite and request checks from
+installed Apps with `checks:write`. An App can add check runs or leave the
+suite idle. See the [GitHub Checks API guide](https://docs.github.com/en/rest/guides/using-the-rest-api-to-interact-with-checks#about-check-suites).
+
+When policy visibility or check origin is uncertain, state the evidence gap
+and its impact under [GH-010](#GH-010). Reuse current evidence and refresh the
+affected facts under [GH-012](#GH-012).
+
+See [merge methods](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/about-merge-methods-on-github)
 and [automatic branch deletion](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-the-automatic-deletion-of-branches).
 
 ## Verification timing

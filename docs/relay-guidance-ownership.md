@@ -1,10 +1,10 @@
 # Shared governance and Relay product bindings
 
-This repository deliberately adopts Shared Governance **12.1.0** as the single
+This repository deliberately adopts Shared Governance **12.5.0** as the single
 canonical source of its portable development governance. The immutable
 producer is
-`e4b5b738ae0918014dd06b5616fe37a5dcb93290`; the distribution is
-`8dfe533015339e560ba923bb58961595b9e544f3`. Root [AGENTS](../AGENTS.md)
+`f51fd0ab22ff61fab48bd1e5af96918d77af1ec6`; the distribution is
+`e19ceeaa3ffe608fe078d37171ddd7cd5a940dda`. Root [AGENTS](../AGENTS.md)
 explicitly adopts all eleven complete applicable protocols. Their conditional boot
 pointer selects reading, never individual clauses. The authored
 [product Skill](../packages/codex-relay/skill/SKILL.md) preserves the product
@@ -61,6 +61,20 @@ including blocker obligation/source and separation of defects, evidence gaps,
 baseline debt and proposed requirements. One owner-account assessment cannot
 satisfy Relay's stronger native identity requirement.
 
+Apply GH-005/011 and IR-007/008 in the existing exact-head assessment. Derive
+required checks from effective GitHub protection and accepted Relay or Task
+authority. Inspect primary results for completed failures of deliberately
+enabled optional checks and explain their material impact. Pending optional
+checks and unsolicited App suites supply no wait by themselves. Assess credible
+diagnostics regardless of source. Report uncertain check origin or policy
+visibility and its concrete impact. The Relay qualification set, meaningful
+native refusals, and required CI and warning disposition still govern.
+
+Use Shared RA-006, PC-009 and IR-009/016 for problem framing, material solution
+comparison and adjacent assumptions and coupled paths. Apply them within
+existing Task authoring and independent assessment or rereview. The optional
+engineering-methods route and Relay's existing review identity still apply.
+
 The supported Writer source-result route binds one durably identified PR and
 one canonical Outcome. Ambiguous PR creation cannot fall back to the Issue.
 Shared TH-014–017 covers actual complete/mixed results without requiring new
@@ -68,17 +82,6 @@ multi-PR orchestration; extending Relay's unique-artifact runtime capability
 requires separate product authority and qualification. No-PR analytical or
 qualification results use the Issue without an artificial PR or commit.
 Draft/Ready transitions remain Writer-owned and exact-head-bound (TH-028).
-
-## Interim solution and review guidance
-
-During Task authoring, solution selection and independent review, examine
-material assumptions and verify where each limit comes from. Compare simpler
-alternatives using their actual costs and the observed frequency and impact of
-the problem. When the owner identifies an issue, check adjacent assumptions and
-the consumers that depend on the affected behavior before concluding the
-analysis. Record material tradeoffs in the existing Task or review record.
-This interim Relay-local guidance applies pending separate acceptance of a
-portable Shared Governance change. Remove the overlap when Relay adopts it.
 
 ## Product safeguards and operator interfaces
 
@@ -90,20 +93,34 @@ original-run binding and the UI-only access limit remain Relay-specific.
 The complete candidate commands in AGENTS are this product's qualification set,
 not a new consumer prerequisite.
 
+PC-014 owns cross-system responsibility in Task authoring, implementation, tests
+and review. Relay's component contracts retain Relay-owned authorization,
+credential isolation, uncertain-write reconciliation, exact result identity and
+independent acceptance. The [runtime audit #283](https://github.com/jresearchsoftware/codex-relay/issues/283)
+has its own scope and authority.
+
 RA-006 owns obligation provenance, including negative restrictions; Relay's
 trusted Decisions reconcile material discrepancies. Explicit owner boundaries
 remain binding, including Task #213's project-only migration and separate
 Task #194 implementation/release scope.
 
 RA-007 binds this project context to Relay's declared accepted scope. Common
-ownership, connector access, URLs and dependencies do not extend it. External
-read/comparison and ordinary incoming contribution proposals remain permitted;
+ownership, connector access, URLs and dependencies do not extend it. In a
+Relay-bound ChatGPT conversation, check the ownership of a bare project link
+with no stated task or established in-scope purpose using the URL or minimal
+lookup. For a foreign link without cross-project intent, name both projects
+and stop before substantive inspection. State any unresolved ownership gap.
+Route local results normally. Explicit external reads/comparisons, relevant
+external evidence and ordinary incoming contribution proposals remain permitted;
 foreign Task selection/admission, execution/Step control, Decisions/CRs, reviews,
 merge/closure/release/deployment and indirect command/label equivalents go to a
 compact handoff in that project's own context even when requested. Explicitly
 accepted multi-repository scope and already authorized local work remain intact.
-CL-003 defaults unqualified backlog/status/priority queries to Relay; TH-001
-checks result ownership before treating a link as a continuation/review trigger.
+CL-003 defaults unqualified backlog/status/priority queries to Relay. TH-001
+uses RA-007 before treating a link as a continuation or review trigger. The
+[Shared onboarding guide](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/guides/onboarding.md#how-owners-and-assistants-discuss-results)
+describes result-led discussion. Record any resulting Decisions, links and
+handoffs through existing Relay authority.
 
 Shared 8.0.0's bounded-result semantics distinguish execution completion,
 negative/inconclusive findings, independent bounded-result acceptance and whole-
@@ -131,51 +148,9 @@ manual/component contracts and old-attempt compatibility. Shared Context Loading
 owns startup/JIT/completeness/refresh; AGENTS retains concrete architecture,
 component, environment and runtime entrypoints.
 
-## Temporary cross-system responsibility binding
-
-Pending a separately accepted and Relay-adopted common rule proposed in
-[Shared Governance #124](https://github.com/jresearchsoftware/shared-governance/issues/124),
-this is the Relay-local rule for Task authoring, design, implementation,
-tests and independent review. It does not amend an already admitted Step,
-a product runtime, another project's authority or an installed consumer.
-
-**Enforce the contract owned by this component, not another component's
-contract on its behalf.** At an integration boundary, validate the inputs,
-supported interface, caller authority and result obligations belonging to
-Relay. Then invoke the receiving system through its supported interface and
-handle the *observed* success, rejection, error or uncertain partial effect.
-Do not reproduce the recipient's internal validation, anticipate its Git or
-runtime behavior through speculative preflight, poll its deployment state to
-prove its own delivery obligation, or add another check merely because the
-recipient might fail. This applies equally to Git/GitHub, Codex, Writer and
-Reviewer inside Relay, CI/Distribution, databases, networks and other
-dependencies. For example, validate a generated workflow against its agreed
-format and requirements, while Distribution owns propagation if that is its
-contract; routine working-branch creation/reuse belongs to the executor, not
-to a rigid branch-existence gate invented by its launcher.
-
-An additional cross-system check needs an identified **Relay-owned** invariant,
-an explicit accepted caller requirement not supplied by the provider contract,
-or a concrete demonstrated trust/security gap. Explain why the supported
-provider call plus handling its actual result is insufficient, and prefer the
-least costly correction at the owning boundary. Do not assume that an external
-guarantee exists when its contract or relevant configuration does not supply
-it. Preserve actual owner authorization, permitted scope, secret isolation,
-unique execution/result identity, safety of uncertain trusted writes and
-independent acceptance **only to the extent Relay owns those obligations**;
-do not use that illustrative list to preserve an unnecessary duplicate
-implementation.
-
-Apply this judgment inside ordinary design, testing and review. It introduces
-no universal checklist, architecture gate, external compliance probe, extra
-owner command, monitoring service or additional proof record. Once a relevant
-Shared Governance version is independently accepted and deliberately adopted
-by Relay, reconcile the wording and remove this temporary duplicate; Shared
-publication alone does not change local source or active installations.
-
 ## Small Improvements binding
 
-Relay development adopts the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/small-improvements.md)
+Relay development adopts the complete [SI-001–SI-008 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/small-improvements.md)
 through Task [#273](https://github.com/jresearchsoftware/codex-relay/issues/273),
 effective after normal independent exact-head acceptance and integration of
 this adoption. This supersedes the related-candidate and advance-notice
@@ -233,7 +208,7 @@ runtime, convening of a new Task from the queue or separate approval stage.
 
 ## Human command interaction binding
 
-Relay adopts the complete [HC-001–003 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/human-command-interaction.md)
+Relay adopts the complete [HC-001–003 protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/human-command-interaction.md)
 for project and product interactions asking a person to run shell commands or
 perform administrative work. The [Skill workflow](../packages/codex-relay/skill/references/workflow.md#human-command-interaction)
 binds the next action and copyback to actual capability and authority. Compose
@@ -242,6 +217,25 @@ the action for the real shell using the existing
 Apply it to human diagnostics, setup and handoff instructions. Autonomous tool
 calls, Writer admission and independently required owner decisions keep their
 existing paths. A separate consumer-wide adoption remains the consumer's choice.
+
+## Closure names and Relay authoring
+
+Shared TH-026 pairs `close-on-final-result` with `close-authorized` and
+`close-on-condition` with `keep-open`. Each pair means the same thing in
+Shared Governance. Fresh Relay authoring uses exactly one existing spelling in
+the charter or applicable Task-scoped trusted Decision. The current JavaScript
+and Rust readers and authority schemas require `close-authorized` or
+`keep-open`. See [closure authoring](../contracts/README.md#closure-policy-authoring)
+for final and intermediate PRs, verified continuation and no-PR completions.
+Preserve any admitted literal, meaning and hold through its original binding.
+
+[Proposal #294](https://github.com/jresearchsoftware/codex-relay/issues/294)
+tracks a separate product change. A future alias migration requires Relay
+authority, JS/Rust/schema compatibility and runtime qualification, and an
+assessment of changed product guidance and its release. A project can prefer
+the new spellings when its accepted guidance, authoring client/Skill and
+applicable runtime all support them. This project-only adoption keeps the
+10.0.0 product deliverables byte-identical.
 
 ## Temporary legacy closure binding
 
@@ -284,7 +278,10 @@ host/deployment/recovery permissions remain in the [deployment contract](../depl
 ## Package, producer and repository bindings
 
 Shared Package Versioning owns lifecycle classification, first accepted frozen
-identity and actual dependency closure. Guidance uses the stable authoring root
+identity and actual dependency closure. Use PV-004's advisory impact forecast
+in existing planning discussion where package impact is plausible. Classify the
+actual candidate in ordinary independent review, explaining material forecast
+differences there. An estimate reserves no version and creates no gate. Guidance uses the stable authoring root
 `packages/codex-relay/skill` and selected identities in `guidance/source.json`.
 Version **3.0.0** removes native bundled Shared protocol paths and changes
 dependency routing/packaging; its major is independent of Shared major numbers.
@@ -322,7 +319,7 @@ not model compliance or production installation.
 
 Shared GitHub Governance owns workflow/protection choices, one-time adoption
 inspection and event-driven rechecks. At applicable onboarding/bootstrap or
-settings decisions, apply [GH-014](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/github-repository-governance.md#GH-014).
+settings decisions, apply [GH-014](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/github-repository-governance.md#GH-014).
 Preserve current authorized paths and previously attributable unchanged choices.
 Adopting this update triggers no settings review or mutation on its own. Relay
 source uses PRs, exact-head public

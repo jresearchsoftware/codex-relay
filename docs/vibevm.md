@@ -1,16 +1,15 @@
 # Pinned development guidance and first-party Skill consumption
 
-Relay selects Shared Governance **12.1.0** for project-wide adoption under
-[Task #273](https://github.com/jresearchsoftware/codex-relay/issues/273).
+Relay selects Shared Governance **12.5.0** for project-wide adoption under
+[Task #295](https://github.com/jresearchsoftware/codex-relay/issues/295).
 Human-owned [AGENTS](../AGENTS.md) adopts all eleven complete topics and the
 [ownership mapping](relay-guidance-ownership.md) retains native actors, trust
 boundaries, local-only SI adoption and the qualified legacy transition.
-Candidate Relay **10.0.0** requires **`>=12.1.0`** and carries exact 12.1.0
+Relay **10.0.0** has a native floor of **`>=12.1.0`** and carries exact 12.1.0
 standalone and publisher evidence. The
-[compatibility assessment](relay-skill-compatibility.md#task-273-shared-1000-through-1210)
-and [release contract](relay-guidance.md#version-and-provenance) explain the
-separate project and product decisions. Existing packages keep their frozen
-bytes, and candidate guidance remains proposal data until accepted.
+[compatibility assessment](relay-skill-compatibility.md#task-295-shared-1210-through-1250)
+explains this development dependency update. Candidate guidance remains
+proposal data until independently accepted.
 
 ## Native route and conditional reading
 
@@ -146,7 +145,7 @@ repair from accepted Git, never fallback to the removed copy or a different slot
 
 ## Selected immutable identities
 
-The [manifest](../vibe.toml) pins Shared `=12.1.0` by anonymous public Git
+The [manifest](../vibe.toml) pins Shared `=12.5.0` by anonymous public Git
 source and exact commit. The local registry supplies Relay `=10.0.0`, whose
 `>=12.1.0` edge resolves to that explicit root. The exact root selection is
 project policy. The schema-7 [lock](../vibe.lock), complete slots, receipt,
@@ -154,10 +153,10 @@ boot index and projected Skill belong to the same reviewed source change.
 
 | Identity | Selected value |
 | --- | --- |
-| Shared accepted producer source | `jresearchsoftware/shared-governance` `e4b5b738ae0918014dd06b5616fe37a5dcb93290` |
-| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `8dfe533015339e560ba923bb58961595b9e544f3` |
-| Shared annotated tag | `v12.1.0`, tag object `fa6b8ef67ccc51f88e1e0a1692c40ce4424c99a2`, peels to that distribution |
-| Complete native distribution tree hash | `sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89` |
+| Shared accepted producer source | `jresearchsoftware/shared-governance` `f51fd0ab22ff61fab48bd1e5af96918d77af1ec6` |
+| Shared public distribution | `jrs-vibevm/org.jresearch.ai.development-governance` `e19ceeaa3ffe608fe078d37171ddd7cd5a940dda` |
+| Shared annotated tag | `v12.5.0`, tag object `8e66c0af8179ce0c2ceb7479642e6718ed97208b`, peels to that distribution |
+| Complete native distribution tree hash | `sha256:57792a91e04ccf0e40e22e8778e10304d93a408f23376ae5627b23df2bfd9258` |
 | Relay guidance contract source | `source-tree`, actual input hashes in provenance; accepted baseline `95b374b9a575810b4253db46adbe1618b82afd89` |
 
 The public receipt's payload digest and native tree hash use different recipes.
@@ -237,7 +236,7 @@ line. Ignored `.vibe/` state and the persistent boot transaction lock are not
 runtime authority. Follow [self-adoption](self-adoption.md) for the first-party
 export and projection commands.
 
-The standalone exporter and project lock now select exact Shared 12.1.0.
+The standalone exporter selects exact Shared 12.1.0. The project lock selects 12.5.0.
 The single `build-relay-guidance.py` builder reads the immutable release closure
 directly through the existing builder, preserving its source-tree input-hash
 provenance mechanism. No unselected root 5.0.0 slot is needed; frozen accepted
@@ -249,7 +248,7 @@ a runtime/policy fallback. Report actual native warnings and their impact.
 Task #199 retains the exact accepted 7.0.0 slot, and Task #194 retains the
 previous 7.0.1 slot, at their original paths as inactive history. They are absent from the root lock and generated boot;
 native readers must
-use selected 12.1.0. The verifier accepts only those exact historical bytes when
+use selected 12.5.0. The verifier accepts only those exact historical bytes when
 present and rejects a missing selected slot. Native `install` prunes inactive
 slots in disposable copies; preserving this source evidence does not require
 rewriting native output or making the historical slot a fallback. Preserve the
@@ -312,8 +311,9 @@ is not promised. Normal startup never resolves or upgrades packages.
 Rollback restores the previous accepted manifest, lock, slot, authored routing,
 first-party registry and projected Skill as one reviewed Git change. Frozen
 previous registry versions, including 2.0.1, are preserved. Restore the
-corresponding accepted local
-bindings as well as package files; `vibe clean` alone is not policy rollback.
+corresponding accepted local bindings and complete generated Instructions
+along with those files. Follow the client Settings handoff for
+any effective text change. `vibe clean` alone is not policy rollback.
 Preserve human overlays and unrelated work. This maintenance path performs no
 external publication, service deployment, client-settings change or protected
 consumer operation.

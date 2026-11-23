@@ -88,6 +88,14 @@ result/review evidence. Isolated TEST and modeled external services remain valid
 this does not require live services, production mutation, a monolithic end-to-end
 test or repetition solely for reviewer independence.
 
+Trace required validation to accepted project or Task authority and required
+merge checks to effective host policy. A generic continuation condition about
+unresolved or required checks does not identify a specific blocker. Use the
+applicable requirements and primary results for the exact candidate to identify
+any unmet condition. Preserve concrete native refusals and the binding's
+authority and identity rules. For GitHub evidence, see
+[GH-011](github-repository-governance.md#GH-011).
+
 <a id="IR-008"></a>
 **IR-008 — Primary warning surfaces.**
 
@@ -99,6 +107,17 @@ Unavailable required evidence is a gap, not absence of warnings. Unsupported
 UI-only or pre-execution banners need no new acquisition workaround; that access
 limit alone is not a defect, but a known material warning still needs disposition.
 
+Inspect actual failures from deliberately project-enabled optional checks.
+Use the primary error or annotations, scope, trustworthiness and affected
+behavior to decide whether the failure demonstrates a material in-scope defect
+or leaves required proof missing. Explain a material nonblocking result when
+the evidence shows an irrelevant, flaky or environmental failure. An optional
+check that never ran or is still pending supplies no failed result and creates
+no wait by itself. An unsolicited external suite's status creates no validation
+obligation. Assess credible diagnostic evidence of an in-scope defect
+regardless of its source. State unresolved origin or policy visibility as an
+evidence gap with its concrete impact.
+
 <a id="IR-009"></a>
 **IR-009 — Authorized behavior and control impact.**
 
@@ -107,9 +126,23 @@ required user/operator workflow. Compare material old/new behavior in each
 changed surface with authorized requirements; implementation or reviewer
 preference cannot retroactively authorize a changed contract. An unauthorized
 material delta requires the owning project's decision before acceptance.
+
+Independently assess whether a material solution fits the owner goal and actual
+supported conditions. Challenge consequential premises even when the Task
+prescribes the architecture. Use [RA-006](requirement-authority.md#RA-006) to
+establish which constraints bind. When the differences could change the
+judgment, compare the incumbent without the change, the smallest adequate
+correction and the implemented approach. Explain whether the evidence warrants
+the added state, gates, recovery, maintenance, user friction or transfer of work
+or risk. Scale the comparison to the consequences and use the existing review
+record. Apply [IR-012–IR-015](#IR-012) to distinguish violated obligations,
+missing evidence and proposed changes.
+
 For controls and operator-work changes, apply adopted
 [proportional-controls](proportional-controls.md), including the simplest
-authorized black-box path and unnecessary friction. Do not prescribe a protected
+authorized black-box path, proportionality under
+[PC-009](proportional-controls.md#PC-009) and control placement under
+[PC-014](proportional-controls.md#PC-014). Do not prescribe a protected
 live action outside authority merely to obtain review evidence. Assess the operation
 actually required by effective Task authority, including relevant coupled paths
 and realistic event ordering and retry semantics when they affect the claim.
@@ -261,6 +294,13 @@ an interaction was missed, explain it and trace the whole relevant coupled path
 before requesting another patch; do not invent a cause. Correct or explicitly
 supersede unsupported earlier classifications in the next assessment, preserving
 the original review as history. Preserve useful finding history in existing review records.
+When the owner identifies an unsupported premise, independently test the
+material adjacent assumptions and coupled producer/consumer paths that could
+affect the assessment. Report what the evidence supports, unresolved gaps and
+how they affect the verdict, including what any earlier assessment failed to
+substantiate. Apply this during the assessment or rereview already required for
+the result. A correction to one result cannot establish durable reviewer reliability.
+
 Changed artifacts stale affected tests and assessments. Reuse sufficient evidence
 for unchanged invariants with an explained applicability/binding; obtain fresh
 applicable evidence for changed ones. Old-head acceptance does not accept a new

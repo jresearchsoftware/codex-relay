@@ -5,7 +5,7 @@ version = "0.0.0"
 spec_format = "mixed"
 
 [requires.packages]
-"org.jresearch.ai/development-governance" = { version = "=12.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "8dfe533015339e560ba923bb58961595b9e544f3", auth = "none" }
+"org.jresearch.ai/development-governance" = { version = "=12.5.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git", rev = "e19ceeaa3ffe608fe078d37171ddd7cd5a940dda", auth = "none" }
 
 "org.jresearch.ai/landscape-model-guidance" = { version = "=1.0.3", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-model-guidance.git", rev = "48432f00802f5aad106f3e1a9264e17c1edc354c", auth = "none" }
 "org.jresearch.ai/landscape-subagents" = { version = "=1.0.2", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-subagents.git", rev = "042e92884278d748502157945301dbc3f3c8318c", auth = "none" }

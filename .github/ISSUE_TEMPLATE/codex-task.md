@@ -47,22 +47,23 @@ No reset, force-push or replacement PR to satisfy a gate. -->
 
 Issue closure policy: <!-- choose keep-open or close-authorized with owner authority -->
 
-<!-- Replace the comment above with exactly one policy value before publication.
+<!-- Replace the comment above with exactly one supported Relay literal before
+publication. The new Shared TH-026 spellings require qualified Relay support.
 Next to that field, write concrete human-readable Task completion and closure
 conditions: development, independent exact-result review, merge where applicable,
 any explicitly authorized installed Apply/deployment and original-operation
 verification, and unresolved owner choices. These are ordinary prose, not a new
 required field. Do not treat source acceptance as deployment evidence.
 
-Choose close-authorized only when the final result PR's successful default-branch
-merge will complete the Task. After exact-head independent acceptance and checks,
-trusted owner continuation designates that final PR with Closes #N or a supported
-native closing link. Intermediate PRs remain non-closing; abandoning a PR does
-not close the Task.
-Choose keep-open for actual remaining post-merge work, including an authorized
-Apply, qualification or package publication. Use Related to #N and name the
-preauthorized condition and sufficient evidence beside the policy. Once verified,
-with required acceptance/integration and no remaining work/protected hold, trusted
+Choose close-authorized for completion on the designated final merge or through
+the existing authorized no-PR completion path. After exact-head independent
+acceptance and checks, trusted owner continuation verifies Closes #N or the
+supported native closing link for the final PR that completes the Task.
+Intermediate PRs and abandoned unmerged PRs leave the Task open.
+Choose keep-open for a stated completion condition, such as authorized Apply,
+qualification or package publication. Use Related to #N on any result PR.
+Name the preauthorized condition and sufficient evidence beside the policy.
+Once verified, with required acceptance/integration and no remaining work/protected hold, trusted
 owner continuation closes the Issue without another choice prompt, conversion to
 close-authorized or Decision merely releasing the satisfied condition.
 Reassess at meaningful transitions. After execution, actual changes to scope,
@@ -70,8 +71,7 @@ conditions or authority need a trusted Task-scoped Decision; verification of
 unchanged conditions does not. A CR cannot change Task closure authority.
 Missing/malformed/conflicting metadata prevents automatic closure with a visible
 warning; reconcile genuinely missing intent without inventing a permanent hold.
-Preserve historical/already-admitted Tasks and explicit holds. No-PR results use
-the existing trusted completion path. See
+Preserve historical/already-admitted Tasks and explicit holds. See
 contracts/README.md#closure-policy-authoring and shared Task Handoff TH-002/TH-026. -->
 
 ## Protected boundaries
