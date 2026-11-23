@@ -62,11 +62,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   const projectionFor = async (e, options) => latestProjection(await publicationRecords(e), e, options);
   const isCurrentProjection = async e => (await projectionFor(e)).step === e.step;
   const guardPublication = async e => assertPublicationIsolation(await publicationRecords(e), e);
-  async function projectAdmittedStep(r) {
+  async function projectAdmittedStep(r, { fresh = false } = {}) {
     let operation = 'step-inventory';
     try { return await projectStep(r, value => { operation = value; }); }
     catch (cause) {
       const failure = admissionFailure(cause, operation, r.envelope.attemptId, diagnosticSecrets);
+      // A fresh automatic reservation cannot launch until this call returns
+      // its envelope. A projection error on replay alone proves no such fact.
+      if (fresh && r.envelope.route === 'auto')
+        Object.assign(failure.diagnostic, { workerStarted: false, childState: 'not_started', containment: 'not_required' });
       r.admissionFailure = failure;
       try { await store.put(r.envelope.runId, r); }
       catch (error) {
@@ -78,7 +82,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         failure.diagnostic.preview += ' The protected diagnostic write also failed; retention is unverified.';
       }
       throw Object.assign(new Error(failure.diagnostic.code, { cause }), { code: failure.diagnostic.code,
-        details: { childState: 'not_started', failureDiagnostic: { ...failure.diagnostic, childState: 'not_started' },
+        details: { failureDiagnostic: failure.diagnostic,
           admissionEffect: { step: r.envelope.step, projection: 'unknown', ready: 'not-attempted' } } });
     }
   }
@@ -567,6 +571,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       } catch (error) {
         try {
           const preWorkerFailure = ['OWNER_RUN_NOT_ADMITTED', 'ADMISSION_QUIESCED'].includes(error.code)
+            || error.details?.failureDiagnostic?.workerStarted === false
             || Boolean(failureFacts(error).slotConflict);
           const diagnosticStore = await recordFailure({ error, operation: request?.operation, phase: request?.operation === 'admit' ? 'authority' : 'writer-publication',
             runId: request?.runId, workerStarted: request?.operation === 'admit' && preWorkerFailure ? false : undefined, secrets: { knownSecrets: diagnosticSecrets } });
@@ -780,7 +785,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           }
         }
         if (!admitted.blocked && nativeAdmission) {
-          await projectAdmittedStep(r);
+          await projectAdmittedStep(r, { fresh: true });
         }
         if (envelope.transport === 'label') {
           await consumeReadyCommand(r);

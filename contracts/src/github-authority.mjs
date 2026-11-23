@@ -207,6 +207,10 @@ function validateAuthoritySources(authority, task) {
 }
 
 export function resolveTaskAuthority(nativeRecords, binding) {
+  return resolveAuthority(nativeRecords, binding);
+}
+
+function resolveAuthority(nativeRecords, binding, originalDecisions) {
   if (!binding || authorityMode(binding.charterBody) === 'legacy') return null;
   if (!formats.repository(binding.repository) || !Number.isSafeInteger(binding.task) || binding.task < 1
     || !isTrusted({ author: binding.trustedAuthor }, binding.trustedAuthor)) fail('AUTHORITY_TRUST_BINDING_INVALID');
@@ -250,6 +254,7 @@ export function resolveTaskAuthority(nativeRecords, binding) {
   const existingPr = change?.native.parent.number ?? binding.pullRequest ?? binding.startingState?.existing_pr
     ?? null;
   const decisions = typed.filter(item => item.payload.kind === 'decision'
+    && (!originalDecisions || originalDecisions.has(referenceKey(item.native)))
     && item.payload.charter_sha256 === sha256Body(binding.charterBody)
     && (item.payload.parent.kind === 'issue' || item.payload.parent.number === existingPr));
   const byKey = new Map(decisions.map(item => [referenceKey(item.native), item]));
@@ -358,9 +363,9 @@ export function resolveOutcomeAuthority(authority, nativeRecords, binding) {
   if (!current || !equal(current.authority.charter, authority.charter)
     || !equal(current.authority.change_request, authority.change_request)
     || !equal(current.authority.compatibility_request, authority.compatibility_request)) fail('AUTHORITY_APPROVAL_STALE_REQUEST');
-  const originalRecords = nativeRecords.filter(native => !isTrusted(native, binding.trustedAuthor)
-    || typedNative(native, binding)?.kind !== 'decision' || originalDecisions.has(referenceKey(native)));
-  const original = resolveTaskAuthority(originalRecords, options);
+  // Keep native records available for exact context lookup. Only the frozen
+  // Decisions and their supersession predecessors may supply original semantics.
+  const original = resolveAuthority(nativeRecords, options, originalDecisions);
   if (!original || !equal(original.authority, authority)) fail('AUTHORITY_SOURCE_MISMATCH');
   const changed_fields = ['purpose', 'scope', 'boundaries', 'validation', 'model', 'effort', 'subagents',
     'branch', 'base_sha', 'starting_head', 'existing_pr', 'issue_closure_policy', 'continuation']

@@ -55,3 +55,52 @@ test('old helper rejection without a reason remains supported; unknown or unrela
     });
   }
 });
+
+for (const [name, proven, writerStored] of [
+  ['fresh reservation', true, true], ['replay without proof', false, true], ['controller fallback', true, false]
+]) test(`Step authority failure preserves evidence and attempt identity for ${name}`, async () => {
+  const diagnosticStore = { status: 'stored', mode: 'normal', executionId: writerStored ? 'host-99-fixture' : 'routing-99-fixture' };
+  const wire = serializeWriterFailure({ code: 'AUTHORITY_SOURCE_MISMATCH', details: {
+    ...(writerStored ? { diagnosticStore } : {}), admissionEffect: { step: 2, projection: 'unknown', ready: 'not-attempted' },
+    failureDiagnostic: { stage: 'authority', boundary: 'writer-publication', operation: 'step-authority',
+      executionId: 'run-99', ...(proven ? { workerStarted: false, childState: 'not_started', containment: 'not_required' } : {}) }
+  } });
+  const operations = [];
+  let fallbackWrites = 0;
+  let stderr = '', annotation = '';
+  const writer = helper(wire);
+  const run = () => main({
+    env: { GITHUB_EVENT_PATH: 'synthetic', GITHUB_EVENT_NAME: 'issues',
+      GITHUB_REF: `refs/heads/${CONSUMER.baseBranch}`, GITHUB_RUN_ID: '99' },
+    readEvent: async () => JSON.stringify({ repository: { full_name: CONSUMER.repository },
+      sender: { login: CONSUMER.owner }, action: 'labeled', label: { name: 'codex-ready-auto' }, issue: { number: 42 } }),
+    resolveSlot: () => CONSUMER.executionSlots ? EXECUTION_SLOT : undefined,
+    createWriter: () => ({ invoke: request => { operations.push(request.operation); return writer.invoke(request); } }),
+    createDispatcher: () => ({ dispatch: () => assert.fail('worker must not start') }),
+    createJournal: () => ({ put: () => assert.fail('journal must not be written') }),
+    persistRoutingFailure: ({ error }) => {
+      fallbackWrites++;
+      return { failureDiagnostic: { ...error.details.failureDiagnostic, executionId: diagnosticStore.executionId },
+        executionId: diagnosticStore.executionId, diagnosticStore };
+    }
+  });
+  assert.equal(await reportRoutingResult(run, {
+    write: () => assert.fail('unexpected success receipt'), writeError: value => { stderr += value; },
+    writeAnnotation: value => { annotation += value; }
+  }), 1);
+  assert.deepEqual(operations, ['admit']);
+  assert.equal(fallbackWrites, writerStored ? 0 : 1);
+  const { code, diagnostic } = JSON.parse(stderr);
+  assert.equal(code, 'AUTHORITY_SOURCE_MISMATCH');
+  assert.equal(diagnostic.failureBoundary, 'writer-publication');
+  assert.equal(diagnostic.publication.operation, 'step-authority');
+  assert.equal(diagnostic.observed.child, proven ? 'not_started' : 'unknown');
+  assert.equal(diagnostic.executionState, proven ? 'known-not-executed' : 'uncertain');
+  assert.equal(diagnostic.containment, proven ? 'not_required' : 'unknown');
+  assert.equal(diagnostic.executionId, 'run-99');
+  assert.deepEqual(diagnostic.durable.diagnosticStore, diagnosticStore);
+  assert.equal(diagnostic.durable.publishedHead, null);
+  assert.match(annotation, /required native authority source could not be matched/);
+  assert.match(annotation, /protected.*(?:Writer|publication)/i);
+  assert.doesNotMatch(annotation, /Outcome was published|Writer confirmed a target-bound Outcome/);
+});

@@ -19,15 +19,16 @@ function requestSource({ route }, id = 901) {
       scope: ['Old Request scope must not be inherited.'], purpose: 'Old direction', model: 'old-model',
       branch: 'codex/old-branch' }) };
 }
-function decision(amendments, id = 902, context = []) {
-  return { id, user: actor, issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/42`,
+function decision(amendments, id = 902, context = [], parent = { kind: 'issue', number: 42 }) {
+  return { id, user: actor, issue_url: `https://api.github.com/repos/${REPOSITORY}/issues/${parent.number}`,
     body: render({ schema_version: '4.0', kind: 'decision', repository: REPOSITORY, task: 42,
-      parent: { kind: 'issue', number: 42 }, charter_sha256: sha256Body(charter), purpose: 'Select current authorized work',
+      parent, charter_sha256: sha256Body(charter), purpose: 'Select current authorized work',
       amendments, supersedes: null, context }) };
 }
 function sources({ api }, values) {
   const list = api.list.bind(api); const get = api.get.bind(api);
-  api.list = async path => path === '/issues/42/comments' ? [...values, ...await list(path)] : list(path);
+  api.list = async path => [...values.filter(value => `${value.issue_url}/comments` === `https://api.github.com/repos/${REPOSITORY}${path}`),
+    ...await list(path)];
   api.get = async path => copy(values.find(value => path === `/issues/comments/${value.id}`)) ?? get(path);
 }
 async function refuses(t, options = {}, setup = () => {}) {
@@ -77,6 +78,39 @@ test('old native execution text is opaque selected context with exact body hashe
   old.body += '<!-- changed native bytes -->';
   await assert.rejects(revalidateAuthority(f.api, f.envelope), { code: 'AUTHORITY_SOURCE_MISMATCH' });
   assert.deepEqual((await f.store.get(99)).envelope.request, before);
+});
+
+test('automatic Issue continuation projects its Step with a PR Decision selected only as context', async t => {
+  const prParent = { kind: 'pull_request', number: 43 };
+  const prDecision = decision({ scope: ['PR-only direction'] }, 901, [], prParent);
+  const contextRef = nativeReference({ kind: 'issue-comment', id: prDecision.id, parent: prParent, body: prDecision.body });
+  let decisions;
+  const f = await fixture(t, { issueBody: charter, labelLaunch: true, continuation: true,
+    beforeAdmission(value) {
+      const { api, issue, pr, continuationHead } = value;
+      issue.labels.push({ name: 'step-1' });
+      const work = decision({ scope: ['Current Task scope'], branch: pr.head.ref, existing_pr: pr.number }, 902, [contextRef]);
+      const pin = decision({ starting_head: continuationHead }, 903);
+      decisions = [work, pin, prDecision];
+      sources(value, decisions);
+    } });
+  const { envelope } = f;
+  const record = await f.store.get(envelope.runId);
+  assert.equal(envelope.step, 2);
+  assert.equal(envelope.startHead, f.pr.head.sha);
+  assert.deepEqual(envelope.request.scope, ['Current Task scope']);
+  assert.deepEqual(envelope.request.authority.decisions.map(ref => ref.id), [902, 903]);
+  assert.ok(envelope.input.includes(prDecision.body));
+  assert.equal(record.stepProjected, true);
+  assert.equal(record.readyConsumed, true);
+  assert.deepEqual(f.issue.labels, [{ name: 'step-2' }]);
+  assert.deepEqual(f.pr.labels, [{ name: 'step-2' }]);
+  assert.match(f.pr.title, /^Task 42 · Step 2 · /);
+  assert.equal(await f.journal.get(envelope.runId), null);
+  assert.equal(f.comments.length, 0);
+  decisions.push(decision({ starting_head: f.envelope.historicalBase }, 904));
+  await assert.rejects(revalidateAuthority(f.api, envelope), { code: 'AUTHORITY_CHANGED' });
+  assert.deepEqual(await f.store.get(envelope.runId), record);
 });
 
 test('current manual admission completes and recovers its exact Outcome without reselecting old v3 authority', async t => {

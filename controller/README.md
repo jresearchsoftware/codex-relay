@@ -1034,6 +1034,8 @@ consumption. An exception during projection can therefore leave a reserved Step,
 old display labels and an unconsumed owner event. These are separate facts.
 Writer retains a bounded, redacted exception in the protected attempt record;
 the helper reports typed projection, HTTP and retry observations when available.
+For a fresh automatic reservation that fails Step projection, the failure report
+identifies the admitted attempt and records that its Codex child did not start.
 A failed diagnostic write is reported as unverified retention. New native automatic label attempts have the durable
 pre-dispatch marker described above; diagnostic retention is not its proof.
 Neither the marker nor a projection diagnostic proves containment of an older
