@@ -83,7 +83,7 @@ if [[ "$recover_active" == true ]]; then
     admission_command=("${maintained_admission[@]}")
   fi
   recovery_activity="$("${admission_command[@]}" status --operation "$recovery_operation" |
-    /usr/bin/python3 -c '
+    /usr/bin/python3 -B -c '
 import json, subprocess, sys
 gate = json.load(sys.stdin)
 with open(sys.argv[2], encoding="utf-8") as stream:

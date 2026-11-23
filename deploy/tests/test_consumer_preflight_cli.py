@@ -204,6 +204,39 @@ class ConsumerPreflightCliTests(unittest.TestCase):
                                  'digest-mismatch' if drift == 'valid' else 'invalid-consumer')
                 self.assertEqual(self.protected_snapshot(), before)
 
+    def test_projection_fallback_does_not_cache_modules_in_installed_source(self):
+        self.configuration.write_bytes(b'{ invalid live JSON')
+        snapshot = json.loads(self.snapshot.read_bytes())
+        snapshot['consumer']['defaultProfile']['effort'] = 'medium'
+        self.snapshot.write_text(json.dumps(snapshot))
+        manifest_path = self.snapshot.with_name('artifact-manifest.json')
+        manifest = json.loads(manifest_path.read_bytes())
+        manifest['deploymentConfigSha256'] = hashlib.sha256(self.snapshot.read_bytes()).hexdigest()
+        manifest_path.write_text(json.dumps(manifest))
+
+        deploy = self.snapshot.parent / 'reviewed-source/deploy'
+        # Exercise the actual isolated Python launch and sibling imports. The
+        # Python deployment suite covers the original Ansible renderer itself.
+        files = {
+            'config.py': 'import json\ndef loads(raw, source): return json.loads(raw)\n',
+            'managed_pool.py': 'def projected(config): return ' + repr(self.consumer) + '\n',
+            'managed_pool_transport.py': 'from managed_pool import projected\n'
+            'def projected_consumer(config, source): return projected(config)\n',
+            'ansible_transport.py': '',
+            'ansible/ansible.cfg': '',
+            'ansible/roles/relay_controller/templates/consumer.json.j2': '',
+        }
+        for name, content in files.items():
+            path = deploy / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content)
+        before = self.protected_snapshot()
+        result = self.run_cli()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['baselineDigest'], self.digest)
+        self.assertEqual(self.protected_snapshot(), before)
+        self.assertFalse(list(deploy.rglob('__pycache__')))
+
     def test_unchanged_digest_keeps_original_manual_bindings_and_matching_live_config_needs_no_snapshot(self):
         self.snapshot.unlink()
         before = self.protected_snapshot()

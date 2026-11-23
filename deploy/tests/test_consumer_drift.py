@@ -190,11 +190,22 @@ def test_unbound_snapshot_is_evidence_only_and_cannot_supply_original_context(co
     assert value.consumer.read_bytes() == value.bad and value.gate_path.read_bytes() == before_gate
 
 
-def test_original_source_renderer_preserves_owning_template_order():
+def test_original_source_renderer_preserves_owning_template_order_and_source(tmp_path):
     from managed_pool_transport import projected_consumer
     config = json.loads((ROOT / 'deploy/example.json').read_text())
-    rendered = drift._render_original(config, ROOT)
+    source = tmp_path / 'reviewed-source'
+    for component in ('deploy', 'consumer', 'contracts', 'reviewer/src'):
+        shutil.copytree(ROOT / component, source / component,
+                        ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
+
+    def snapshot():
+        return {path.relative_to(source): path.read_bytes() if path.is_file() else None
+                for path in source.rglob('*')}
+
+    before = snapshot()
+    rendered = drift._render_original(config, source)
     assert json.dumps(rendered) == json.dumps(projected_consumer(config, ROOT))
+    assert snapshot() == before
 
 
 @pytest.mark.parametrize('explicit_defaults', [False, True])

@@ -69,10 +69,9 @@ def _render_original(snapshot, source):
         'source=Path(sys.argv[1]).parent;'
         'snapshot=loads(sys.stdin.read(),source);'
         'print(json.dumps(projected_consumer(snapshot,source)))')
-    process = subprocess.Popen(['/usr/bin/python3', '-I', '-c', program, str(source / 'deploy')],
+    process = subprocess.Popen(['/usr/bin/python3', '-I', '-B', '-c', program, str(source / 'deploy')],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
-        env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'HOME': '/root',
-             'PYTHONDONTWRITEBYTECODE': '1'})
+        env={'PATH': '/usr/local/bin:/usr/bin:/bin', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8', 'HOME': '/root'})
     try:
         # The canonical snapshot sorts every nested mapping. The original
         # loader rederives managed slots in its owning key order before the

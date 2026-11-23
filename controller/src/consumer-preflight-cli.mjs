@@ -137,7 +137,7 @@ async function projectedBaseline(snapshot, installedSource, environment) {
     + 'from config import loads;from managed_pool_transport import projected_consumer;'
     + 'source=Path(sys.argv[1]).parent;snapshot=loads(sys.stdin.read(),source);'
     + 'print(json.dumps(projected_consumer(snapshot,source)))';
-  const bytes = await run('/usr/bin/python3', ['-I', '-c', program, join(installedSource, 'deploy')], {
+  const bytes = await run('/usr/bin/python3', ['-I', '-B', '-c', program, join(installedSource, 'deploy')], {
     input: JSON.stringify(snapshot), environment, timeout: 90000, limit: 128 * 1024 });
   return validateConsumer(parseConsumerJson(bytes.toString()));
 }
@@ -212,7 +212,7 @@ export async function consumerPreflight({ config, installRoot, stageRoot, desire
     if (consumerDigest(baseline) !== observed.gate.consumerDigest) {
       try {
         baseline = await projectedBaseline(snapshot, join(identity.release, 'reviewed-source'), {
-          PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', HOME: '/root', PYTHONDONTWRITEBYTECODE: '1' });
+          PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8', HOME: '/root' });
       } catch (cause) { fail('CONSUMER_PREFLIGHT_BASELINE_PROJECTION_UNAVAILABLE', cause); }
       observed = await gateFor(baseline, config);
     }
