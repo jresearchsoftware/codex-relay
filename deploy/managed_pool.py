@@ -338,13 +338,26 @@ class Host:
         require(identity(pid)[1] == started, 'MAINTENANCE_OWNER_PROCESS_CHANGED')
         return {'pid': pid, 'started': started, 'cgroup': expected}
 
-    def attempts_idle(self, consumers):
+    def admission_statuses(self, consumers):
+        endpoints = set()
         for consumer in consumers.values():
-            protected(consumer['admission'])
-            result = json.loads(self.command([consumer['admission'], 'status'], text=True))
-            if result.get('active') != [] or result.get('unknown') != []:
-                return False
-        return True
+            namespace = consumer['namespace']
+            admission = consumer['admission']
+            require(isinstance(namespace, str) and namespace != 'root'
+                    and re.fullmatch(r'[a-z][a-z0-9-]{0,30}', namespace)
+                    and admission == f'/opt/{namespace}/relay-admission',
+                    'MAINTENANCE_ADMISSION_BINDING_UNPROVEN')
+            endpoints.add(admission)
+        for admission in sorted(endpoints):
+            protected(admission)
+            yield json.loads(self.command([admission, 'status'], text=True, timeout=60))
+
+    def attempts_idle(self, consumers):
+        return all(status.get('active') == [] and status.get('unknown') == []
+                   for status in self.admission_statuses(consumers))
+
+    def admission_open(self, consumers):
+        return all(status.get('phase') == 'open' for status in self.admission_statuses(consumers))
 
     def stop_idle(self, member, remote_idle, *, now=time.monotonic, wait=time.sleep, timeout=5,
                   disable=True):
@@ -437,15 +450,15 @@ def wait_ready(member, runner_id, observe, host, *, now=time.monotonic, wait=tim
 
 
 def maintenance(contract, state_store, github, host, *, operation, action, owner_pid=None,
-                admission_open=None, now=time.monotonic, wait=time.sleep, timeout=1800,
+                now=time.monotonic, wait=time.sleep, timeout=1800,
                 progress=None):
     """Maintain existing registrations under the caller's existing pool lock.
 
     Pause happens before closing admission: an assignment already in flight
     must still be allowed to run normally. Drain uses live runner/process state,
-    never historical Task completion. The caller drains Controller/Writer too.
-    Resume's callback must prove OPEN for every bound consumer, once, before
-    restoring any eligibility. No phase changes capacity or runner identity.
+    never historical Task completion. All bound Controller/Writer endpoints
+    must be idle before stopping runners and open before restoring eligibility.
+    No phase changes capacity or runner identity.
     """
     require(isinstance(operation, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation),
             'MAINTENANCE_OPERATION_INVALID')
@@ -463,7 +476,11 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     require(all(isinstance(record, dict) and record.get('phase') in ['registered', 'starting', 'ready', 'draining']
                 and type(record.get('runnerId')) is int and record['runnerId'] > 0 for record in records.values()),
             'MAINTENANCE_REGISTRATION_UNSETTLED')
-    require(isinstance(state.get('consumers'), dict) and state['consumers'], 'MAINTENANCE_CONSUMERS_UNPROVEN')
+    consumers = state.get('consumers')
+    consumer_binding = {'namespace': contract['namespace'], 'admission': contract['admission']}
+    require(isinstance(consumers, dict)
+            and consumers.get(contract['repository']) == consumer_binding,
+            'MAINTENANCE_CONSUMERS_UNPROVEN')
     group_id = github.qualify(contract)
 
     def observe(member):
@@ -549,6 +566,12 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         deadline = now() + timeout
         while True:
             report.update(stopped=[], preserved=[], busy=[])
+            if not host.attempts_idle(consumers):
+                if progress is not None:
+                    progress(report)
+                require(now() < deadline, 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+                wait(min(0.5, max(0, deadline - now())))
+                continue
             for identity in records:
                 member, saved, remote = snapshot(identity)
                 require(labels(remote) == [], 'MAINTENANCE_INTAKE_REOPENED')
@@ -575,7 +598,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
                 state_store.write(state)
             if progress is not None:
                 progress(report)
-            if not report['busy']:
+            if not report['busy'] and host.attempts_idle(consumers):
                 save('drained')
                 return report
             require(now() < deadline, 'MAINTENANCE_DRAIN_TIMEOUT', observation=report)
@@ -612,7 +635,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         return report
 
     require(intent['phase'] in ['ready', 'restoring', 'restore-unverified'], 'MAINTENANCE_RESTART_REQUIRED')
-    require(callable(admission_open) and admission_open() is True, 'MAINTENANCE_ADMISSION_NOT_OPEN')
+    require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
     connect_after_restore = intent.get('connectAfterRestore')
     require(connect_after_restore is None or connect_after_restore in records
             and intent['members'][connect_after_restore]['active'], 'MAINTENANCE_INTENT_CHANGED')

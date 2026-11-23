@@ -15,6 +15,8 @@ class Host(ExistingHost):
         self.transport = None
         self.starts = []
         self.labels_at_start = []
+        self.admission_observations = []
+        self.closed_admissions = set()
 
     def service(self, member):
         active = member['id'] in self.services
@@ -27,6 +29,11 @@ class Host(ExistingHost):
 
     def check_readiness(self):
         pass
+
+    def admission_open(self, consumers):
+        endpoints = {consumer['admission'] for consumer in consumers.values()}
+        self.admission_observations.append(endpoints)
+        return not endpoints & self.closed_admissions
 
     def start(self, member, *, enable=True):
         self.starts.append((member['id'], enable))
@@ -65,9 +72,9 @@ def test_labels_withdraw_before_drain_preserving_ids_enablement_and_inactive_ser
     assert maintain(values, 'restart')['stopped'] == ['primary']
     assert host.starts == []
     assert all(value['labels'] == [] for value in github.values.values())
-    observations = []
-    maintain(values, 'resume', admission_open=lambda: observations.append(True) or True)
-    assert observations == [True] and 'maintenance' not in state.value
+    maintain(values, 'resume')
+    assert host.admission_observations == [{contract['admission']}]
+    assert 'maintenance' not in state.value
     assert host.starts == [('primary', False)]
     assert host.labels_at_start[-1] == original_labels[original_ids['primary']]
     assert host.local == original_ids
@@ -108,7 +115,7 @@ def test_drain_waits_for_inflight_assignment_then_preserves_owner_apply_transpor
     assert state.value['maintenance']['members']['primary']['phase'] == 'preserved'
     assert maintain(values, 'restart')['stopped'] == ['pool-2']
     assert host.starts == []
-    maintain(values, 'resume', admission_open=lambda: True)
+    maintain(values, 'resume')
     assert host.starts == [('pool-2', False)]
 
 
@@ -144,19 +151,24 @@ def test_lost_pause_response_keeps_durable_original_labels_and_reconciles_exact_
 
 def test_resume_requires_open_gate_and_observes_prior_partial_restoration_without_duplicate_put():
     values = fixture()
-    _, state, github, _ = values
+    _, state, github, host = values
+    peer_admission = '/opt/relay-peer/relay-admission'
+    state.value['consumers']['example/peer'] = {'namespace': 'relay-peer', 'admission': peer_admission}
     for action in ['pause', 'drain', 'restart']:
         maintain(values, action)
+    host.closed_admissions.add(peer_admission)
     with pytest.raises(pool.PoolError, match='MAINTENANCE_ADMISSION_NOT_OPEN'):
-        maintain(values, 'resume', admission_open=lambda: False)
+        maintain(values, 'resume')
     assert all(value['labels'] == [] for value in github.values.values())
+    assert peer_admission in host.admission_observations[-1]
+    host.closed_admissions.clear()
     github.lose_labels_response = True
     with pytest.raises(pool.PoolError, match='UNKNOWN_LABEL'):
-        maintain(values, 'resume', admission_open=lambda: True)
+        maintain(values, 'resume')
     assert state.value['maintenance']['phase'] == 'restore-unverified'
     assert len([value for value in github.values.values() if value['labels']]) == 1
     before = len(github.label_mutations)
-    maintain(values, 'resume', admission_open=lambda: True)
+    maintain(values, 'resume')
     assert len(github.label_mutations) == before + 1 and 'maintenance' not in state.value
 
 
@@ -167,7 +179,7 @@ def test_interrupted_restoration_can_be_paused_again_before_another_drain():
         maintain(values, action)
     github.lose_labels_response = True
     with pytest.raises(pool.PoolError):
-        maintain(values, 'resume', admission_open=lambda: True)
+        maintain(values, 'resume')
     maintain(values, 'pause')
     assert all(value['labels'] == [] for value in github.values.values())
     assert state.value['maintenance']['phase'] == 'paused'
@@ -199,7 +211,7 @@ def test_resume_preflights_all_members_before_restoring_any_eligibility():
     host.services.remove('pool-2')
     before = copy.deepcopy(github.label_mutations)
     with pytest.raises(pool.PoolError, match='MAINTENANCE_RESTART_UNPROVEN'):
-        maintain(values, 'resume', admission_open=lambda: True)
+        maintain(values, 'resume')
     assert github.label_mutations == before and state.value['maintenance']['phase'] == 'ready'
 
 
@@ -212,6 +224,52 @@ def test_changed_owner_transport_is_preserved_as_actionable_blocker():
     with pytest.raises(pool.PoolError, match='MAINTENANCE_OWNER_TRANSPORT_CHANGED'):
         maintain(values, 'drain')
     assert host.stops == []
+
+
+def test_bound_consumer_activity_prevents_pool_stop_even_when_runners_look_idle():
+    values = fixture()
+    _, state, _, host = values
+    peer = {'namespace': 'relay-peer', 'admission': '/opt/relay-peer/relay-admission'}
+    state.value['consumers']['example/peer'] = peer
+    calls = []
+
+    def attempts_idle(consumers):
+        assert consumers['example/peer'] == peer
+        calls.append(True)
+        return len(calls) > 1
+
+    host.attempts_idle = attempts_idle
+    maintain(values, 'pause')
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_ADMISSION_DRAIN_TIMEOUT'):
+        maintain(values, 'drain', timeout=0)
+    assert host.stops == []
+    assert maintain(values, 'drain', timeout=0)['stopped'] == ['primary', 'pool-2']
+
+
+def test_admission_observation_reads_each_validated_endpoint_once(monkeypatch):
+    host = object.__new__(pool.Host)
+    checked = []
+    monkeypatch.setattr(pool, 'protected', checked.append)
+    primary = '/opt/relay-primary/relay-admission'
+    peer = '/opt/relay-peer/relay-admission'
+    host.command = lambda argv, **kwargs: {
+        primary: '{"phase":"open","active":[],"unknown":[]}',
+        peer: '{"phase":"quiesced","active":[],"unknown":[123]}'
+    }[argv[0]]
+    consumers = {
+        'example/a': {'namespace': 'relay-primary', 'admission': primary},
+        'example/b': {'namespace': 'relay-primary', 'admission': primary},
+        'example/c': {'namespace': 'relay-peer', 'admission': peer},
+    }
+    assert not host.attempts_idle(consumers)
+    assert checked == [peer]
+    host.command = lambda argv, **kwargs: '{"phase":"open","active":[],"unknown":[]}'
+    checked.clear()
+    assert host.admission_open(consumers)
+    assert checked == [peer, primary]
+    consumers['example/c']['admission'] = primary
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_ADMISSION_BINDING_UNPROVEN'):
+        host.attempts_idle(consumers)
 
 
 def test_owner_transport_requires_current_ancestor_and_exact_service_cgroup(monkeypatch):

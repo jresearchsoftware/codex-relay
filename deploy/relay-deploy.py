@@ -218,7 +218,7 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
     offset = os.fstat(log.fileno()).st_size
     if '--check' not in argv:
         observe_target_mutation()
-    env = dict(env)
+    env = os.environ.copy() if env is None else dict(env)
     env['ANSIBLE_CALLBACK_PLUGINS'] = str(BACKEND / 'callback_plugins')
     env['ANSIBLE_CALLBACKS_ENABLED'] = 'relay_timing'
     # The lifecycle UUID is shared across backend invocations; a standalone
@@ -912,6 +912,7 @@ def run(args):
                     pool_maintenance_started = False
                     pool_drain_completed = False
                     reviewer_maintenance_started = False
+                    gate_reopened = False
                     preparation = None
                     qualified_local = args.local_reconcile or args.local_lifecycle
 
@@ -1486,16 +1487,21 @@ def run(args):
                             reviewer_maintenance('resume', '--operation', lifecycle_operation)
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
+                        gate_reopened = True
                         if pool_maintenance_started:
                             pool_maintenance('resume')
                         progress('OPEN', revision)
                 except Exception as error:
                     report_failure(error, 'installer', private_log=log_name)
                     progress('RECOVERY', revision)
+                    if pool_maintenance_started and (lifecycle_operation is None or gate_reopened):
+                        phase = 'verified-admission-open' if gate_reopened else 'before-quiesce'
+                        print(f'RELAY_POOL_RECOVERY_REQUIRED=operation={admission_operation_id};phase={phase};'
+                              'next=inspect-original-pool-operation-before-retry', flush=True)
                     restored_old = False
                     if (preparation is not None and preparation.captured
                             and (not preparation.cutover_started or preparation.predispatch_bridge_attempted)
-                            and lifecycle_operation
+                            and lifecycle_operation and not gate_reopened
                             and (not args.authorize_lifecycle_recovery or preparation.predispatch_bridge_attempted)):
                         try:
                             aborted = preparation.abort()
@@ -1518,7 +1524,7 @@ def run(args):
                                   flush=True)
                     if preparation is not None:
                         preparation.release_writer()
-                    if lifecycle_operation and not restored_old:
+                    if lifecycle_operation and not gate_reopened and not restored_old:
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')

@@ -42,7 +42,7 @@ try:
                  and re.fullmatch('[0-9a-f]{64}', payload['targetDigest']), 'TARGET_DIGEST_UNPROVEN')
     github = pool.GitHub(auth['installationToken'], contract['organization'])
     if action in ['pause', 'drain', 'restart', 'resume']:
-        import fcntl, stat, subprocess
+        import fcntl, stat
         from pathlib import Path
         operation = payload['operation']
         pool.require(re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation), 'MAINTENANCE_OPERATION_INVALID')
@@ -55,14 +55,8 @@ try:
                          and stat.S_IMODE(info.st_mode) == 0o600, 'LOCK_UNSAFE')
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
 
-            def admission_open():
-                pool.protected(contract['admission'])
-                result = subprocess.run([contract['admission'], 'status'], text=True,
-                                        capture_output=True, check=True, timeout=60)
-                return json.loads(result.stdout)['phase'] == 'open'
-
             report = pool.maintenance(contract, pool.State(root), github, pool.Host(contract),
-                operation=operation, action=action, owner_pid=payload['ownerPid'], admission_open=admission_open)
+                operation=operation, action=action, owner_pid=payload['ownerPid'])
             print('MANAGED_POOL_MAINTENANCE=' + json.dumps(report, sort_keys=True))
         finally:
             os.close(fd)

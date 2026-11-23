@@ -83,7 +83,8 @@ class ReviewerMaintenanceTests(unittest.TestCase):
                 Path(module.CONTROL).unlink()
                 server.bind(module.CONTROL)
                 server.listen(1)
-                with patch.object(module.subprocess, 'run', return_value=types.SimpleNamespace(stdout='1')):
+                other_pid = str(os.getpid() + 1)
+                with patch.object(module.subprocess, 'run', return_value=types.SimpleNamespace(stdout=other_pid)):
                     with self.assertRaisesRegex(RuntimeError, 'PROCESS_UNPROVEN'):
                         module.request('status')
 

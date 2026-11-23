@@ -1585,8 +1585,8 @@ command the owner must reproduce for each compatible update.
 
 Source installation and retained-release reconciliation normalize the fixed
 owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`,
-`lifecycle_process.py`, `config.py`,
-`installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
+`lifecycle_process.py`, `config.py`, `installed_config.py`, `deployment_lock.py`,
+`git_intent.py`, `repository_source.py`, `timing.py`) to root:root `0644`, its `deploy`
 parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
 and its release parents, retaining their assigned groups and modes. The complete
 archived source loses group/world write permissions while retaining its bytes,
@@ -1612,7 +1612,9 @@ For ordinary managed-pool Apply, the owner preflight first preserves the live
 installation while the candidate is prepared. Relay then reserves maintenance
 under the existing pool lock and withdraws custom GitHub scheduling labels
 from the exact registered General runners. Admission stays open while assigned
-jobs finish, including Controller and Writer publication. The drain stops the
+jobs finish, including Controller and Writer publication. The drain checks each
+protected admission endpoint bound to the pool for active or unknown work,
+including effects from another consumer namespace. It stops the
 idle General units and keeps the cgroup-proven owner transport alive when the
 current owner invocation itself uses the pool. It leaves the dedicated
 Production Runner outside this pool operation.
@@ -1620,8 +1622,9 @@ Production Runner outside this pool operation.
 After the existing gate, backend and installed-state checks succeed, Relay
 verifies Reviewer readiness and stages the originally active General units.
 It keeps one drained runner offline if available. After opening admission, it
-restores the original labels and connects that runner with its labels already
-in place. In TEST, restoring labels on online runners alone left original jobs
+verifies that every pool-bound admission endpoint is open before restoring the
+original labels. It connects that runner with its labels already in place.
+In TEST, restoring labels on online runners alone left original jobs
 queued until a matching runner reconnected. GitHub dispatches eligible original
 events from its queue. Relay allocates a Step only after admission. The managed
 operation requires the same physical pool binding and capacity. Plain graceful
@@ -1630,11 +1633,20 @@ operational contracts.
 
 The live pause boundary combines observed label withdrawal, runner job state
 and a cgroup freeze before signaling an idle listener. GitHub does not
-document an atomic pause API for persistent runners. Assignment readback can
-lag, unclaimed assignments can be requeued and GitHub applies finite queue
-limits. A single rehearsal establishes its observed timings only. Treat an
+document an atomic pause API for persistent runners. Its runner can acquire a
+job before starting a Worker, and listener shutdown cancels an active job
+dispatch. An idle cgroup and REST busy readback therefore leave an assignment
+window. GitHub requeues unclaimed assignments and applies a finite queue limit.
+See the [GitHub routing contract](https://docs.github.com/en/actions/reference/runners/self-hosted-runners),
+[runner listener](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/Runner.cs)
+and [job dispatcher](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/JobDispatcher.cs).
+A single rehearsal establishes its observed timings only. Treat an
 uncertain stop, label mutation or restart as an original-operation blocker.
 Inspect the pool receipt, native jobs and admission gate before recovery.
+If pool maintenance fails before quiesce or after verified admission reopens,
+Apply reports the original pool operation and which boundary it reached. A
+failed eligibility restore can leave verified admission open while runner
+availability is uncertain.
 
 An active Reviewer with the maintenance control acknowledges a Writer-only pause
 and drains its accepted Writer submissions before replacement. Review and

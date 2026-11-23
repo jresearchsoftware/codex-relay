@@ -83,6 +83,20 @@ def invocation(tmp_path, monkeypatch):
         if state['failure'] == name:
             raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_' + name.upper().replace('-', '_'))
 
+    def target_call(_target, _key, argv, **_options):
+        assert argv[:2] == ['/usr/bin/systemctl', 'show']
+        assert argv[-2:] == ['--property=ActiveState', '--value']
+        injected('reviewer-state')
+        return SimpleNamespace(returncode=0, stdout='inactive\n')
+
+    def maintain_pool(_target, _key, _config, operation, action, _guard, **_options):
+        assert operation == state['preparation'].operation
+        injected('pool-' + action)
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    monkeypatch.setattr(backend, 'run_target', target_call)
+    monkeypatch.setattr(managed_pool_transport, 'maintain_pool', maintain_pool)
+
     class Preparation:
         def __init__(self, _target, _key, _values, _identity, operation, **_options):
             self.operation = operation
@@ -521,6 +535,23 @@ def test_full_source_fallback_keeps_both_pool_checks_before_their_owning_frontie
     assert len(checks) == 2
     assert events.index('source-reuse') < checks[0] < events.index('compatibility') < events.index('host')
     assert events.index('drain-check') < checks[1] < events.index('final') < events.index('backend')
+    assert events.index('reviewer-state') < events.index('pool-pause') < events.index('pool-drain') < events.index('quiesce')
+    assert events.index('phase:verified') < events.index('pool-restart') < events.index('resume') < events.index('pool-resume')
+
+
+@pytest.mark.parametrize(('failure', 'phase'), [('pool-pause', 'before-quiesce'),
+                                                ('pool-resume', 'verified-admission-open')])
+def test_pool_failure_reports_original_operation_and_preserves_verified_gate(invocation, capsys, failure, phase):
+    args, events, gate, state, _records = invocation
+    state['failure'] = failure
+    with pytest.raises(RuntimeError, match='INSTALL_PREFLIGHT_INJECTED_POOL_'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert 'phase:recovery-required' not in events
+    assert ('quiesce' in events) is (failure == 'pool-resume')
+    output = capsys.readouterr().out
+    operation = state['preparation'].operation
+    assert f'RELAY_POOL_RECOVERY_REQUIRED=operation={operation};phase={phase};' in output
 
 
 def test_deferred_pool_failure_stops_fallback_before_host_staging_or_quiesce(invocation):
