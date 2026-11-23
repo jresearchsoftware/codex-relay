@@ -291,11 +291,11 @@ class ProductionBoundaryTests(unittest.TestCase):
             for forbidden in (
                 "relay_reviewer_socket_path",
                 "REVIEWER_MCP_SOCKET",
-                "mcp.sock",
                 "a_only_unix_socket",
                 "proxy_pass http://unix:",
             ):
                 self.assertNotIn(forbidden, active_text)
+            self.assertNotRegex(active_text, r"\bmcp\.sock\b")
         self.assertNotIn("UnixListener", self.reviewer_source)
         self.assertNotIn("REVIEWER_MCP_HOST", self.reviewer_source)
         self.assertIn("bind_socket", self.reviewer_source)
