@@ -170,6 +170,7 @@ const otherObservations = {
   CHECKOUT_DIRTY: 'The checkout has changes requiring reconciliation.',
   STARTING_STATE_MISMATCH: 'The live starting state failed the admitted head or ancestry check.',
   AUTHORITY_CHANGED: 'Live Task authority differs from the admitted authority.',
+  AUTHORITY_SOURCE_MISMATCH: 'A required native authority source could not be matched to its admitted reference.',
   ATTEMPT_CONTROLLER_BUSY: 'Another controller holds the attempt lock.',
   JOURNAL_MISSING_EXECUTION_UNKNOWN: 'The required execution receipt is missing or unusable.',
   EXECUTION_UNKNOWN_NO_RETRY: 'A prior execution reservation has no conclusive terminal receipt.',

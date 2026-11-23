@@ -26,19 +26,24 @@ export async function main(options = {}) {
   process.on('SIGINT', cancel); process.on('SIGTERM', cancel);
   try { return await runRouting({ ...options, signal: cancellation.signal, progress }); }
   catch (error) {
+    // A failed Step projection can belong to a replay. This process did not
+    // dispatch, but only Writer can report what it proved about that reservation.
+    const failedProjection = error.details?.admissionEffect?.ready === 'not-attempted';
     error.details = { ...error.details,
       runId, target: error.details?.target ?? progress.target,
       routingStage: progress.workerPossible ? 'finalization' : 'authority',
       lastSuccessfulBoundary: error.details?.lastSuccessfulBoundary ?? progress.lastSuccessfulBoundary ?? 'controller-start',
-      ...(!progress.workerPossible ? { childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' } : {}) };
+      ...(!progress.workerPossible && !failedProjection
+        ? { childState: 'not_started', containment: 'not_required', cleanup: 'not_required', retention: 'none' } : {}) };
     if (!error.details?.diagnosticStore && !error.details?.fallbackReference) {
       const env = options.env ?? process.env;
       const run = /^[1-9][0-9]{0,15}$/.test(env.GITHUB_RUN_ID ?? '') ? env.GITHUB_RUN_ID : 'unknown';
+      const projectionAttempt = failedProjection ? error.details.failureDiagnostic?.executionId : undefined;
       try {
         const durable = await (options.persistRoutingFailure ?? options.persistFailure ?? persistAttemptFailureDiagnostic)({
           executionId: `routing-${run}-${randomUUID()}`, error, stage: error.details.routingStage,
           lastSuccessfulBoundary: error.details.lastSuccessfulBoundary });
-        error.details = { ...error.details, ...durable };
+        error.details = { ...error.details, ...durable, ...(projectionAttempt ? { executionId: projectionAttempt } : {}) };
       } catch { error.details.diagnosticRecorderFailed = true; }
     }
     if (error.code === 'OWNER_EVENT_REQUIRED') return { status: 'BLOCKED', code: error.code,
@@ -192,7 +197,9 @@ export async function reportRoutingResult(run, options = {}) {
   } catch (error) {
     const code = /^[A-Z][A-Z0-9_]{0,79}$/.test(error?.code ?? '') ? error.code : 'ROUTING_FAILED';
     const detail = error.details ?? {};
-    const diagnostic = detail.diagnostic ?? causalEvidence(error, { stage: detail.routingStage ?? 'authority' });
+    const diagnostic = detail.diagnostic ?? causalEvidence(error, {
+      stage: detail.routingStage ?? 'authority', containment: detail.failureDiagnostic?.containment ?? detail.containment
+    });
     const explanation = failureExplanation(code, diagnostic, { runId: detail.runId, reason: detail.reason,
       target: detail.target, outcome: detail.outcomePublication ?? diagnostic.outcomePublication });
     const secondary = detail.admissionCompletion ? ' Completion of the protected admission reservation is also unverified.' : '';

@@ -48,6 +48,49 @@ test('charter-only new authority needs no public Request or preallocated Step', 
   reject(() => admits(resolved, { step: undefined }), 'AUTHORITY_ADMISSION_INVALID');
 });
 
+test('reconstruction keeps a trusted PR Decision as evidence without admitting its amendments', () => {
+  const prDecision = decision({ scope: ['PR-specific scope'], starting_head: base, model: 'pr-model' }, 200,
+    { parent: { kind: 'pull_request', number: 42 } });
+  const reference = nativeReference(prDecision);
+  const direction = decision({ scope: ['Task scope'] }, 201, { context: [reference] });
+  const pin = decision({ starting_head: head, existing_pr: 42 }, 202);
+  const snapshot = admits(resolve([prDecision, direction, pin]));
+  const records = [charterNative, prDecision, direction, pin];
+  const context = [{ reference, body: prDecision.body }];
+  assert.deepEqual(snapshot.authority.decisions, [nativeReference(direction), nativeReference(pin)]);
+  assert.deepEqual(snapshot.scope, ['Task scope']);
+  assert.equal(snapshot.model, binding.projectDefaults.model);
+  assert.equal(snapshot.starting_head, head);
+  assert.equal(snapshot.existing_pr, 42);
+
+  const verify = sources => resolveOutcomeAuthority(snapshot.authority, sources, binding);
+  const unchanged = verify(records);
+  assert.deepEqual(unchanged.originalAuthority.authority, snapshot.authority);
+  assert.deepEqual(unchanged.originalAuthority.selectedContext, context);
+  assert.deepEqual(unchanged.selectedContext, context);
+  assert.deepEqual(unchanged.authorityDrift.changed_fields, []);
+  assert.equal(unchanged.authorityDrift.review_required, false);
+
+  // The evidence must still resolve for the original attempt after the active
+  // Task Decision that cited it has been superseded.
+  const successor = decision({ scope: ['New Task scope'] }, 203, { supersedes: nativeReference(direction) });
+  const drifted = verify([...records, successor]);
+  assert.deepEqual(drifted.originalAuthority.selectedContext, context);
+  assert.deepEqual(drifted.originalAuthority.request.scope, ['Task scope']);
+  assert.deepEqual(drifted.selectedContext, []);
+  assert.deepEqual(drifted.request.scope, ['New Task scope']);
+  assert.deepEqual(drifted.authorityDrift.changed_fields, ['scope']);
+  assert.equal(drifted.authorityDrift.review_required, true);
+
+  reject(() => verify([charterNative, direction, pin, successor]), 'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => verify([charterNative, { ...prDecision, body: prDecision.body + '<!-- edited -->' }, direction, pin]),
+    'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => verify([charterNative, prDecision, { ...direction, author: owner }, pin]), 'AUTHORITY_SOURCE_MISMATCH');
+  reject(() => verify([charterNative, { ...prDecision, parent: issue }, direction, pin]), 'AUTHORITY_NATIVE_PARENT_MISMATCH');
+  const conflicting = decision({ effort: 'high' }, 204, { context: [{ ...reference, sha256: sha256Body('different') }] });
+  reject(() => verify([...records, conflicting]), 'AUTHORITY_SOURCE_MISMATCH');
+});
+
 test('profile precedence is CR then trusted Decision then project then supported system defaults', () => {
   assert.deepEqual(resolveExecutionProfile(), { model: 'gpt-6.1-sol', effort: 'xhigh', subagents: true });
   assert.deepEqual(resolveExecutionProfile({ project: { model: 'p', subagentsAllowed: false },

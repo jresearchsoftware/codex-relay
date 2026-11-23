@@ -218,6 +218,9 @@ exact CR as acceptance provenance after `APPROVE` or disposal of an artifact,
 verifies the original charter/Decision source integrity, resolves current
 trusted Task Decisions separately and rejects a newer applicable CR or changed
 charter/compatibility source. Its result cannot create a new admission.
+Original reconstruction resolves cited context by exact native identity and body
+hash, including Decisions outside the admitted authority. Only the admitted
+Decision chain supplies original Task semantics.
 An Outcome keeps its admitted `authority` and `admission`. If valid later
 Decisions change the source binding, Writer adds `authority_drift` with
 `current_authority`, sorted `changed_fields` and `review_required`. The latter

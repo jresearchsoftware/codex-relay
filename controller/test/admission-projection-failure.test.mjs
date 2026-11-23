@@ -181,6 +181,9 @@ test('uncoded Step projection failure retains a private redacted exception and e
   const wire = serializeWriterFailure(f.failure);
   assert.equal(wire.code, 'ADMISSION_STEP_PROJECTION_FAILED');
   assert.equal(wire.failureDiagnostic.operation, 'step-label-ensure');
+  assert.equal(wire.failureDiagnostic.executionId, record.envelope.attemptId);
+  assert.equal(wire.failureDiagnostic.workerStarted, false);
+  assert.equal(wire.failureDiagnostic.childState, 'not_started');
   assert.match(wire.failureDiagnostic.preview, /TypeError/);
   const encoded = JSON.stringify(wire);
   assert.ok(!encoded.includes(privatePath));
