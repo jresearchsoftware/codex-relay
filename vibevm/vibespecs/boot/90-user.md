@@ -57,7 +57,7 @@ version/rollback semantics are in docs/codex/SUBAGENTS.md and docs/vibevm.md.
   bytes into a fresh trusted repository and validate them.
 - Source changes and local tests do not authorize deployment, credentials,
   service changes, merge, Issue closure or release. Do not claim those proofs.
-  Operational control inside an explicitly isolated disposable TEST sandbox is
+  Operational control over owned disposable TEST effects is
   separately granted by the standing
   [TEST Environment Authority](../../../docs/execution-policy.md#test-environment-authority).
 - For product and ordinary consumer lifecycle operations, follow the
@@ -71,7 +71,7 @@ version/rollback semantics are in docs/codex/SUBAGENTS.md and docs/vibevm.md.
   successful work on an already prepared host does not prove standalone
   bootstrap or retroactively gate an unrelated task. Disposable TEST cleanup
   and rebuilding follow TEST Environment Authority; public lifecycle interfaces
-  and production recovery procedures are optional inside that sandbox.
+  and production recovery procedures are optional for disposable TEST setup and recovery.
 - Prefer existing GitHub/Git records over a new ledger, registry or workflow
   engine. Add machinery only for a demonstrated product requirement.
 

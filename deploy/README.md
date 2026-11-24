@@ -13,17 +13,15 @@ workflow, generated integration directories and reviewed PROD cutover. The
 phase-specific commands below remain expert and retained compatibility APIs;
 their prepublication/configuration comparison rules are not Git Apply gates.
 
-For an owner-designated isolated TEST deployment, use the standing
+For disposable TEST, use the standing
 [TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
-Keep reproduction, related repairs, representative installation and the original
-operation within the [bounded repair policy](../docs/execution-policy.md), through
-durable result publication. Source acceptance and the normal owner-triggered
-deployment path follow the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes);
-documentation alone proves no installed capability or deployment result.
-Disposable TEST cleanup and rebuilding may use suitable shells and tools;
-these production-safe lifecycle procedures are optional inside that sandbox.
-When qualifying a product lifecycle interface, exercise and report its actual
-behavior rather than treating manual sandbox cleanup as proof of that interface.
+The owning execution can provision or expand TEST resources within established
+authority, including TEST-specific configuration of shared services when the
+effects preserve PROD and other non-TEST users. Use suitable shells, tools,
+integration and cleanup for TEST setup. Exercise the actual installed interface
+when qualifying the product lifecycle and report the observed identities and
+results. Product-source acceptance and normal owner-triggered deployment follow
+the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
 
 ## Inputs and invocation
 
@@ -2041,8 +2039,9 @@ Use an explicit Authorization header, or account for `GH_TOKEN` taking
 precedence over `GITHUB_TOKEN` when invoking `gh`; a default user token is not
 proof of App authentication. An organization runner token is not technically
 TEST-scoped. Preserve the selected TEST repository allowlist, restricted trusted
-workflow/ref policy and secret boundary during every operation. This authority
-does not permit production or shared-resource administration.
+workflow/ref policy and secret boundary during every operation. Keep
+PROD and non-TEST resources protected. TEST-specific changes to shared
+resources follow the same effect boundary.
 
 Use the public registration phase after installing the exact accepted product:
 

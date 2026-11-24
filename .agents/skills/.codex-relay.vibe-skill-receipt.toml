@@ -7,11 +7,11 @@ sha256 = "2d6597c764cef32cb7d7435fcb7d742767ee219f52094ddcb4f8c655ecfb8bd2"
 
 [[file]]
 path = "PROVENANCE.json"
-sha256 = "2673451564d64a06b2e1f0ea40f8180d31e852e776defa627990f2eecb4eeabb"
+sha256 = "cd7862e262f611cbfa112dfa9e5dc4a39bcef6360aab97e429df08bcaf1ed00f"
 
 [[file]]
 path = "SKILL.md"
-sha256 = "bc0eaef66bf344c7d4067206151ff9f253a5e70654b95bc910e1ba01958b9b16"
+sha256 = "08fd7c400b1721b2c67c9f505e1b55eb04b157fd113e86fd2dc51409adb5291f"
 
 [[file]]
 path = "references/compatibility.md"
@@ -19,15 +19,15 @@ sha256 = "c18d895213814e96e43c7081766ea3f0aec7b257efeb0f8bde890d15d0990970"
 
 [[file]]
 path = "references/diagnostics.md"
-sha256 = "819ed8b8d6da8d63bf78143e780430d1eb1f7e335d1c93dc79041d845fa64c70"
+sha256 = "f28ddf3459f3564ccf6c96f99cacc7e6543da6db8205ead5ad7b8ad6874ce7d1"
 
 [[file]]
 path = "references/examples.md"
-sha256 = "532243aea27bd74c624884fc50f713ef1ccdf1de34e97b77551022b29ae3f996"
+sha256 = "9447248a4da67ad26b9483a6bca1ad23c3ff89a3127e4ea4e5278244e557c208"
 
 [[file]]
 path = "references/installation.md"
-sha256 = "820875f849da9d49622dde2f612001b90befae1b4d9fa4bafdfa39deb886cbbb"
+sha256 = "0c01935cbc9291c20d4212606310de5211b54cdb392a462945492a7673aaa892"
 
 [[file]]
 path = "references/product/contract.json"
@@ -51,4 +51,4 @@ sha256 = "835ffe880a4ca6ac1d072c4852f16decd778c0a557a9930124720ff70862a492"
 
 [[file]]
 path = "references/workflow.md"
-sha256 = "c08d3e8849bc47143dfff3b807643c6e5ff8e34fd15fc2e239c10b12c9fef7cd"
+sha256 = "4e2d655bba9d7aba3338348cde27195a082d1a3329b95cdd99873b0dc2b2979e"

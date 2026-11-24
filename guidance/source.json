@@ -1,11 +1,11 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "95b374b9a575810b4253db46adbe1618b82afd89",
+  "contract_revision": "45fd525d8e040b1235858001c0eb2bd573286c10",
   "contract_revision_role": "accepted-baseline",
   "contract_source": "source-tree",
   "name": "codex-relay",
-  "publication": "MAJOR 10.0.0 candidate from independently accepted 9.0.0; Task 273 adopts GH-014 and HC-001–003 in product guidance, updates manual handoff presentation and removes the redundant Reviewer field; no installation or publication claim",
+  "publication": "MAJOR 11.0.0 from independently accepted 10.0.0. Task 234 includes Issue 297 and removes mandatory review and integration gates for routine disposable TEST operations within established authority.",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -15,6 +15,6 @@
   "shared_requirement": ">=12.1.0",
   "shared_source_revision": "e4b5b738ae0918014dd06b5616fe37a5dcb93290",
   "shared_version": "12.1.0",
-  "version": "10.0.0",
+  "version": "11.0.0",
   "workflow_contract": "relay-workflows-v4"
 }

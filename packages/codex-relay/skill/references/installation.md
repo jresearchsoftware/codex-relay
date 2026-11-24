@@ -8,7 +8,16 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **10.0.0** is a MAJOR candidate from accepted 9.0.0. The product
+Version **11.0.0** is MAJOR from accepted 10.0.0. It removes blanket
+independent review, squash merge and related process requirements for routine
+disposable TEST work. Within established TEST authority, executors can expand
+TEST resources and manage TEST-specific configuration on shared services while
+protecting PROD and other users. Actual product acceptance, protected Relay
+operations and the owning project's local authority retain their requirements.
+The native floor remains `>=12.1.0`. Standalone and publisher closure evidence
+carry exact Shared 12.1.0. Frozen 10.0.0 and earlier payloads retain their bytes.
+
+Version **10.0.0** was MAJOR from accepted 9.0.0. The product
 adopts GH-014 and HC-001–003, updates manual handoff presentation and removes
 the constant `post_review_continuation.execution_supported` from the Reviewer
 response. Consumers use the actual continuation authorization and effect fields.
@@ -58,7 +67,7 @@ Frozen 7.0.0 and earlier package bytes remain unchanged.
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `10.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `11.0.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 12.1.0

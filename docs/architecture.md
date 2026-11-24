@@ -29,11 +29,11 @@ their historical contract.
 Task 115 Step 1 was initially admitted through exact schema-v3 Request
 6109630038 and its current installed manual handoff. Implementing the future
 contract did not replace that admission or authorize a paired live runtime
-upgrade. Source implementation, checks and permitted isolated-TEST qualification
+upgrade. Source implementation, checks and permitted disposable TEST qualification
 remain one admitted manual Step. Installation, credentials/ingress, release,
 production mutation, product merge and closure outside disposable TEST remain
-separate protected permissions. Operational control inside an explicitly
-isolated disposable TEST sandbox follows
+separate protected permissions. Operational control over owned
+disposable TEST effects follows
 [TEST Environment Authority](execution-policy.md#test-environment-authority).
 
 ## Components and flow

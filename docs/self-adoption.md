@@ -7,14 +7,14 @@ This document supplies the native materialization, accepted-source binding and
 recovery mechanics. [AGENTS](../AGENTS.md) and the
 [ownership mapping](relay-guidance-ownership.md) bind the other adopted topics.
 
-The first-party `org.jresearch.ai/codex-relay` **10.0.0** candidate uses the
+The first-party `org.jresearch.ai/codex-relay` **11.0.0** candidate uses the
 native export. Registry, slot, lock, boot index and projected native Skill travel
 together. Root [AGENTS](../AGENTS.md) adopts Shared **12.5.0**, independently
 pinned at the exact Git identity in [the identity contract](vibevm.md#selected-immutable-identities).
 The native product's `>=12.1.0` floor covers GH-014 and HC-001–003. Standalone
 and publisher evidence include exact 12.1.0. The
 [release classification](relay-guidance.md#version-and-provenance) explains
-the MAJOR from accepted 9.0.0. Frozen 9.0.0 and earlier registry payloads
+the MAJOR from accepted 10.0.0. Frozen 10.0.0 and earlier registry payloads
 preserve their bytes. Source acceptance, publication, installed activation
 and consumer adoption remain separate.
 
@@ -65,6 +65,12 @@ Step 2 also selects VibeVM 1.0.12 and both Landscape 1.1.0 flows. It preserves
 the admitted starting head as the Step 1 frontier and the accepted source above
 as its guidance baseline.
 
+Task #234 Step 5 uses accepted source
+`45fd525d8e040b1235858001c0eb2bd573286c10` for its execution guidance. Its 11.0.0
+candidate delivers the TEST policy correction from Issue #297. The trusted
+Task Decision supplies authority for Step 5 TEST operations while the candidate
+is in development.
+
 Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
 An already supplied frozen accepted snapshot is equivalent. Preserve system/
@@ -107,10 +113,20 @@ compares the complete standalone snapshot with its own accepted distribution
 and separately validates the root consumer lock/slot. Native install prunes retired active slots. Git and the frozen registry
 retain the previous selected payloads.
 
+For the 10.0.0 to 11.0.0 transition, VibeVM 1.0.12 refused the held version
+on plain install. A fresh native solve in staging, with the old lock set aside,
+resolved the exact root requirements. Preserve any historical tracked slot that
+native pruning removes. Migrate the old portable Skill seed while its provider
+is still selected. If the graph has already moved and projection refuses the
+older seed, compare the existing projection with its accepted inventory and
+move only the verified managed files and seed to staging before a clean native
+projection. Keep the portable seed with relative paths and hashes from the
+verified projected files, and preserve local additions.
+
 `prepare-relay-self-adoption.py` stages/checks the selected deterministic VPM
-export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v10.0.0`. It performs no
+export at `vibevm/vibepacks/org.jresearch.ai/codex-relay/v11.0.0`. It performs no
 resolution or Skill installation and preserves/reports unknown files. It does
-not rewrite frozen accepted `v1.0.0`, `v2.0.0`, `v2.0.1`, `v3.0.0`, `v3.1.0`, `v4.0.0`, `v4.1.0`, `v5.0.0`, `v6.0.0`, `v6.1.0`, `v7.0.0`, `v8.0.0` or `v9.0.0` bytes. Native VibeVM
+not rewrite frozen accepted versions through `v10.0.0`. Native VibeVM
 owns slot, lock, index,
 managed agent blocks and Skill receipt. Review generated and authored changes
 in the same source candidate; [relay-guidance.md](relay-guidance.md) covers the

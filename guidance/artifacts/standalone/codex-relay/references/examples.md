@@ -164,16 +164,17 @@ Request, references, Step, result transport and recovery contract. Leave those
 historical bytes intact. Neither that retained path nor installing this Skill
 authorizes a fresh old-style execution on a qualified v4 installation.
 
-## Dedicated TEST review and integration
+## TEST setup and genuine review qualification
 
-An owner explicitly designates `example-org/relay-testbed` and its isolated
-sandbox for qualification. Within that established standing authority, the
-executor may create a fixture Issue/Decision, launch it through genuine native
-admission, obtain independent TEST REQUEST_CHANGES, preserve a truthful blocked
-result, complete a later admitted correction, obtain exact-head TEST APPROVE
-and perform the already authorized expected-head squash/readback. No additional
-per-action owner prompt is needed for these TEST-only operations. Keep the
-Issue open until any stated `keep-open` condition is verified, preserve original native
-records and reconcile uncertain publication before dependent action. A separately
-required preview for negative findings on the actual product PR still applies
-to that product assessment; it does not govern this dedicated TEST fixture.
+An owner designates `example-org/relay-testbed` and grants standing authority
+for its disposable TEST effects. The owning execution can integrate a fixture
+configuration change directly or through a PR, and can add a TEST route to a
+shared nginx instance when the change and reload preserve non-TEST users. Claim
+shared TEST before use. If another execution holds the claim, continue work in
+an independent authorized environment or wait for handback.
+
+To qualify genuine native review and remediation, the executor uses a fixture
+with real admission and independently published TEST review, then inspects the
+exact original receipts and replay result. It can use resettable fixture data
+for setup and report that evidence as fixture evidence. The actual product PR
+still follows its independent acceptance and native publication requirements.

@@ -85,9 +85,9 @@ development aids; they are not universal consumer admission or recovery gates.
 
 Runtime capsule retention/disposal and deployment recovery use their existing
 protected operational entrypoints and owner authority. No arbitrary diagnostic
-read/delete or cleanup is granted here. An explicitly isolated disposable TEST
-sandbox follows its admitted TEST policy; uncertainty about its boundary stops
-outside effects and does not grant production control.
+read/delete or cleanup is granted here. Owned disposable TEST follows
+its established TEST authority. If an intended effect cannot be confined within
+that authority, stop the affected operation and continue independent work.
 
 ## Manual publication target errors
 

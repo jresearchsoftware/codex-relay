@@ -10,7 +10,22 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **10.0.0** is a **MAJOR** candidate from independently accepted and
+Guidance **11.0.0** is a **MAJOR** change from independently accepted and
+published **10.0.0**. [Issue #297](https://github.com/jresearchsoftware/codex-relay/issues/297)
+changes the supported disposable TEST workflow in Task #234. Within established
+TEST authority, the executor may integrate routine TEST changes without the
+previously required independent review, exact-head and squash merge procedure.
+Executors may expand TEST resources, including TEST-specific configuration of
+shared services, while protecting PROD, other users and other Tasks. Removing
+those previously guaranteed steps determines the major classification under
+PV-002/009/018. This release adds no mandatory operator action. Actual product
+acceptance, protected Relay operations and consumer-owned policy retain their
+requirements. The native Shared floor remains `>=12.1.0`, with exact Shared
+12.1.0 in the standalone and publisher closure evidence.
+
+### Earlier version-scoped classification
+
+Guidance **10.0.0** was a **MAJOR** change from independently accepted and
 published **9.0.0**, with accepted Relay baseline
 `95b374b9a575810b4253db46adbe1618b82afd89`. Task #273 adds mandatory GH-014
 owner choices at applicable repository settings decisions and adopts HC-001–003
@@ -24,8 +39,6 @@ closure evidence select exact Shared 12.1.0. The
 details the scope, old-attempt compatibility and verification boundaries. The
 root's standing Small Improvements delegation is a separate local adoption
 and would not require a product release by itself.
-
-### Earlier version-scoped classification
 
 Guidance **9.0.0** was a **MAJOR** change from independently accepted **8.0.0**
 at `7f95a60c485ccf40025dae78f652adc8df3b19ea`. Task #244 adds protected causal
@@ -177,8 +190,8 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 10.0.0 uses `contract_source: source-tree` and records the accepted
-Task 273 baseline `95b374b9a575810b4253db46adbe1618b82afd89` in
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 11.0.0 uses `contract_source: source-tree` and records the accepted
+Task #234 Step 5 baseline `45fd525d8e040b1235858001c0eb2bd573286c10` in
 `guidance/source.json`. Its actual schema/workflow/tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
 commit. The accepted-baseline revision is context, not a claim that candidate
@@ -190,7 +203,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 The guidance build and source acceptance do not activate the runtime changes.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 10.0.0 is a candidate. Native source
+release. Before independent acceptance, 11.0.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical
