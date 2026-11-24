@@ -318,6 +318,29 @@ class OldInstallationTests(unittest.TestCase):
         self.assertEqual(self.prepared.initial, initial)
         self.assertEqual(self.prepared.desired_digest, 'f' * 64)
 
+    def test_verify_and_abort_keep_the_exact_reviewer_pause_created_after_capture(self):
+        self.capture_and_reserve()
+        marker = self.at('/etc/fixture/reviewer-maintenance.json')
+        lock = marker.with_suffix('.json.lock')
+        raw = json.dumps({'schemaVersion': 1, 'operation': OP, 'command': 'pause-writer'}).encode()
+        marker.write_bytes(raw); marker.chmod(0o640)
+        lock.touch(mode=0o600)
+        self.prepared.action('verify')
+        self.assertEqual(self.prepared.abort()['status'], 'old-open-restored')
+        self.assertEqual(self.gate.read_bytes(), self.old_gate)
+        self.assertEqual(marker.read_bytes(), raw)
+
+    def test_abort_leaves_the_gate_closed_for_a_different_reviewer_pause(self):
+        self.capture_and_reserve()
+        marker = self.at('/etc/fixture/reviewer-maintenance.json')
+        marker.write_text(json.dumps({'schemaVersion': 1, 'operation': OP[:-1] + 'd', 'command': 'pause-writer'}))
+        marker.chmod(0o640)
+        marker.with_suffix('.json.lock').touch(mode=0o600)
+        before = self.gate.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, 'OLD_INSTALLATION_CHANGED'):
+            self.prepared.abort()
+        self.assertEqual(self.gate.read_bytes(), before)
+
     def test_invalid_actual_consumer_cannot_be_opened_using_only_a_restorable_private_clone(self):
         self.capture_and_reserve()
         self.configuration.write_bytes(b'{ invalid actual consumer')

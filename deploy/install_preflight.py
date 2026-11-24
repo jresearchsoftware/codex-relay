@@ -201,6 +201,27 @@ def critical_state(values, *, root=Path('/'), owner_uid=0, consumer_restore_requ
     return result
 
 
+def verify_old_installation(values, snapshot, operation, **options):
+    baseline = snapshot['critical']
+    current = critical_state(values, consumer_restore_required=snapshot['consumerRestoreRequired'], **options)
+    marker = values['relay_config_root'] + '/reviewer-maintenance.json'
+    lock = marker + '.lock'
+    # The protected Reviewer helper pauses Writer after capture, before the
+    # gate closes. Keep the exact same-operation intent across verify and abort.
+    if marker not in baseline and marker in current:
+        record = current[marker]
+        expected = json.dumps({'schemaVersion': 1, 'operation': operation, 'command': 'pause-writer'}).encode()
+        require(record.get('mode') == 0o640 and record.get('sha256') == hashlib.sha256(expected).hexdigest()
+                and read(marker, **options) == expected, 'OLD_INSTALLATION_CHANGED')
+        current.pop(marker)
+        if lock not in baseline:
+            observed_lock = current.get(lock, {})
+            require(observed_lock.get('mode') == 0o600 and observed_lock.get('size') == 0
+                    and observed_lock.get('gid') == options['owner_uid'], 'OLD_INSTALLATION_CHANGED')
+            current.pop(lock)
+    require(current == baseline, 'OLD_INSTALLATION_CHANGED')
+
+
 def observe_predispatch_service_intent(values, *, service_probe=None):
     """Read the bounded systemd activity shape retained by the admission snapshot."""
     namespace = values['relay_namespace']
@@ -475,8 +496,7 @@ def remote(request, *, root=Path('/'), owner_uid=0, service_probe=None):
     snapshot = json.loads(read(str(stage / evidence.name), **options))
     require(snapshot['operationId'] == operation and snapshot['target'] == target, 'EVIDENCE_BINDING_CHANGED')
     require(type(snapshot['consumerRestoreRequired']) is bool, 'EVIDENCE_BINDING_CHANGED')
-    require(critical_state(values, consumer_restore_required=snapshot['consumerRestoreRequired'], **options)
-            == snapshot['critical'], 'OLD_INSTALLATION_CHANGED')
+    verify_old_installation(values, snapshot, operation, **options)
     if action == 'verify':
         return {'oldStateSha256': hashlib.sha256(encoded(snapshot['critical'])).hexdigest()}
     require(action == 'abort', 'ACTION_INVALID')
