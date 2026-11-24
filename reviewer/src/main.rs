@@ -34,6 +34,9 @@ mod task_authority;
 struct Args {
     #[arg(long, env = "REVIEWER_MCP_CONFIG")]
     config: String,
+    /// Validate the rendered runtime configuration before starting the service.
+    #[arg(long)]
+    check_config: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -1404,6 +1407,10 @@ async fn main() {
     if configured_mount != "/mcp" {
         panic!("REVIEWER_MCP_MOUNT_PATH must remain the canonical /mcp route")
     }
+    if a.check_config {
+        println!("REVIEWER_CONFIG_VALID");
+        return;
+    }
     assert_eq!(
         std::env::var("GITHUB_APP_ID").ok().as_deref(),
         Some(policy.app_id.as_str()),
@@ -2731,6 +2738,7 @@ mod tests {
         fs::write(&path, &rendered).expect("write rendered managed config");
         let runtime_args = Args {
             config: path.to_str().unwrap().to_string(),
+            check_config: false,
         };
         let loaded = effective_runtime_config(&runtime_args);
         validate_effective_runtime_config(&loaded);

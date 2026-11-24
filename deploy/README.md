@@ -1754,6 +1754,11 @@ Unsupported frontend rendering or payload bounds
 retain the original source preparation play before submission. A failed or
 unproved submitted batch stops the operation. First-install prerequisite
 preparation and the later complete artifact path keep their existing ordering.
+The complete artifact stage renders the desired Reviewer configuration with
+the same template and target gateway discovery as installation. Before
+Apply withdraws runner eligibility, the staged Reviewer validates this
+configuration with `--check-config`. That check exits before credential
+loading, binding the listener or opening SQLite.
 An operation-scoped catalogue renders canonical task-owned files, modes,
 identities and all 32 namespace probes. Native checks verify current host/App/TLS
 inputs, pool units/registrations/group eligibility, runtime imports and readiness,

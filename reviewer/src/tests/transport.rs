@@ -560,6 +560,7 @@ async fn managed_config_instances_bind_tools_tokens_and_publications_to_their_ow
         fs::write(&path, rendered_runtime_config(repository)).unwrap();
         let config = effective_runtime_config(&Args {
             config: path.to_str().unwrap().into(),
+            check_config: false,
         });
         fs::remove_file(path).unwrap();
         let state = MockState {
