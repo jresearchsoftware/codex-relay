@@ -945,11 +945,12 @@ def run(args, *, reservation_token=None):
                     qualified_local = args.local_reconcile or args.local_lifecycle
 
                     def pool_maintenance(action):
-                        from managed_pool_transport import maintain_pool, maintain_reserved_pool
                         if reserved_pool:
+                            from managed_pool_transport import maintain_reserved_pool
                             result = maintain_reserved_pool(config, admission_operation_id, action, guard,
                                                             pool_guard, ROOT, workflow_run, reservation_token)
                         else:
+                            from managed_pool_transport import maintain_pool
                             result = maintain_pool(target, key, config, admission_operation_id, action, guard,
                                                    local=qualified_local, extra_guard=pool_guard)
                         for key_name in ['paused', 'stopped', 'preserved', 'ready', 'busy']:
