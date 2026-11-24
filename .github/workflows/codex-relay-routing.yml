@@ -110,6 +110,8 @@ jobs:
           esac
           exec /usr/bin/node --input-type=module <<'NODE'
           import { readFile, realpath } from 'node:fs/promises';
+          let boundary = 'installed routing source';
+          try {
           const expectedContract = process.env.EXPECTED_WORKFLOW_CONTRACT;
           const release = await realpath('/opt/codex-relay/current');
           const identity = JSON.parse(await readFile(`${release}/reviewed-source/.relay-source.json`, 'utf8'));
@@ -123,6 +125,23 @@ jobs:
             throw new Error('RELAY_REPOSITORY_INTEGRATION_OUTDATED: publish the generated repository integration directory');
           }
           console.log(JSON.stringify({ installedRelayHead: head, workflowHead: process.env.GITHUB_SHA }));
+          boundary = 'controller configuration and startup';
           const { main, reportRoutingResult } = await import(`${release}/bin/relay-routing.mjs`);
           process.exitCode = await reportRoutingResult(main);
+          } catch (error) {
+            const installed = error?.message === 'INSTALLED_RELAY_IDENTITY_MISMATCH';
+            const projection = error?.message === 'RELAY_REPOSITORY_INTEGRATION_OUTDATED: publish the generated repository integration directory';
+            const config = error?.code === 'CONSUMER_CONFIG_INVALID';
+            const code = installed ? 'INSTALLED_RELAY_IDENTITY_MISMATCH' : projection ? 'RELAY_REPOSITORY_INTEGRATION_OUTDATED'
+              : config ? 'CONSUMER_CONFIG_INVALID' : 'ROUTING_STARTUP_FAILED';
+            const cause = installed ? 'The installed source path and revision did not agree.'
+              : projection ? 'The installed and projected routing contracts did not match.'
+              : config ? 'The installed consumer configuration failed validation.'
+              : 'The underlying startup cause could not be established from the safe output.';
+            const action = projection ? 'Verify and integrate the generated repository workflow projection for the accepted installation.'
+              : 'Have the host operator verify the installed Relay source and selected consumer configuration.';
+            const run = /^[1-9][0-9]{0,19}$/.test(process.env.GITHUB_RUN_ID ?? '') ? ` (run-${process.env.GITHUB_RUN_ID})` : '';
+            console.error(`::error title=Relay routing startup::Relay failed at ${boundary}${run}. ${code}. ${cause} No worker started in this invocation. Next action: ${action}`);
+            process.exitCode = 1;
+          }
           NODE
