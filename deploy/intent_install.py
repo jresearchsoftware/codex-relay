@@ -26,7 +26,8 @@ from config import loads, unique_object
 REVISION = re.compile(r'[0-9a-f]{40}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
 REPOSITORY = re.compile(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
-CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1', 'predispatch-retention-v1'}
+CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1',
+                'predispatch-retention-v1', 'managed-pool-reservation-v1'}
 INSTALL_CAPABILITIES = {'lifecycle-v1', 'git-desired-v1', 'integration-artifact-v1'}
 # Task 25's accepted and live-qualified admission/lifecycle rollout. One lineage
 # boundary classifies all pre-metadata revisions; this is not a transition table.

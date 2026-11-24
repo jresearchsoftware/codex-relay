@@ -451,7 +451,7 @@ def wait_ready(member, runner_id, observe, host, *, now=time.monotonic, wait=tim
 
 def maintenance(contract, state_store, github, host, *, operation, action, owner_pid=None,
                 now=time.monotonic, wait=time.sleep, timeout=1800,
-                progress=None):
+                progress=None, reservation=None):
     """Maintain existing registrations under the caller's existing pool lock.
 
     Pause happens before closing admission: an assignment already in flight
@@ -462,7 +462,8 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     """
     require(isinstance(operation, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation),
             'MAINTENANCE_OPERATION_INVALID')
-    require(action in ['pause', 'drain', 'restart', 'resume'], 'MAINTENANCE_ACTION_INVALID')
+    require(action in ['pause', 'drain', 'restart', 'resume']
+            or action == 'verify' and reservation is not None, 'MAINTENANCE_ACTION_INVALID')
     require(type(timeout) in [int, float] and 0 <= timeout <= 86400, 'MAINTENANCE_TIMEOUT_INVALID')
     require(type(contract['desiredCapacity']) is int and 1 <= contract['desiredCapacity'] <= CAPACITY,
             'CAPACITY_INVALID')
@@ -525,6 +526,15 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
             snapshots[identity] = {'runnerId': remote['id'], 'labels': labels(remote),
                                    'active': active, 'phase': 'pending', 'ownerTransport': transport}
         intent = {'version': 1, 'operation': operation, 'phase': 'pausing', 'members': snapshots}
+        if reservation is not None:
+            deadline = now() + timeout
+            while True:
+                proof = reservation(members, snapshots, group_id)
+                if proof is not None:
+                    intent['nativeReservation'] = proof
+                    break
+                require(now() < deadline, 'MAINTENANCE_NATIVE_RESERVATION_TIMEOUT')
+                wait(min(3, max(0, deadline - now())))
         state['maintenance'] = intent
         state_store.write(state)  # reservation precedes label withdrawal
     require(isinstance(intent, dict) and intent.get('version') == 1
@@ -533,6 +543,15 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
             and all(value.get('runnerId') == records[identity]['runnerId']
                     and type(value.get('active')) is bool and isinstance(value.get('labels'), list)
                     for identity, value in intent['members'].items()), 'MAINTENANCE_INTENT_CHANGED')
+
+    require(('nativeReservation' in intent) == (reservation is not None),
+            'MAINTENANCE_NATIVE_RESERVATION_MODE_CHANGED')
+
+    def verify_reservation():
+        if reservation is not None:
+            proof = reservation(members, intent['members'], group_id)
+            require(proof is not None and proof == intent['nativeReservation'],
+                    'MAINTENANCE_NATIVE_RESERVATION_CHANGED')
 
     def save(phase):
         intent['phase'] = phase
@@ -546,7 +565,19 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
 
     report = {'operation': operation, 'action': action, 'paused': [], 'stopped': [],
               'preserved': [], 'ready': [], 'busy': []}
+    if action == 'verify':
+        require(intent['phase'] == 'drained', 'MAINTENANCE_DRAIN_REQUIRED')
+        verify_reservation()
+        require(host.attempts_idle(consumers), 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+        for identity in records:
+            member, _, remote = snapshot(identity)
+            require(labels(remote) == [] and host.ready(member) and remote.get('status') == 'online',
+                    'MAINTENANCE_NATIVE_RESERVATION_LISTENER_CHANGED')
+            report['preserved'].append(identity)
+        return report
+
     if action == 'pause':
+        verify_reservation()
         intent.pop('connectAfterRestore', None)
         intent.pop('connectStartReserved', None)
         save('pausing')
@@ -573,9 +604,16 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
                 require(now() < deadline, 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
                 wait(min(0.5, max(0, deadline - now())))
                 continue
+            verify_reservation()
             for identity in records:
                 member, saved, remote = snapshot(identity)
                 require(labels(remote) == [], 'MAINTENANCE_INTAKE_REOPENED')
+                if reservation is not None:
+                    require(saved['active'] and host.ready(member) and remote.get('status') == 'online',
+                            'MAINTENANCE_NATIVE_RESERVATION_LISTENER_CHANGED')
+                    saved['phase'] = 'preserved'
+                    report['preserved'].append(identity)
+                    continue
                 transport = saved.get('ownerTransport')
                 if transport is not None:
                     observed = host.owner_transport(member, transport['pid'])
@@ -607,6 +645,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
 
     if action == 'restart':
         require(intent['phase'] in ['drained', 'restarting', 'ready'], 'MAINTENANCE_DRAIN_REQUIRED')
+        verify_reservation()
         # A persistent session connected with no routing labels can leave jobs
         # queued after an online label PUT. Keep one drained runner offline
         # until labels are restored so GitHub observes a matching connection.
@@ -637,6 +676,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
 
     require(intent['phase'] in ['ready', 'restoring', 'restore-unverified'], 'MAINTENANCE_RESTART_REQUIRED')
     require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
+    verify_reservation()
     connect_after_restore = intent.get('connectAfterRestore')
     require(connect_after_restore is None or connect_after_restore in records
             and intent['members'][connect_after_restore]['active']

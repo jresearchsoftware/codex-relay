@@ -382,6 +382,7 @@ def arguments():
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
+    p.add_argument('--native-reservation-attempt', type=int, help=argparse.SUPPRESS)
     p.add_argument('--workflow-consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--authorize-apply-recovery', action='store_true',
                    help='Owner-authorized matching installed-config apply recovery after diagnosis')
@@ -406,7 +407,7 @@ def arguments():
     return p.parse_args()
 
 
-def run(args):
+def run(args, *, reservation_token=None):
     if not hasattr(args, '_apply_preparation_started'):
         args._apply_preparation_started = time.monotonic()
     os.umask(0o077)
@@ -427,7 +428,19 @@ def run(args):
     require(not getattr(args, 'authorize_owner_lifecycle_bootstrap', False), 'bootstrap-interface-only')
     if args.phase == 'install':
         from intent_install import run as install
-        return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
+        attempt = getattr(args, 'native_reservation_attempt', None)
+        if attempt is not None:
+            require(os.geteuid() == 0 and args.connection == 'local'
+                    and getattr(args, 'git_config_receipt', None) is not None
+                    and not args.authorize_install_recovery and 0 < attempt <= 9007199254740991,
+                    'native-runner-reservation-interface-unproven')
+            from git_intent import read_token
+            reservation_token = read_token(sys.stdin.buffer)
+            def run_install_phase(inner):
+                return run(inner, reservation_token=reservation_token)
+        else:
+            run_install_phase = run
+        return install(args, run_install_phase, ROOT, source_identity(ROOT), guard_factory=apply_guard)
     require(not getattr(args, 'continue_install_recovery', False), 'install-continuation-interface-only')
     require(getattr(args, 'retained_runner_maintenance', None) is None or getattr(args, 'intent_install', False),
             'runner-maintenance-install-only')
@@ -704,6 +717,18 @@ def run(args):
     planned_pool_maintenance = (lifecycle_required and not args.local_lifecycle
                                 and 'generalRunnerPool' in config['consumer']
                                 and not args.authorize_lifecycle_recovery)
+    reserved_pool = (config['environment']['localApply'].get('poolReservation') == 'same-run-v1'
+                     and planned_pool_maintenance)
+    workflow_run = None
+    if reserved_pool:
+        receipt = getattr(args, 'git_intent', None)
+        attempt = getattr(args, 'native_reservation_attempt', None)
+        require(intent_install and args.connection == 'local' and os.geteuid() == 0
+                and reservation_token is not None and type(attempt) is int and attempt > 0
+                and isinstance(receipt, dict) and receipt.get('action') == 'apply',
+                'native-runner-reservation-required')
+        workflow_run = {key: receipt[key] for key in ('config_repository', 'config_sha', 'workflow_run_id')}
+        workflow_run['workflow_run_attempt'] = attempt
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
         (args.lifecycle_recovery_operation or str(uuid.uuid4()) if lifecycle_required or pool_reinstall else ''))
     observe_failure_state(operation_id=admission_operation_id, config=consumer_revision if not git_readonly else None)
@@ -920,9 +945,13 @@ def run(args):
                     qualified_local = args.local_reconcile or args.local_lifecycle
 
                     def pool_maintenance(action):
-                        from managed_pool_transport import maintain_pool
-                        result = maintain_pool(target, key, config, admission_operation_id, action, guard,
-                                               local=qualified_local, extra_guard=pool_guard)
+                        from managed_pool_transport import maintain_pool, maintain_reserved_pool
+                        if reserved_pool:
+                            result = maintain_reserved_pool(config, admission_operation_id, action, guard,
+                                                            pool_guard, ROOT, workflow_run, reservation_token)
+                        else:
+                            result = maintain_pool(target, key, config, admission_operation_id, action, guard,
+                                                   local=qualified_local, extra_guard=pool_guard)
                         for key_name in ['paused', 'stopped', 'preserved', 'ready', 'busy']:
                             require(isinstance(result.get(key_name), list)
                                     and len(result[key_name]) <= 32
@@ -1206,6 +1235,8 @@ def run(args):
                     if (intent_install and (lifecycle_required or pool_reinstall)
                             and not args.authorize_lifecycle_recovery):
                         from consumer_drift import prepare as restore_consumer_drift
+                        if reserved_pool:
+                            pool_maintenance('verify')
                         previous_mutation = getattr(args, '_intent_mutation_started', False)
                         observe_target_mutation()
                         args._intent_mutation_started = True
@@ -1261,6 +1292,8 @@ def run(args):
                     completed_pool_reinstall = False
                     retirement_report = None
                     if lifecycle_required and not args.local_lifecycle:
+                        if reserved_pool:
+                            pool_maintenance('verify')
                         lifecycle_operation = admission_operation_id
                         if not pool_maintenance_started:
                             apply_timing('preparation', args._apply_preparation_started)

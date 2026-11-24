@@ -156,7 +156,7 @@ def child_progress(line):
     from lifecycle import drain_progress
     if public_ansible_timing(line) or re.fullmatch(
             r'RELAY_APPLY_TIMING=operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};phase=(?:preparation|intake-pause|runner-drain);wall_ms=[0-9]{1,12}(?:;owner_run=[1-9][0-9]{0,19})?', line) or re.fullmatch(
-            r'RELAY_POOL_MAINTENANCE=(?:pause|drain|restart|resume);operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};paused=[0-9]{1,2};stopped=[0-9]{1,2};preserved=[0-9]{1,2};ready=[0-9]{1,2};busy=[0-9]{1,2}', line):
+            r'RELAY_POOL_MAINTENANCE=(?:pause|drain|verify|restart|resume);operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};paused=[0-9]{1,2};stopped=[0-9]{1,2};preserved=[0-9]{1,2};ready=[0-9]{1,2};busy=[0-9]{1,2}', line):
         print(line, flush=True)
         return
     if drain_progress(line):
@@ -360,6 +360,27 @@ print(json.dumps({'config': c, 'values': compile_inputs(c)}))
     return parsed['config'], parsed['values']
 
 
+def reservation_workflow_blob(source, target, raw):
+    """Render using the staged product, outside the installed module namespace."""
+    program = """import hashlib, sys
+from pathlib import Path
+sys.dont_write_bytecode = True
+source = Path(sys.argv[1])
+sys.path.insert(0, str(source / 'deploy'))
+from config import loads
+from workflow_projection import PRODUCTION, render_deployment
+config = loads(sys.stdin.buffer.read(65537).decode('utf-8'), source)
+workflow = render_deployment(config, sys.argv[2], source)[PRODUCTION]
+print(hashlib.sha1(b'blob ' + str(len(workflow)).encode('ascii') + bytes(1) + workflow).hexdigest())
+"""
+    result = run_child(['/usr/bin/python3', '-I', '-c', program, str(source), target],
+        input=raw, env=clean_environment(), timeout=180, phase='owner-preflight',
+        dependency='deployment-workflow-projection')
+    require(re.fullmatch(r'[0-9a-f]{40}\n', result.stdout) is not None,
+            'git-runner-reservation-workflow-unproven')
+    return result.stdout.strip()
+
+
 def git_target_capability(source):
     """Recognize the retained Git interface without parsing a future full schema."""
     from config import unique_object
@@ -397,6 +418,7 @@ def git_target_capability(source):
     except (OSError, UnicodeError, ValueError, TypeError):
         raise LifecycleCheckError('git-target-installation-contract-invalid') from None
     require('git-desired-v1' in capabilities, 'git-target-installation-contract-unsupported')
+    return frozenset(capabilities)
 
 
 def retained_recovery_binding(install, declaration, dispatch_receipt, *, filesystem_root=Path('/')):
@@ -432,8 +454,7 @@ def run_git(request, token, *, installed_source=None):
     observe_failure_state(boundary='installed-anchor', installed=installed)
     frozen = git_intent.resolve_pair(binding, {'action': action, 'configSha': config_sha, 'runId': int(run_id)}, token)
     maintenance = git_intent.recovery_declaration(binding, config_sha, token) if action == 'recover' else None
-    # The private native token is used only by resolve_pair; public Git is anonymous.
-    token = None
+    # Public product Git never receives the private native token.
     receipt = frozen['receipt']
     target = receipt['product_sha'] if action in ['apply', 'recover'] else installed
     observe_failure_state(requested=target)
@@ -445,7 +466,7 @@ def run_git(request, token, *, installed_source=None):
         work = Path(temporary)
         progress('STAGING', target)
         source = acquire_source(work / 'product', binding['productRepository'], target)
-        git_target_capability(source)
+        capabilities = git_target_capability(source)
         # Parse literal Git data using the selected accepted product's schema.
         desired, values = selected_config(source, frozen['config_bytes'])
         require(Path(values['relay_install_root']) == install
@@ -455,9 +476,23 @@ def run_git(request, token, *, installed_source=None):
         selected_repository = desired['source']['repository'].removeprefix('https://github.com/').removeprefix(
             'git@github.com:').removesuffix('.git')
         require(selected_repository == binding['productRepository'], 'git-product-repository-mismatch')
-        require(desired['environment']['localApply'] == {
+        desired_apply = desired['environment']['localApply']
+        reservation_mode = desired_apply.get('poolReservation')
+        require({name: value for name, value in desired_apply.items() if name != 'poolReservation'} == {
             'source': 'git', 'repository': binding['repository'], 'configPath': binding['configPath']},
             'git-config-source-mismatch')
+        reservation_input = None
+        if action == 'apply' and reservation_mode is not None:
+            require(reservation_mode == 'same-run-v1'
+                    and 'managed-pool-reservation-v1' in capabilities,
+                    'git-target-runner-reservation-unavailable')
+            git_intent.verify_workflow_blob(receipt, token,
+                reservation_workflow_blob(source, target, frozen['config_bytes']))
+            attempt = frozen.get('workflow_run_attempt')
+            require(type(attempt) is int and 0 < attempt <= 9007199254740991,
+                    'git-runner-reservation-attempt-unproven')
+            reservation_input = token.encode('ascii') + b'\n'
+        token = None
         config_path = work / 'git-config.json'
         config_path.write_bytes(frozen['config_bytes'])
         config_path.chmod(0o600)
@@ -537,7 +572,11 @@ def run_git(request, token, *, installed_source=None):
         if action == 'apply':
             elapsed_ms = int((time.monotonic() - owner_started) * 1000)
             print(f'RELAY_APPLY_TIMING=owner_run={run_id};phase=owner-preparation;wall_ms={elapsed_ms}', flush=True)
-        public_primitive(argv, env=clean_environment())
+        if reservation_input is not None:
+            argv += ['--native-reservation-attempt', str(attempt)]
+            public_primitive(argv, env=clean_environment(), input=reservation_input)
+        else:
+            public_primitive(argv, env=clean_environment())
         progress('VERIFY_INSTALLED', target)
         git_result(install, target, verified_receipt, desired)
         require(gate('status')['phase'] == 'open', 'git-apply-admission-not-open')

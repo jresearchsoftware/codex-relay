@@ -1188,6 +1188,27 @@ are refused. It receives only
 `render_deployment()` and template as Git-managed Apply. Runner, actor and
 host lifecycle contracts are unchanged.
 
+Managed-pool Git Apply supports a staged rollout. First install a Relay
+release advertising `managed-pool-reservation-v1` while retaining the existing
+private configuration and deployment workflow. In isolated TEST, then add
+`"poolReservation": "same-run-v1"` to `environment.localApply` and review the
+regenerated private deployment workflow alongside that configuration. The
+projected workflow checks the installed capability before invoking sudo. The
+protected helper compares the exact workflow blob at the dispatch commit with
+the selected product's projection before any installation action.
+
+On that opt-in path, the Apply job acquires the primary runner and one short-lived
+reservation job from the same GitHub run acquires each remaining desired slot.
+An already running ordinary job finishes before its slot can be acquired.
+The protected helper proves the exact jobs and local processes, withdraws
+routing labels and waits for all bound consumers to drain. It restores the
+labels after admission reopens. When the jobs finish, GitHub can assign the
+original queued runs to the still-connected listeners. The mode requires the
+entire desired pool online and an unchanged registration and service plan.
+Keep the initial install and any managed-pool topology or runner-service
+change on the existing path. Loss of the exact reservation during Apply stops
+the operation and preserves maintenance evidence for diagnosis.
+
 The same `RELAY_WORKFLOW_PROJECTION_RESULT=` JSON line has `schemaVersion: 1`,
 `kind: "deployment"`, `repository`, `sourceRepository`, `productRevision`,
 `configSha256`, `directory`, `files` and `changed`. There is no consumer

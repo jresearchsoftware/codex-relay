@@ -389,3 +389,45 @@ def test_owner_transport_requires_current_ancestor_and_exact_service_cgroup(monk
     assert host.owner_transport(member, os.getpid()) is None
     with pytest.raises(pool.PoolError, match='OWNER_NOT_ANCESTOR'):
         host.owner_transport(member, 2147483647)
+
+
+def test_native_reservation_preserves_busy_listeners_until_admission_reopens():
+    values = fixture()
+    contract, state, github, host = values
+    original_labels = {key: copy.deepcopy(value['labels']) for key, value in github.values.items()}
+    for value in github.values.values():
+        value['busy'] = True
+    proof = {'primary': {'jobId': 1}, 'pool-2': {'jobId': 2}}
+
+    def reservation(members, snapshots, group_id):
+        assert set(members) >= set(snapshots) == set(proof)
+        return proof
+
+    maintain(values, 'pause', reservation=reservation)
+    assert state.value['maintenance']['nativeReservation'] == proof
+    assert maintain(values, 'drain', reservation=reservation)['preserved'] == list(host.local)
+    assert maintain(values, 'verify', reservation=reservation)['preserved'] == list(host.local)
+    maintain(values, 'restart', reservation=reservation)
+    host.closed_admissions.add(contract['admission'])
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_ADMISSION_NOT_OPEN'):
+        maintain(values, 'resume', reservation=reservation)
+    assert all(value['labels'] == [] for value in github.values.values())
+    host.closed_admissions.clear()
+    maintain(values, 'resume', reservation=reservation)
+    assert 'maintenance' not in state.value
+    assert {key: value['labels'] for key, value in github.values.items()} == original_labels
+    assert host.stops == host.starts == []
+
+
+def test_native_reservation_requires_live_unchanged_jobs_before_maintenance():
+    values = fixture()
+    _, state, github, host = values
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_NATIVE_RESERVATION_TIMEOUT'):
+        maintain(values, 'pause', reservation=lambda *_: None, timeout=0)
+    assert 'maintenance' not in state.value and github.label_mutations == []
+    maintain(values, 'pause', reservation=lambda *_: {'primary': {'jobId': 1}})
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_NATIVE_RESERVATION_CHANGED'):
+        maintain(values, 'drain', reservation=lambda *_: {'primary': {'jobId': 2}})
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_NATIVE_RESERVATION_MODE_CHANGED'):
+        maintain(values, 'drain')
+    assert host.stops == [] and all(value['labels'] == [] for value in github.values.values())

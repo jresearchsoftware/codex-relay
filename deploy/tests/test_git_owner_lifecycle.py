@@ -53,6 +53,7 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.values = {'relay_install_root': str(self.install)}
         self.gate = Gate()
         self.primitive = []
+        self.reservation_attempt = None
         self.parser_inputs = []
         self.readbacks = []
         self.locks = []
@@ -80,6 +81,10 @@ class GitOwnerLifecycleTests(unittest.TestCase):
             config_path = Path(argv[argv.index('--config') + 1])
             self.assertEqual(config_path.read_bytes(), self.raw)
             self.assertNotIn(TOKEN, str(argv))
+            if '--native-reservation-attempt' in argv:
+                self.assertEqual(kwargs.pop('input'), TOKEN.encode() + b'\n')
+                self.assertEqual(argv[argv.index('--native-reservation-attempt') + 1],
+                                 str(self.reservation_attempt))
             self.assertNotIn(TOKEN, str(kwargs))
             if '--git-config-receipt' in argv:
                 path = Path(argv[argv.index('--git-config-receipt') + 1])
@@ -97,7 +102,8 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         mocked.start(); self.addCleanup(mocked.stop)
         for mocked in [patch.object(owner.os, 'geteuid', return_value=0),
                        patch.object(owner.subprocess, 'run', side_effect=backend),
-                       patch('git_intent.resolve_pair', side_effect=lambda *args: {'config_bytes': self.raw, 'receipt': self.receipt}),
+                       patch('git_intent.resolve_pair', side_effect=lambda *args: {'config_bytes': self.raw,
+                           'receipt': self.receipt, 'workflow_run_attempt': self.reservation_attempt}),
                        patch.object(owner.tempfile, 'TemporaryDirectory',
                                     side_effect=lambda **kwargs: REAL_TEMPORARY(prefix='inner-', dir=self.root))]:
             mocked.start(); self.addCleanup(mocked.stop)
@@ -127,6 +133,26 @@ class GitOwnerLifecycleTests(unittest.TestCase):
         self.assertEqual(self.parser_inputs, [(self.source, self.raw)])
         self.assertEqual(self.readbacks[0][2], self.receipt)
         self.assertIn('RELAY_GIT_APPLY_VERIFIED=' + OLD, output)
+
+    def test_native_apply_requires_exact_private_workflow_and_forwards_only_private_stdin(self):
+        self.desired['environment']['localApply']['poolReservation'] = 'same-run-v1'
+        self.raw = json.dumps(self.desired).encode()
+        self.receipt['config_sha256'] = hashlib.sha256(self.raw).hexdigest()
+        self.reservation_attempt = 2
+        with patch.object(owner, 'reservation_workflow_blob', return_value='b' * 40) as render, \
+             patch.object(owner.git_intent, 'verify_workflow_blob') as verify:
+            verify.side_effect = GitIntentError('GIT_INTENT_WORKFLOW_PROJECTION_MISMATCH')
+            with self.assertRaisesRegex(GitIntentError, 'GIT_INTENT_WORKFLOW_PROJECTION_MISMATCH'):
+                self.invoke()
+            self.assertFalse(self.primitive)
+            self.assertFalse(self.gate.calls)
+            verify.reset_mock(side_effect=True)
+            render.reset_mock()
+            self.invoke()
+            render.assert_called_once_with(self.source, HEAD, self.raw)
+            verify.assert_called_once_with(self.receipt, TOKEN, 'b' * 40)
+        self.assertEqual(len(self.primitive), 1)
+        self.assertEqual(self.gate.calls, [('status',)])
 
     def test_recover_passes_exact_reviewed_intent_to_public_installer_without_gate_mutation(self):
         declaration = {'operationId': OPERATION, 'retainedTarget': OLD,

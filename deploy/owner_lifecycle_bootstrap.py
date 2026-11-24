@@ -48,7 +48,9 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
     installed = installed_source.parent.name
     with acquire(str(filesystem_root / 'var/lib' / (install.name + '-deployment.lock'))):
         actual_install, binding, _ = owner.git_anchor(installed, installed_source)
-        owner.require(actual_install == install and config['environment']['localApply'] == {
+        local_apply = config['environment']['localApply']
+        owner.require(actual_install == install
+            and {name: value for name, value in local_apply.items() if name != 'poolReservation'} == {
             'source': 'git', 'repository': binding['repository'], 'configPath': binding['configPath']}
             and config['consumer']['owner'].casefold() == binding['owner'].casefold(),
             'bootstrap-installed-binding')

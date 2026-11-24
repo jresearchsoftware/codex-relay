@@ -20,7 +20,8 @@ def _locator(config):
     policy = config['environment']['localApply']
     if policy.get('source') != 'git':
         return {}
-    _require(set(policy) == {'source', 'repository', 'configPath'})
+    _require(set(policy) - {'poolReservation'} == {'source', 'repository', 'configPath'}
+             and policy.get('poolReservation', 'same-run-v1') == 'same-run-v1')
     return {'repository': policy['repository'], 'configPath': policy['configPath'],
             'owner': config['consumer']['owner'],
             'productRepository': config['source']['repository'].removeprefix('https://github.com/').removeprefix(

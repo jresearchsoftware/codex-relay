@@ -57,7 +57,7 @@ jobs:
               release !== `/opt/@@NAMESPACE@@/releases/${installed}` ||
               !/^[0-9a-f]{40}$/.test(sha ?? '') || !/^[1-9][0-9]{0,19}$/.test(run ?? '') ||
               !['apply', 'stop', 'resume', 'recover'].includes(action)) throw new Error('RELAY_GIT_DISPATCH_INVALID');
-          const child = spawn('/usr/bin/sudo', ['-n', '/usr/local/sbin/@@NAMESPACE@@-owner-lifecycle',
+@@OWNER_RESERVATION_RUNTIME_CHECK@@          const child = spawn('/usr/bin/sudo', ['-n', '/usr/local/sbin/@@NAMESPACE@@-owner-lifecycle',
             `git:${action}:${installed}:${sha}:${run}`],
             { env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' }, stdio: ['pipe', 'pipe', 'inherit'] });
           child.stdout.on('data', chunk => { process.stdout.write(chunk); report.observe(chunk); });
@@ -71,4 +71,72 @@ jobs:
           });
           } catch (error) { report.finish(1); throw error; }
           finally { await report.write(); }
+          NODE
+@@POOL_RESERVATION_JOBS@@
+
+  reserve:
+    name: Reserve General runner ${{ matrix.slot }}
+    if: >-
+      ${{ github.repository == '@@REPOSITORY@@' &&
+          github.event_name == 'workflow_dispatch' && inputs.action == 'apply' &&
+          github.actor == '@@OWNER@@' && github.triggering_actor == '@@OWNER@@' &&
+          github.ref == 'refs/heads/main' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: @@POOL_RESERVATION_MATRIX@@
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    timeout-minutes: 245
+    permissions:
+      actions: read
+    steps:
+      - name: Reserve this General runner until the lifecycle job finishes
+        shell: bash --noprofile --norc -euo pipefail {0}
+        env:
+          RELAY_HOLDER_SLOT: ${{ matrix.slot }}
+          RELAY_HOLDER_TOKEN: ${{ github.token }}
+          NODE_OPTIONS: ''
+          NODE_PATH: ''
+        run: |
+          @@GENERAL_RUNNER_GUARD@@
+          test "$RELAY_EXECUTION_SLOT" = "$RELAY_HOLDER_SLOT"
+          exec /usr/bin/node --input-type=module <<'NODE'
+          import { setTimeout as delay } from 'node:timers/promises';
+
+          const repository = '@@REPOSITORY@@';
+          const { GITHUB_JOB: job, GITHUB_REPOSITORY: caller, GITHUB_RUN_ID: run,
+            GITHUB_RUN_ATTEMPT: attempt, GITHUB_WORKFLOW_REF: workflow, RELAY_HOLDER_TOKEN: token } = process.env;
+          delete process.env.RELAY_HOLDER_TOKEN;
+          const runId = Number(run);
+          if (caller !== repository || job !== 'reserve' || !/^[1-9][0-9]{0,15}$/.test(run ?? '') ||
+              !Number.isSafeInteger(runId) || !/^[1-9][0-9]{0,8}$/.test(attempt ?? '') ||
+              workflow !== `${repository}/@@PRODUCTION_WORKFLOW_PATH@@@refs/heads/main` ||
+              !token) throw new Error('RELAY_POOL_RESERVATION_IDENTITY_INVALID');
+          const url = `https://api.github.com/repos/${repository}/actions/runs/${run}/attempts/${attempt}/jobs?per_page=100`;
+          const headers = { accept: 'application/vnd.github+json', authorization: `Bearer ${token}`,
+            'x-github-api-version': '2022-11-28' };
+          const deadline = performance.now() + 240 * 60 * 1000;
+          let completed = false;
+          let readFailed = false;
+          console.log('RELAY_POOL_RESERVATION=waiting-for-lifecycle');
+          while (!completed && performance.now() < deadline) {
+            try {
+              const response = await fetch(url, { headers, redirect: 'error', signal: AbortSignal.timeout(10000) });
+              if (!response.ok) throw new Error('RELAY_POOL_RESERVATION_READ_FAILED');
+              const result = await response.json();
+              if (!Array.isArray(result?.jobs) || result.total_count !== result.jobs.length) {
+                throw new Error('RELAY_POOL_RESERVATION_READ_INCOMPLETE');
+              }
+              const lifecycle = result.jobs.filter(candidate => candidate?.name === 'lifecycle');
+              completed = lifecycle.length === 1 && lifecycle[0].run_id === runId &&
+                lifecycle[0].status === 'completed' && typeof lifecycle[0].conclusion === 'string';
+              readFailed = false;
+            } catch {
+              if (!readFailed) console.log('RELAY_POOL_RESERVATION=job-read-unproved;holding');
+              readFailed = true;
+            }
+            if (!completed) await delay(Math.max(0, Math.min(@@POOL_RESERVATION_POLL_MS@@, deadline - performance.now())));
+          }
+          if (!completed) throw new Error('RELAY_POOL_RESERVATION_LIFECYCLE_TERMINAL_UNPROVEN');
+          console.log('RELAY_POOL_RESERVATION=lifecycle-terminal');
           NODE

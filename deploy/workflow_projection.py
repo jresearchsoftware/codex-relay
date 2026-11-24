@@ -19,6 +19,7 @@ from config import require, unique_object, execution_slot_label, general_pool_la
 
 MANIFEST = '.github/relay-workflows.json'
 PRODUCTION = '.github/workflows/manual-main-production-deploy.yml'
+POOL_RESERVATION_CAPABILITY = 'managed-pool-reservation-v1'
 WORKFLOW = re.compile(r'\.github/workflows/[A-Za-z0-9_-]+\.ya?ml')
 REVISION = re.compile(r'[0-9a-f]{40}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
@@ -117,8 +118,10 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         'CONTROL_GROUP_YAML': json.dumps(environment['namespace'] + '-control-${{ github.run_id }}'),
         'RECOVERY_GROUP_YAML': json.dumps(environment['namespace'] + '-recovery-${{ inputs.run_id }}'),
         'PRODUCTION_GROUP_YAML': json.dumps(environment['namespace'] + '-production'),
+        'PRODUCTION_WORKFLOW_PATH': PRODUCTION,
         'GENERAL_RUNS_ON_YAML': json.dumps(general_runs_on),
         'OWNER_RECOVERY_GUARD': '',
+        'OWNER_RESERVATION_RUNTIME_CHECK': '',
         'RECOVERY_RUNS_ON_YAML': json.dumps(general_runs_on),
         'RECOVERY_SLOT_INPUT': '',
         'RECOVERY_SLOT_ENV': '',
@@ -143,6 +146,8 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
     # immutable original execution slot from its retained claim.
     values['RECOVERY_RUNNER_GUARD'] = values['GENERAL_RUNNER_GUARD']
     templates = {consumer['routingWorkflow']: 'routing', consumer['recoveryWorkflow']: 'recovery'}
+    pool_reservation = deployment and environment['localApply'].get('poolReservation') == 'same-run-v1'
+    holders = []
     if deployment:
         templates = {PRODUCTION: 'deployment'}
         # Maintained registrations must remain online/idle. Carry recovery
@@ -151,9 +156,35 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
         primary = next(slot for slot in slots if slot['id'] == 'primary')
         recovery_runs_on = {'group': general['group'], 'labels': [
             *general_labels, execution_slot_label(config, primary)]}
-        selectors = json.dumps({'recover': recovery_runs_on, 'ordinary': general_runs_on}, separators=(',', ':'))
+        selectors = {'recover': recovery_runs_on, 'ordinary': general_runs_on}
+        selector = "inputs.action == 'recover' && 'recover' || 'ordinary'"
+        if pool_reservation:
+            from intent_install import contract as installation_contract
+            installation = installation_contract(json.loads(_read(source_root / 'deploy/installation-contract.json'),
+                                                             object_pairs_hook=unique_object))
+            require(POOL_RESERVATION_CAPABILITY in installation['capabilities'],
+                    'deployment-pool-reservation-capability')
+            selectors['apply'] = recovery_runs_on
+            selector = "inputs.action == 'apply' && 'apply' || " + selector
+            for slot in slots[:consumer['generalRunnerPool']['desiredCapacity']]:
+                if slot['id'] == primary['id']:
+                    continue
+                runs_on = {'group': general['group'], 'labels': [*general_labels, execution_slot_label(config, slot)]}
+                holders.append({'slot': slot['id'], 'runs_on': json.dumps(runs_on, separators=(',', ':'))})
+            values.update(POOL_RESERVATION_MATRIX=json.dumps(holders),
+                          POOL_RESERVATION_POLL_MS=str(max(15000, len(holders) * 6000)))
+            values['OWNER_RESERVATION_RUNTIME_CHECK'] = (
+                "          if (action === 'apply') {\n"
+                "            const contract = JSON.parse(await readFile(`${release}/reviewed-source/deploy/installation-contract.json`, 'utf8'));\n"
+                "            if (process.env.RELAY_EXECUTION_SLOT !== 'primary' || contract.schemaVersion !== 1 ||\n"
+                "                !Array.isArray(contract.capabilities) ||\n"
+                "                !contract.capabilities.includes('" + POOL_RESERVATION_CAPABILITY + "')) {\n"
+                "              throw new Error('RELAY_POOL_RESERVATION_RUNTIME_UNQUALIFIED');\n"
+                "            }\n"
+                "          }\n")
+        selectors = json.dumps(selectors, separators=(',', ':'))
         values['GENERAL_RUNS_ON_YAML'] = json.dumps("${{ fromJSON('" + selectors
-            + "')[inputs.action == 'recover' && 'recover' || 'ordinary'] }}")
+            + "')[" + selector + "] }}")
         values['OWNER_RECOVERY_GUARD'] = ('if [[ "$RELAY_LIFECYCLE_ACTION" == recover ]]; then\n'
             + '            test "$RELAY_EXECUTION_SLOT" = primary || { echo RELAY_RECOVERY_PRIMARY_TRANSPORT_REQUIRED >&2; exit 1; }\n'
             + '          fi')
@@ -165,6 +196,11 @@ def render(config, revision, source_root, repository=None, *, deployment=False):
     for path, template in sorted(templates.items()):
         require(WORKFLOW.fullmatch(path), 'workflow-path')
         text = _read(source_root / 'deploy/workflows' / (template + '.yml.in')).decode('utf-8')
+        if template == 'deployment':
+            text, boundary, holder_job = text.partition('@@POOL_RESERVATION_JOBS@@\n')
+            require(not pool_reservation or boundary, 'deployment-pool-reservation-template')
+            if pool_reservation and holders:
+                text += holder_job
         tokens = set(re.findall(r'@@([A-Z_]+)@@', text))
         if 'LIFECYCLE_OBSERVER' in tokens:
             values['LIFECYCLE_OBSERVER'] = _read(source_root / 'deploy/workflows/lifecycle-observer.js.in').decode('utf-8').rstrip().replace('\n', '\n          ')

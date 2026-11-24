@@ -257,3 +257,62 @@ def maintain_pool(target, key, config, operation, action, guard=None, *, local=F
     require(result.get('operation') == operation and result.get('action') == action,
             'MAINTENANCE_RESULT_UNPROVEN')
     return result
+
+
+def maintain_reserved_pool(config, operation, action, guard, pool_guard, source_root, workflow_run, token):
+    """Preserve exact active listeners in a protected, reviewed local Apply."""
+    import fcntl
+    import pwd
+    import stat
+
+    import managed_pool as pool
+    from pool_authorization import installation_authorization
+    from runner_reservation import verify_runner_reservation
+    from source_upgrade_proof import protected_read, require_unchanged_pool_plan
+
+    require(os.geteuid() == 0 and guard is not None and guard.poll() is None
+            and pool_guard is not None and pool_guard.poll() is None, 'OWNER_LOCAL_GUARD_UNPROVEN')
+    contract = pool.pool_contract(config)
+    host = pool.Host(contract)
+    root = Path('/var/lib/codex-relay-pools') / contract['name']
+    state_store = pool.State(root)
+    template_path = Path(source_root) / 'deploy/ansible/roles/relay_runner/templates/relay-managed-pool.service.j2'
+    template = protected_read(template_path, boundary=Path(source_root))[0].decode()
+    desired = {member['id'] for member in contract['members'][:contract['desiredCapacity']]}
+    uid = pwd.getpwnam(contract['runnerUser']).pw_uid
+    auth = installation_authorization(config)
+    require(all(auth.get(key) == contract[key] for key in ('organization', 'appId', 'installationId')),
+            'TOKEN_BINDING_INVALID')
+    github = pool.GitHub(auth['installationToken'], contract['organization'])
+
+    def reservation(members, snapshots, group_id):
+        require(guard.poll() is None and pool_guard.poll() is None, 'OWNER_LOCAL_GUARD_UNPROVEN')
+        require(set(snapshots) == desired and all(saved['active'] for saved in snapshots.values()),
+                'MAINTENANCE_NATIVE_RESERVATION_CAPACITY_UNPROVEN')
+        holders = {}
+        for slot, saved in snapshots.items():
+            member = members[slot]
+            current = host.owner_transport(member, os.getpid())
+            require(current == saved['ownerTransport'] and (current is not None) == (slot == 'primary'),
+                    'MAINTENANCE_NATIVE_RESERVATION_OWNER_UNPROVEN')
+            holders[slot] = {'runnerId': saved['runnerId'], 'runnerName': member['name'],
+                             'runnerGroupId': group_id, 'runnerLabel': member['label'],
+                             'service': member['service'], 'runnerRoot': member['root'], 'runnerUid': uid,
+                             'ownerTransport': current}
+        # A holder can start while the coordinator is still queued. Require
+        # the full coordinator job budget at the moment of first acquisition.
+        return verify_runner_reservation(token=token, workflow_run=workflow_run, holders=holders,
+                                         min_hold_seconds=7200 if action == 'pause' else 0)
+
+    fd = os.open(root / 'pool.lock', os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1
+                and stat.S_IMODE(info.st_mode) == 0o600, 'LOCK_UNSAFE')
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if action in ('pause', 'restart'):
+            require_unchanged_pool_plan(pool.installation_plan(contract, template))
+        return pool.maintenance(contract, state_store, github, host, operation=operation, action=action,
+                                owner_pid=os.getpid(), reservation=reservation)
+    finally:
+        os.close(fd)
