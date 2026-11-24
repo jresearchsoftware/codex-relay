@@ -431,3 +431,65 @@ def test_native_reservation_requires_live_unchanged_jobs_before_maintenance():
     with pytest.raises(pool.PoolError, match='MAINTENANCE_NATIVE_RESERVATION_MODE_CHANGED'):
         maintain(values, 'drain')
     assert host.stops == [] and all(value['labels'] == [] for value in github.values.values())
+
+
+def test_reservation_rolls_back_partial_pause_without_stopping_runners():
+    values = fixture()
+    _, state, github, host = values
+    original = {key: copy.deepcopy(value['labels']) for key, value in github.values.items()}
+    proof = lambda *_: {'primary': {'jobId': 1}, 'pool-2': {'jobId': 2}}
+
+    # Failure before the reservation is persisted needs no label changes.
+    assert maintain(values, 'rollback', reservation=proof)['ready'] == []
+    assert not github.label_mutations
+    github.lose_labels_response = True
+    with pytest.raises(pool.PoolError, match='UNKNOWN_LABEL'):
+        maintain(values, 'pause', reservation=proof)
+    assert state.value['maintenance']['phase'] == 'pausing'
+    assert github.values[host.local['primary']]['labels'] == []
+
+    restored = maintain(values, 'rollback', reservation=proof)
+    assert restored['ready'] == ['primary', 'pool-2']
+    assert {key: value['labels'] for key, value in github.values.items()} == original
+    assert github.label_mutations == [(host.local['primary'], []),
+        (host.local['primary'], [label['name'] for label in original[host.local['primary']]])]
+    assert not host.stops and not host.starts and 'maintenance' not in state.value
+
+
+@pytest.mark.parametrize(('blocker', 'code'), [
+    ('lost-holder', 'NATIVE_RESERVATION_CHANGED'),
+    ('closed-peer', 'ADMISSION_NOT_OPEN'),
+])
+def test_reservation_rollback_preserves_fence_when_proof_is_lost(blocker, code):
+    values = fixture()
+    _, state, github, host = values
+    peer = '/opt/relay-peer/relay-admission'
+    state.value['consumers']['example/peer'] = {'namespace': 'relay-peer', 'admission': peer}
+    proof = lambda *_: {'primary': {'jobId': 1}, 'pool-2': {'jobId': 2}}
+    maintain(values, 'pause', reservation=proof)
+    retained = state.read()
+    if blocker == 'closed-peer':
+        host.closed_admissions.add(peer)
+    changed = proof if blocker == 'closed-peer' else lambda *_: None
+    with pytest.raises(pool.PoolError, match=code):
+        maintain(values, 'rollback', reservation=changed)
+    assert state.read() == retained
+    assert all(value['labels'] == [] for value in github.values.values())
+    assert not host.stops and not host.starts
+
+
+def test_reservation_rollback_reconciles_uncertain_restore_without_duplicate_put():
+    values = fixture(1)
+    _, state, github, host = values
+    proof = lambda *_: {'primary': {'jobId': 1}}
+    maintain(values, 'pause', reservation=proof)
+    github.lose_labels_response = True
+    with pytest.raises(pool.PoolError, match='UNKNOWN_LABEL'):
+        maintain(values, 'rollback', reservation=proof)
+    assert state.value['maintenance']['phase'] == 'restore-unverified'
+    assert github.values[host.local['primary']]['labels']
+    mutations = copy.deepcopy(github.label_mutations)
+
+    assert maintain(values, 'rollback', reservation=proof)['ready'] == ['primary']
+    assert github.label_mutations == mutations
+    assert not host.stops and not host.starts and 'maintenance' not in state.value

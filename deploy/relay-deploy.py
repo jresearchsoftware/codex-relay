@@ -1607,7 +1607,20 @@ def run(args, *, reservation_token=None):
                             reviewer_pause_pending = False
                         except Exception as recovery_error:
                             report_failure(recovery_error, 'reviewer-resume-old', private_log=log_name)
-                    if pool_drain_completed and lifecycle_operation is None:
+                    if (reserved_pool and pool_maintenance_started and not pool_restored
+                            and not reviewer_pause_pending and (lifecycle_operation is None or gate_reopened)):
+                        # Reconcile the exact paused labels while the original
+                        # reservation is still live and the bound gates are open.
+                        try:
+                            pool_maintenance('resume' if gate_reopened else 'rollback')
+                            pool_restored = True
+                            if lifecycle_operation is None:
+                                args._intent_old_availability_restored = True
+                                observe_failure_state(boundary='original-open', admission='open',
+                                                      installed=args.intent_expected_installed_revision)
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'pool-resume-open', private_log=log_name)
+                    if not reserved_pool and pool_drain_completed and lifecycle_operation is None:
                         # Only the pool was stopped. Its original operation can
                         # verify runner and admission readiness before restoring labels.
                         try:

@@ -1670,6 +1670,11 @@ uncertain stop, label mutation or restart as an original-operation blocker.
 Inspect the pool receipt, native jobs and admission gate before recovery.
 If Apply fails before quiesce after the pool has drained, it verifies the
 original runtime and restores runner eligibility while admission is open.
+With same-run reservations, a failure before quiesce can also restore a
+partially withdrawn set of labels. This requires the original live reservation,
+healthy listeners and open admission for every bound consumer. After verified
+admission reopens, Apply also reconciles an uncertain label-restoration response
+against the same operation. A lost holder or unproven state retains the receipt.
 If the pool state remains uncertain before quiesce or after verified admission
 reopens, Apply reports the original operation and the boundary it reached.
 A failed eligibility restore can leave verified admission open while runner

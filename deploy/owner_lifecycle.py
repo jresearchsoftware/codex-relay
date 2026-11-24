@@ -156,7 +156,7 @@ def child_progress(line):
     from lifecycle import drain_progress
     if public_ansible_timing(line) or re.fullmatch(
             r'RELAY_APPLY_TIMING=operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};phase=(?:preparation|intake-pause|runner-drain);wall_ms=[0-9]{1,12}(?:;owner_run=[1-9][0-9]{0,19})?', line) or re.fullmatch(
-            r'RELAY_POOL_MAINTENANCE=(?:pause|drain|verify|restart|resume);operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};paused=[0-9]{1,2};stopped=[0-9]{1,2};preserved=[0-9]{1,2};ready=[0-9]{1,2};busy=[0-9]{1,2}', line):
+            r'RELAY_POOL_MAINTENANCE=(?:pause|drain|verify|restart|resume|rollback);operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};paused=[0-9]{1,2};stopped=[0-9]{1,2};preserved=[0-9]{1,2};ready=[0-9]{1,2};busy=[0-9]{1,2}', line):
         print(line, flush=True)
         return
     if drain_progress(line):

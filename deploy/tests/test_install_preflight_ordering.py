@@ -618,3 +618,34 @@ def test_installed_socket_with_missing_control_is_not_legacy(invocation):
     with pytest.raises(ValueError, match='reviewer-legacy-identity-unproven'):
         backend.run(args)
     assert 'pool-pause' not in events
+
+
+@pytest.mark.parametrize(('phase', 'recovery'), [('pause', 'rollback'), ('drain', 'rollback'), ('resume', 'resume')])
+def test_reserved_pool_recovers_uncertain_labels_only_on_original_open_boundary(
+        invocation, monkeypatch, capsys, phase, recovery):
+    args, events, gate, state, _records = invocation
+    config = json.loads(args.config.read_text())
+    config['environment']['localApply']['poolReservation'] = 'same-run-v1'
+    args.config.write_text(json.dumps(config))
+    args.git_intent['config_sha256'] = hashlib.sha256(args.config.read_bytes()).hexdigest()
+    args.native_reservation_attempt = 1
+    monkeypatch.setattr(backend.os, 'geteuid', lambda: 0)
+
+    def maintain_reserved_pool(_config, operation, action, _guard, _pool_guard, _source, workflow, token):
+        assert operation == state['preparation'].operation and workflow['workflow_run_id'] == 7
+        assert token == 'synthetic-native-token'
+        event = 'pool-' + action
+        events.append(event)
+        if action == phase and events.count(event) == 1:
+            raise RuntimeError('INJECTED_ORIGINAL_LABEL_ERROR')
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    import managed_pool_transport
+    monkeypatch.setattr(managed_pool_transport, 'maintain_reserved_pool', maintain_reserved_pool)
+    with pytest.raises(RuntimeError, match='INJECTED_ORIGINAL_LABEL_ERROR'):
+        backend.run(args, reservation_token='synthetic-native-token')
+    assert gate == {'phase': 'open', 'operation': None}
+    failed = events.index('pool-' + phase)
+    assert 'pool-' + recovery in events[failed + 1:]
+    assert ('quiesce' in events) is (phase == 'resume')
+    assert 'RELAY_POOL_RECOVERY_REQUIRED=' not in capsys.readouterr().out

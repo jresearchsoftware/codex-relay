@@ -463,7 +463,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     require(isinstance(operation, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation),
             'MAINTENANCE_OPERATION_INVALID')
     require(action in ['pause', 'drain', 'restart', 'resume']
-            or action == 'verify' and reservation is not None, 'MAINTENANCE_ACTION_INVALID')
+            or action in ['verify', 'rollback'] and reservation is not None, 'MAINTENANCE_ACTION_INVALID')
     require(type(timeout) in [int, float] and 0 <= timeout <= 86400, 'MAINTENANCE_TIMEOUT_INVALID')
     require(type(contract['desiredCapacity']) is int and 1 <= contract['desiredCapacity'] <= CAPACITY,
             'CAPACITY_INVALID')
@@ -503,8 +503,15 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         require(len(custom) <= 100 and len(custom) == len(set(custom)), 'MAINTENANCE_LABELS_UNPROVEN')
         return custom
 
+    report = {'operation': operation, 'action': action, 'paused': [], 'stopped': [],
+              'preserved': [], 'ready': [], 'busy': []}
     intent = state.get('maintenance')
     if intent is None:
+        # Pause writes its original labels before making any native change.
+        if action == 'rollback':
+            require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
+            host.check_readiness()
+            return report
         require(action == 'pause', 'MAINTENANCE_PAUSE_REQUIRED')
         snapshots = {}
         remote_runners = github.runners()
@@ -563,8 +570,6 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         require(labels(remote) in [[], saved['labels']], 'MAINTENANCE_LABEL_CONFLICT')
         return member, saved, remote
 
-    report = {'operation': operation, 'action': action, 'paused': [], 'stopped': [],
-              'preserved': [], 'ready': [], 'busy': []}
     if action == 'verify':
         require(intent['phase'] == 'drained', 'MAINTENANCE_DRAIN_REQUIRED')
         verify_reservation()
@@ -674,9 +679,15 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         save('ready')
         return report
 
-    require(intent['phase'] in ['ready', 'restoring', 'restore-unverified'], 'MAINTENANCE_RESTART_REQUIRED')
+    if action == 'rollback':
+        require(intent['phase'] in ['pausing', 'paused', 'draining', 'drained', 'restoring', 'restore-unverified']
+                and intent.get('connectAfterRestore') is None, 'MAINTENANCE_ROLLBACK_UNPROVEN')
+    else:
+        require(intent['phase'] in ['ready', 'restoring', 'restore-unverified'], 'MAINTENANCE_RESTART_REQUIRED')
     require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
     verify_reservation()
+    if action == 'rollback':
+        host.check_readiness()
     connect_after_restore = intent.get('connectAfterRestore')
     require(connect_after_restore is None or connect_after_restore in records
             and intent['members'][connect_after_restore]['active']
