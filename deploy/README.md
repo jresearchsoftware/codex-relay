@@ -1686,10 +1686,13 @@ The qualification snapshot omits host causal, recorder-failure and secondary
 evidence as well as protected streams; inspect the configured host diagnostic
 record or journal through the authorized host channel for that detail.
 
-For a source-only upgrade with unchanged effective deployment inputs, ordinary
-`install` can select a bounded native promotion instead of the full Ansible
-traversal. This requires exact unchanged Reviewer source, complete build inputs
-and pinned build contract; the current binary must match the installed manifest.
+Native source-only promotion requires unchanged effective deployment inputs,
+exact unchanged Reviewer source, complete build inputs and the pinned build
+contract. The current Reviewer binary must match the installed manifest.
+The final and post-promotion checks also require the same online General
+listeners and routing labels. When Apply plans to withdraw those labels and
+drain listeners, it stages the full path before starting pool maintenance and
+performs both ordinary pool preflights.
 Initial source-only preparation batches the existing frozen archive/tree
 validator, canonical consumer rendering and all six actual Node syntax checks
 into one private target call. The archive travels as bounded gzip data; the

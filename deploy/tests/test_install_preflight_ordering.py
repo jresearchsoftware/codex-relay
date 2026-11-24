@@ -63,6 +63,8 @@ def invocation(tmp_path, monkeypatch):
         events.append('pool-preflight')
         if state['failure'] == 'pool-preflight':
             raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_POOL_PREFLIGHT')
+        if state['failure'] == 'pool-preflight-changed' and events.count('pool-preflight') == 2:
+            return 'MANAGED_POOL_PREFLIGHT=CHANGED'
         return 'MANAGED_POOL_PREFLIGHT=PASS'
     monkeypatch.setattr(managed_pool_transport, 'preflight_pool', pool_preflight)
     monkeypatch.setattr(managed_pool_transport, 'reconcile_pool',
@@ -155,8 +157,8 @@ def invocation(tmp_path, monkeypatch):
         def desired(self): injected('desired')
         def prepare_source_reuse(self, *_args):
             injected('source-reuse')
-            self.source_reuse = state.get('source_reuse', False)
-            return self.source_reuse
+            self.source_reuse = True
+            return True
         def promote_source_reuse(self, *_args):
             injected('source-promote')
             assert self.cutover_started and self.captured and self.holder is not None
@@ -276,7 +278,8 @@ def test_known_prerequisite_failure_keeps_old_entrypoint_open(invocation, failur
     assert records == [{'runId': 7, 'terminal': True}]
 
 
-@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain', 'drain-check', 'drain-changed'])
+@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain', 'drain-check',
+                                     'drain-changed', 'pool-preflight-changed'])
 def test_late_change_aborts_before_active_install_and_preserves_records(invocation, failure):
     args, events, gate, state, records = invocation
     state['failure'] = failure
@@ -338,39 +341,6 @@ def test_native_source_submission_failure_keeps_old_open_without_play_fallback(i
         backend.run(args)
     assert gate == {'phase': 'open', 'operation': None}
     assert not {'source-stage', 'build-stage', 'quiesce', 'backend'}.intersection(events)
-
-
-def test_source_reuse_promotes_under_existing_lifecycle_without_install_traversal(invocation):
-    args, events, gate, state, records = invocation
-    state['source_reuse'] = True
-    backend.run(args)
-    assert gate == {'phase': 'open', 'operation': None}
-    assert events.index('source-stage') < events.index('source-reuse') < events.index('capture') < events.index('quiesce')
-    assert events.index('drain-check') < events.index('final') < events.index('source-promote')
-    assert events.index('source-promote') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
-    assert not {'compatibility', 'apt-preflight', 'build-stage', 'backend', 'prepare-target', 'abort'}.intersection(events)
-    assert records == [{'runId': 7, 'terminal': True}]
-
-
-def test_source_promotion_failure_retains_original_uuid_and_does_not_reinstall(invocation):
-    args, events, gate, state, records = invocation
-    state.update(source_reuse=True, failure='source-promote')
-    with pytest.raises(RuntimeError, match='SOURCE_PROMOTE'):
-        backend.run(args)
-    assert gate['phase'] == 'recovery-required'
-    assert gate['operation'] == state['preparation'].operation
-    assert not {'backend', 'build-stage', 'abort', 'resume'}.intersection(events)
-    assert records == [{'runId': 7, 'terminal': True}]
-
-
-def test_source_reuse_final_failure_restores_old_gate_before_any_live_effect(invocation):
-    args, events, gate, state, _records = invocation
-    state.update(source_reuse=True, failure='final')
-    with pytest.raises(RuntimeError, match='FINAL'):
-        backend.run(args)
-    assert gate == {'phase': 'open', 'operation': None}
-    assert 'abort' in events
-    assert not {'source-promote', 'backend', 'phase:recovery-required'}.intersection(events)
 
 
 def test_fresh_bootstrap_allows_only_its_prepared_stage_until_cutover(invocation, monkeypatch, tmp_path):
@@ -560,20 +530,18 @@ def test_same_consumer_replacement_releases_retirement_lock_and_checks_installed
     assert events.index('decommission') < events.index('after-retirement') < events.index('backend')
 
 
-def test_native_source_reuse_uses_its_complete_pool_proofs_without_duplicate_frontend_calls(invocation):
-    args, events, _gate, state, _records = invocation
-    state['source_reuse'] = True
+@pytest.mark.parametrize('consumer_change', [False, True])
+def test_planned_pool_maintenance_stages_full_apply_before_pausing_intake(invocation, consumer_change):
+    args, events, gate, state, records = invocation
+    state['consumer_change'] = consumer_change
     backend.run(args)
-    assert events.count('pool-preflight') == 0
-    assert events.index('source-reuse') < events.index('quiesce') < events.index('final') < events.index('source-promote')
-
-
-def test_full_source_fallback_keeps_both_pool_checks_before_their_owning_frontiers(invocation):
-    args, events, _gate, _state, _records = invocation
-    backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert records == [{'runId': 7, 'terminal': True}]
+    assert {'source-reuse', 'source-promote'}.isdisjoint(events)
     checks = [index for index, name in enumerate(events) if name == 'pool-preflight']
     assert len(checks) == 2
-    assert events.index('source-reuse') < checks[0] < events.index('compatibility') < events.index('host')
+    assert events.index('history') < checks[0] < events.index('compatibility') < events.index('host')
+    assert events.index('host') < events.index('build-stage') < events.index('seal') < events.index('reviewer-state')
     assert events.index('drain-check') < checks[1] < events.index('final') < events.index('backend')
     assert events.index('reviewer-state') < events.index('pool-pause') < events.index('pool-drain') < events.index('quiesce')
     assert events.index('phase:verified') < events.index('pool-restart') < events.index('resume') < events.index('pool-resume')
@@ -632,26 +600,8 @@ def test_deferred_pool_failure_stops_fallback_before_host_staging_or_quiesce(inv
         backend.run(args)
     assert events.count('pool-preflight') == 1
     assert gate == {'phase': 'open', 'operation': None}
-    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
-
-
-def test_source_proof_failure_cannot_fall_through_to_pool_or_full_install(invocation):
-    args, events, gate, state, _records = invocation
-    state['failure'] = 'source-reuse'
-    with pytest.raises(RuntimeError, match='SOURCE_REUSE'):
-        backend.run(args)
-    assert events.count('pool-preflight') == 0
-    assert gate == {'phase': 'open', 'operation': None}
-    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
-
-
-def test_changed_consumer_cannot_nominate_native_and_keeps_both_pool_checks(invocation):
-    args, events, _gate, state, _records = invocation
-    state.update(consumer_change=True, source_reuse=True)
-    backend.run(args)
-    assert 'source-reuse' not in events
-    assert events.count('pool-preflight') == 2
-    assert events.index('history') < events.index('pool-preflight') < events.index('compatibility')
+    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'pool-pause',
+                'pool-drain', 'quiesce', 'backend'}.intersection(events)
 
 
 def test_legacy_reviewer_admits_first_socket_migration_without_writer_pause(invocation):

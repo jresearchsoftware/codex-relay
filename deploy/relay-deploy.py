@@ -701,6 +701,9 @@ def run(args):
             return
     lifecycle_required = (args.phase == 'upgrade' or (intent_install and args.phase == 'apply'
                           and args.intent_expected_installed_revision != 'none'))
+    planned_pool_maintenance = (lifecycle_required and not args.local_lifecycle
+                                and 'generalRunnerPool' in config['consumer']
+                                and not args.authorize_lifecycle_recovery)
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
         (args.lifecycle_recovery_operation or str(uuid.uuid4()) if lifecycle_required or pool_reinstall else ''))
     observe_failure_state(operation_id=admission_operation_id, config=consumer_revision if not git_readonly else None)
@@ -1077,7 +1080,10 @@ def run(args):
                                     and gate['phase'] == 'recovery-required', 'bounded-recovery-target-unproven')
                             preparation.release_writer()
                         source_reuse = False
+                        # The native proof requires the same online listeners
+                        # and routing labels before and after promotion.
                         if (args.phase == 'upgrade' and not args.authorize_lifecycle_recovery
+                                and not planned_pool_maintenance
                                 and bounded_binding is None and preparation.initial is not None
                                 and not preparation.initial['consumerChange']
                                 and not preparation.initial['consumerRestoreRequired']
@@ -1173,9 +1179,7 @@ def run(args):
                     # Quickstrike that arrives there still admits and publishes normally.
                     # Withhold native eligibility and finish accepted General jobs before
                     # closing admission, including jobs that already reached their runner.
-                    if (lifecycle_required and not args.local_lifecycle
-                            and 'generalRunnerPool' in config['consumer']
-                            and not args.authorize_lifecycle_recovery):
+                    if planned_pool_maintenance:
                         apply_timing('preparation', args._apply_preparation_started)
                         args._intent_failure_stage = 'general-runner-intake'
                         pause_started = time.monotonic()
