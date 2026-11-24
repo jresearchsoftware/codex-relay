@@ -1629,8 +1629,13 @@ def run(args, *, reservation_token=None):
                             pool_restored = True
                         except Exception as recovery_error:
                             report_failure(recovery_error, 'pool-resume-old', private_log=log_name)
-                    if pool_maintenance_started and not pool_restored and (lifecycle_operation is None or gate_reopened):
-                        phase = 'verified-admission-open' if gate_reopened else 'before-quiesce'
+                    if (pool_maintenance_started and not pool_restored
+                            and (lifecycle_operation is None or gate_reopened or restored_old_gate)):
+                        phase = 'before-quiesce'
+                        if restored_old_gate:
+                            phase = 'old-admission-open'
+                        elif gate_reopened:
+                            phase = 'verified-admission-open'
                         print(f'RELAY_POOL_RECOVERY_REQUIRED=operation={admission_operation_id};phase={phase};'
                               'next=inspect-original-pool-operation-before-retry', flush=True)
                     if reviewer_pause_pending:

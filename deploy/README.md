@@ -1675,10 +1675,12 @@ partially withdrawn set of labels. This requires the original live reservation,
 healthy listeners and open admission for every bound consumer. After verified
 admission reopens, Apply also reconciles an uncertain label-restoration response
 against the same operation. A lost holder or unproven state retains the receipt.
-If the pool state remains uncertain before quiesce or after verified admission
-reopens, Apply reports the original operation and the boundary it reached.
-A failed eligibility restore can leave verified admission open while runner
-availability is uncertain.
+If the pool state remains uncertain while admission is open, Apply reports
+the original operation and the observed phase. The pool recovery warning
+reports `before-quiesce` if admission never closed, `old-admission-open` if
+Apply verified and restored the original gate during a pre-cutover abort, and
+`verified-admission-open` if Apply verified the target and reopened admission.
+In each case runner eligibility may still need recovery for the original operation.
 
 When the original native reservation has ended, a host administrator can
 restore eligibility for its retained operation from a root session outside

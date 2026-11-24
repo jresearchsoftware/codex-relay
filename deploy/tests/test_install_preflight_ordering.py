@@ -649,3 +649,43 @@ def test_reserved_pool_recovers_uncertain_labels_only_on_original_open_boundary(
     assert 'pool-' + recovery in events[failed + 1:]
     assert ('quiesce' in events) is (phase == 'resume')
     assert 'RELAY_POOL_RECOVERY_REQUIRED=' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('failed_handback', ['restart', 'resume'])
+def test_closed_gate_abort_reports_retained_native_pool_after_handback_failure(
+        invocation, monkeypatch, capsys, failed_handback):
+    import managed_pool_transport
+    import owner_lifecycle
+
+    args, events, gate, state, _records = invocation
+    config = json.loads(args.config.read_text())
+    config['environment']['localApply']['poolReservation'] = 'same-run-v1'
+    args.config.write_text(json.dumps(config))
+    args.git_intent['config_sha256'] = hashlib.sha256(args.config.read_bytes()).hexdigest()
+    args.native_reservation_attempt = 1
+    state.update(failure='final', reviewer_active=True)
+    monkeypatch.setattr(backend.os, 'geteuid', lambda: 0)
+
+    def maintain_reserved_pool(_config, operation, action, _guard, _pool_guard, _source, _workflow, _token):
+        assert operation == state['preparation'].operation
+        events.append('pool-' + action)
+        if action == failed_handback:
+            assert gate['phase'] == 'open' and state['reviewer_marker'] is None
+            raise RuntimeError('ORIGINAL_RESERVATION_UNPROVEN')
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    monkeypatch.setattr(managed_pool_transport, 'maintain_reserved_pool', maintain_reserved_pool)
+    with pytest.raises(RuntimeError, match='INJECTED'):
+        backend.run(args, reservation_token='synthetic-native-token')
+
+    assert gate == {'phase': 'open', 'operation': None}
+    assert events.index('quiesce') < events.index('abort') < events.index('reviewer-resume')
+    assert events.index('reviewer-resume') < events.index('pool-' + failed_handback)
+    assert 'phase:recovery-required' not in events
+    output = capsys.readouterr().out.splitlines()
+    operation = state['preparation'].operation
+    diagnostic = (f'RELAY_POOL_RECOVERY_REQUIRED=operation={operation};phase=old-admission-open;'
+                  'next=inspect-original-pool-operation-before-retry')
+    assert diagnostic in output
+    owner_lifecycle.child_progress(diagnostic)
+    assert capsys.readouterr().out.strip() == diagnostic
