@@ -255,20 +255,35 @@ def remote_probe(target, key, config, revision, expected_installed, guard, pool_
     from ansible_transport import run_target
     require(guard is not None and guard.poll() is None
             and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
-    clean_source = Path(retained.__file__).read_text()
-    source = Path(__file__).read_text()
     from lifecycle import failure_reporting_source
-    program = failure_reporting_source() + ('import json,sys,types\n'
-        'module=types.ModuleType("clean_reinstall");module.__file__="/owner-source/clean_reinstall.py"\n'
-        'sys.modules["clean_reinstall"]=module\nexec(' + repr(clean_source) + ',module.__dict__)\n'
-        'context={"__name__":"relay_install_recovery"}\nexec(' + repr(source) + ',context)\n'
-        'try:\n value=json.load(sys.stdin); result=context["inspect"](value["config"],value["revision"],'
-        'value["installed"]);print(json.dumps(result))\n'
-        'except Exception as error:\n report_failure(error,"install-recovery")\n code=str(error);print(code if isinstance(error,ValueError) and '
-        '__import__("re").fullmatch(r"(?:RELAY_INSTALL_RECOVERY_|REINSTALL_)[A-Z_]{1,96}",code) '
-        'else "RELAY_INSTALL_RECOVERY_UNPROVEN",file=sys.stderr);sys.exit(1)\n')
+    # Keep the fixed launcher below Linux's per-argument limit as the reviewed
+    # modules grow. The already private transport carries code and inputs together.
+    program = failure_reporting_source() + """import json,sys,types
+try:
+ raw=sys.stdin.buffer.read(1048577)
+ if len(raw)>1048576: raise ValueError("RELAY_INSTALL_RECOVERY_REQUEST_SIZE")
+ value=json.loads(raw)
+ module=types.ModuleType("clean_reinstall");module.__file__="/owner-source/clean_reinstall.py"
+ sys.modules["clean_reinstall"]=module
+ exec(value["cleanSource"],module.__dict__)
+ context={"__name__":"relay_install_recovery"}
+ exec(value["recoverySource"],context)
+ result=context["inspect"](value["config"],value["revision"],value["installed"])
+ print(json.dumps(result))
+except Exception as error:
+ report_failure(error,"install-recovery")
+ code=str(error)
+ print(code if isinstance(error,ValueError) and
+       __import__("re").fullmatch(r"(?:RELAY_INSTALL_RECOVERY_|REINSTALL_)[A-Z_]{1,96}",code)
+       else "RELAY_INSTALL_RECOVERY_UNPROVEN",file=sys.stderr)
+ sys.exit(1)
+"""
+    payload = json.dumps({'cleanSource': Path(retained.__file__).read_text(),
+                          'recoverySource': Path(__file__).read_text(),
+                          'config': config, 'revision': revision, 'installed': expected_installed})
+    require(len(payload.encode('utf-8')) <= 1048576, 'REQUEST_SIZE')
     result = run_target(target, key, ['/usr/bin/python3', '-I', '-c', program],
-        input=json.dumps({'config': config, 'revision': revision, 'installed': expected_installed}), timeout=120)
+        input=payload, timeout=120)
     require(guard.poll() is None and (pool_guard is None or pool_guard.poll() is None), 'HOST_LOCK_LOST')
     require(result.returncode == 0, 'UNPROVEN')
     value = json.loads(result.stdout)

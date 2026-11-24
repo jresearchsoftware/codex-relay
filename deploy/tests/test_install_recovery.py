@@ -225,9 +225,15 @@ def test_owner_transport_requires_held_guards_and_a_bound_result(installed, monk
     calls = []
     def run_target(target, key, argv, **options):
         assert argv[:3] == ['/usr/bin/python3', '-I', '-c']
-        compile(argv[3], '<owner-recovery-transport>', 'exec')
+        assert len(argv[3].encode()) < 32768
         payload = json.loads(options['input'])
+        assert payload.pop('cleanSource') == Path(recovery.retained.__file__).read_text()
+        assert payload.pop('recoverySource') == Path(recovery.__file__).read_text()
         assert payload == {'config': installed['config'], 'revision': TARGET, 'installed': OLD}
+        # Use the actual launcher with a harmless stand-in for the host reader.
+        payload.update(cleanSource='', recoverySource='def inspect(*args): return ' + repr(value))
+        launched = subprocess.run(argv, input=json.dumps(payload), capture_output=True, text=True, check=True)
+        assert json.loads(launched.stdout) == value
         calls.append('read-only-probe')
         return SimpleNamespace(returncode=0, stdout=json.dumps(value), stderr='')
     monkeypatch.setattr(ansible_transport, 'run_target', run_target)
