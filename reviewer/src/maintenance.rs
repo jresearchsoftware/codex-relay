@@ -58,7 +58,13 @@ impl Maintenance {
                             ));
                         }
                     }
-                    state.load_record(&std::fs::read(path)?)?;
+                    match std::fs::read(path) {
+                        Ok(bytes) => state.load_record(&bytes)?,
+                        // An acknowledged resume can remove the record while
+                        // this replacement is starting.
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => (),
+                        Err(error) => return Err(error),
+                    }
                 }
                 Err(error) if error.kind() == io::ErrorKind::NotFound => (),
                 Err(error) => return Err(error),
@@ -90,7 +96,7 @@ impl Maintenance {
         }
         let command = record["command"]
             .as_str()
-            .filter(|value| matches!(*value, "pause" | "pause-writer"))
+            .filter(|value| matches!(*value, "pause" | "pause-writer" | "resume"))
             .ok_or_else(|| {
                 io::Error::new(io::ErrorKind::InvalidData, "maintenance command invalid")
             })?;
@@ -156,6 +162,7 @@ impl Maintenance {
             }
         }
         Ok(json!({"schemaVersion":1,"pid":std::process::id(),
+            "resumeMarkerSupported":true,
             "ready":state.ready,"accepting":!state.paused && !state.draining,
             "writerAccepting":!state.paused && !state.writer_paused && !state.draining,
             "paused":state.paused,"writerPaused":state.writer_paused,
@@ -303,9 +310,24 @@ mod tests {
         assert!(state.mutation(true).is_none());
         for bytes in [
             br#"{"schemaVersion":1,"operation":"bad","command":"pause-writer"}"#.as_slice(),
-            br#"{"schemaVersion":1,"operation":"12345678-1234-1234-1234-123456789abc","command":"resume"}"#.as_slice(),
+            br#"{"schemaVersion":1,"operation":"12345678-1234-1234-1234-123456789abc","command":"invalid"}"#.as_slice(),
             br#"{"schemaVersion":1,"schemaVersion":1,"operation":"12345678-1234-1234-1234-123456789abc","command":"pause"}"#.as_slice(),
         ] { assert!(state.load_record(bytes).is_err()); }
+    }
+
+    #[test]
+    fn replacement_loads_durable_resume_without_pausing_intake() {
+        let state = Maintenance::default();
+        state
+            .load_record(br#"{"schemaVersion":1,"operation":"12345678-1234-1234-1234-123456789abc","command":"resume"}"#)
+            .unwrap();
+        state.ready();
+        let status = state.command("status").unwrap();
+        assert_eq!(status["resumeMarkerSupported"], true);
+        assert_eq!(status["accepting"], true);
+        assert_eq!(status["writerAccepting"], true);
+        assert!(state.request().is_some());
+        assert!(state.mutation(true).is_some());
     }
 
     #[tokio::test]

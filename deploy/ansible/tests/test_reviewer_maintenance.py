@@ -39,7 +39,8 @@ class ReviewerMaintenanceTests(unittest.TestCase):
             calls = []
             def request(command):
                 calls.append(command)
-                return {'pid': 7}
+                return {'pid': 7, 'ready': True, 'writerAccepting': command == 'resume',
+                        'resumeMarkerSupported': True}
             with patch.object(module, 'request', request), contextlib.redirect_stdout(io.StringIO()):
                 with patch('sys.argv', ['maintenance', 'pause-writer', '--operation', OPERATION]):
                     module.main()
@@ -58,6 +59,58 @@ class ReviewerMaintenanceTests(unittest.TestCase):
                 with patch('sys.argv', ['maintenance', 'resume', '--operation', OPERATION]):
                     module.main()
                 self.assertFalse(module.MARKER.exists())
+
+    @unittest.skipUnless(os.geteuid() == 0, 'root marker ownership contract')
+    def test_resume_intent_survives_missing_or_unready_ack_and_is_removed_after_verified_retry(self):
+        for incomplete_ack in (False, True):
+            with self.subTest(incomplete_ack=incomplete_ack), tempfile.TemporaryDirectory() as temporary:
+                module = self.load(Path(temporary))
+                module.write_marker(OPERATION, 'pause-writer')
+                replacement = {'pid': 8, 'ready': True, 'writerAccepting': True, 'resumeMarkerSupported': True}
+
+                def missing_ack(command):
+                    if command == 'status':
+                        return {**replacement, 'pid': 7, 'writerAccepting': False}
+                    self.assertEqual(command, 'resume')
+                    self.assertEqual(module.marker_read()['command'], 'resume')
+                    if incomplete_ack:
+                        return {**replacement, 'writerAccepting': False}
+                    raise OSError('Reviewer process replaced before acknowledgement')
+
+                with patch.object(module, 'request', missing_ack), patch('sys.argv',
+                        ['maintenance', 'resume', '--operation', OPERATION]):
+                    with self.assertRaisesRegex((OSError, RuntimeError), 'replaced|RESUME_UNPROVEN'):
+                        module.main()
+                self.assertEqual(module.marker_read(), {'schemaVersion': 1, 'operation': OPERATION, 'command': 'resume'})
+
+                calls = []
+                def acknowledge(command):
+                    self.assertEqual(module.marker_read()['operation'], OPERATION)
+                    calls.append(command)
+                    return replacement
+
+                with patch.object(module, 'request', acknowledge), contextlib.redirect_stdout(io.StringIO()) as output:
+                    with patch('sys.argv', ['maintenance', 'resume', '--operation', '00000000-0000-0000-0000-000000000000']):
+                        with self.assertRaisesRegex(RuntimeError, 'OTHER_OPERATION'):
+                            module.main()
+                    with patch('sys.argv', ['maintenance', 'resume', '--operation', OPERATION]):
+                        module.main()
+                self.assertEqual(calls, ['status', 'resume'])
+                self.assertIsNone(module.marker_read())
+                self.assertIsNone(json.loads(output.getvalue())['operation'])
+
+    @unittest.skipUnless(os.geteuid() == 0, 'root marker ownership contract')
+    def test_older_process_keeps_original_pause_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            module = self.load(Path(temporary))
+            module.write_marker(OPERATION, 'pause')
+            original = module.MARKER.read_bytes()
+            with patch.object(module, 'request', return_value={'pid': 7, 'ready': True}) as request:
+                with patch('sys.argv', ['maintenance', 'resume', '--operation', OPERATION]):
+                    with self.assertRaisesRegex(RuntimeError, 'DURABLE_RESUME_UNSUPPORTED'):
+                        module.main()
+            request.assert_called_once_with('status')
+            self.assertEqual(module.MARKER.read_bytes(), original)
 
     def test_real_local_socket_requires_the_exact_systemd_process(self):
         with tempfile.TemporaryDirectory() as temporary:

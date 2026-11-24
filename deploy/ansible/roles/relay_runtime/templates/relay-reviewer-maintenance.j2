@@ -32,9 +32,17 @@ def marker_read():
     record = json.loads(MARKER.read_bytes())
     if (set(record) != {'schemaVersion', 'operation', 'command'} or record['schemaVersion'] != 1
             or str(uuid.UUID(record['operation'])) != record['operation']
-            or record['command'] not in ('pause', 'pause-writer')):
+            or record['command'] not in ('pause', 'pause-writer', 'resume')):
         raise RuntimeError('REVIEWER_MAINTENANCE_RECORD_INVALID')
     return record
+
+
+def sync_marker_parent():
+    directory = os.open(MARKER.parent, os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
 
 
 def write_marker(operation, command):
@@ -48,11 +56,7 @@ def write_marker(operation, command):
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, MARKER)
-        directory = os.open(MARKER.parent, os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        sync_marker_parent()
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -106,16 +110,29 @@ def main():
             if record and record['operation'] != args.operation:
                 raise RuntimeError('REVIEWER_MAINTENANCE_OTHER_OPERATION')
             if args.action == 'resume':
-                # Resume is the lifecycle caller's verified-ready transition.
-                # Clear durable pause before the process barrier so a concurrent
-                # replacement cannot reload an already resolved pause.
+                if record:
+                    status = request('status')
+                    if status.get('resumeMarkerSupported') is not True:
+                        raise RuntimeError('REVIEWER_MAINTENANCE_DURABLE_RESUME_UNSUPPORTED')
+                    if status.get('ready') is not True:
+                        raise RuntimeError('REVIEWER_MAINTENANCE_BUSY_OR_NOT_READY')
+                    # Persist the same operation's intent before acknowledging it
+                    # in memory. A new process can start open, and a missing
+                    # acknowledgement leaves the original operation recoverable.
+                    if record['command'] != 'resume':
+                        write_marker(args.operation, 'resume')
+                value = request('resume')
+                if (value.get('ready') is not True or value.get('writerAccepting') is not True
+                        or record and value.get('resumeMarkerSupported') is not True):
+                    raise RuntimeError('REVIEWER_MAINTENANCE_RESUME_UNPROVEN')
                 if record:
                     MARKER.unlink()
+                    sync_marker_parent()
             else:
                 # Never weaken a full pause through the Writer-only operation.
                 command = 'pause' if record and record['command'] == 'pause' else args.action
                 write_marker(args.operation, command)
-            value = request(command if args.action != 'resume' else 'resume')
+                value = request(command)
         else:
             deadline = time.monotonic() + args.timeout
             while True:

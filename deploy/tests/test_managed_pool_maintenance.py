@@ -40,10 +40,14 @@ class Host(ExistingHost):
         self.labels_at_start.append(copy.deepcopy(self.remote.values[self.local[member['id']]]['labels'])
                                     if member['id'] in self.local else [])
         super().start(member)
+        self.remote.values[self.local[member['id']]]['status'] = 'online'
 
     def stop_idle(self, member, remote_idle, *, disable=True):
         assert disable is False
-        return super().stop_idle(member, remote_idle)
+        stopped = super().stop_idle(member, remote_idle)
+        if stopped:
+            self.remote.values[self.local[member['id']]]['status'] = 'offline'
+        return stopped
 
 
 def fixture(capacity=2):
@@ -213,6 +217,100 @@ def test_resume_preflights_all_members_before_restoring_any_eligibility():
     with pytest.raises(pool.PoolError, match='MAINTENANCE_RESTART_UNPROVEN'):
         maintain(values, 'resume')
     assert github.label_mutations == before and state.value['maintenance']['phase'] == 'ready'
+
+
+@pytest.mark.parametrize(('status', 'busy'), [('online', False), ('offline', True), ('offline', None)])
+def test_resume_requires_verified_offline_idle_before_restoring_labels(status, busy):
+    values = fixture()
+    _, state, github, host = values
+    for action in ['pause', 'drain', 'restart']:
+        maintain(values, action)
+    remote = github.values[host.local['primary']]
+    remote.update(status=status, busy=busy)
+    before = copy.deepcopy(github.label_mutations), list(host.starts)
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN'):
+        maintain(values, 'resume', timeout=0)
+    assert (github.label_mutations, host.starts) == before
+    assert state.value['maintenance']['phase'] == 'ready'
+
+
+def test_resume_observes_offline_then_labelled_start_and_new_online(monkeypatch):
+    values = fixture()
+    _, state, github, host = values
+    for action in ['pause', 'drain', 'restart']:
+        maintain(values, action)
+    remote = github.values[host.local['primary']]
+    remote['status'] = 'online'  # GitHub still reports the previous session.
+    clock = [0]
+    start = host.start
+
+    def delay_online(member, **kwargs):
+        assert remote['status'] == 'offline' and remote['busy'] is False
+        assert state.value['maintenance']['connectStartReserved'] is True
+        start(member, **kwargs)
+        remote['status'] = 'offline'
+
+    def wait(seconds):
+        clock[0] += seconds
+        remote['status'] = 'online' if 'primary' in host.services else 'offline'
+
+    monkeypatch.setattr(host, 'start', delay_online)
+    result = maintain(values, 'resume', now=lambda: clock[0], wait=wait, timeout=1)
+    assert clock[0] == 1 and 'primary' in result['ready']
+    assert host.labels_at_start[-1] == remote['labels'] and 'maintenance' not in state.value
+
+
+def test_resume_rechecks_offline_after_restoring_labels(monkeypatch):
+    values = fixture()
+    _, state, github, host = values
+    for action in ['pause', 'drain', 'restart']:
+        maintain(values, action)
+    runner_id = host.local['primary']
+    put_labels = github.labels
+    before = list(host.starts)
+
+    def set_status_after_label_put(identity, labels):
+        put_labels(identity, labels)
+        if identity == runner_id:
+            github.values[identity]['status'] = 'online'
+
+    monkeypatch.setattr(github, 'labels', set_status_after_label_put)
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN'):
+        maintain(values, 'resume', timeout=0)
+    assert host.starts == before and state.value['maintenance']['phase'] == 'restore-unverified'
+
+
+def test_resume_refuses_an_unreserved_connection_before_restoring_any_labels():
+    values = fixture()
+    _, state, github, host = values
+    for action in ['pause', 'drain', 'restart']:
+        maintain(values, action)
+    host.services.add('primary')
+    github.values[host.local['primary']]['status'] = 'online'
+    before = copy.deepcopy(github.label_mutations)
+    with pytest.raises(pool.PoolError, match='MAINTENANCE_CONNECTION_START_UNPROVEN'):
+        maintain(values, 'resume', timeout=0)
+    assert github.label_mutations == before and state.value['maintenance']['phase'] == 'ready'
+
+
+def test_resume_observes_a_reserved_start_without_restarting(monkeypatch):
+    values = fixture()
+    _, state, _, host = values
+    for action in ['pause', 'drain', 'restart']:
+        maintain(values, action)
+    start = host.start
+
+    def lose_start_response(member, **kwargs):
+        start(member, **kwargs)
+        raise pool.PoolError('UNKNOWN_START_RESULT')
+
+    monkeypatch.setattr(host, 'start', lose_start_response)
+    with pytest.raises(pool.PoolError, match='UNKNOWN_START_RESULT'):
+        maintain(values, 'resume')
+    assert state.value['maintenance']['phase'] == 'restore-unverified'
+    before = list(host.starts)
+    assert 'primary' in maintain(values, 'resume')['ready']
+    assert host.starts == before and 'maintenance' not in state.value
 
 
 def test_changed_owner_transport_is_preserved_as_actionable_blocker():

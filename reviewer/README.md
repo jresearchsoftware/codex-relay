@@ -95,8 +95,13 @@ submissions before Writer replacement. Other Reviewer work remains available.
 `pause` plus `wait --scope all` provides the controlled interruption boundary
 when continuity is unsafe. Both pauses persist in one root-owned, operation-bound
 configuration record and survive process replacement. Only the same operation
-may `resume`, after the lifecycle caller verifies dependencies. No SQLite row,
-native reservation or publication receipt is cleared to satisfy drain.
+may `resume`, after the lifecycle caller verifies dependencies. The helper
+records that intent before clearing the pause in memory, and removes the record
+after the authenticated process acknowledges Writer readiness. A replacement
+starts open if it reads that resume intent. If acknowledgement is uncertain,
+the record retains the operation for recovery. The helper keeps the original
+pause when the serving binary cannot read a durable resume intent. No SQLite
+row, native reservation or publication receipt is cleared to satisfy drain.
 
 The restart wrapper bounds its readiness wait and verifies a different MainPID
 and expected configured source identity; the existing executable/process proof

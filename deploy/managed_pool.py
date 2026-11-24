@@ -548,6 +548,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
               'preserved': [], 'ready': [], 'busy': []}
     if action == 'pause':
         intent.pop('connectAfterRestore', None)
+        intent.pop('connectStartReserved', None)
         save('pausing')
         for identity in records:
             member, saved, remote = snapshot(identity)
@@ -638,13 +639,31 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
     connect_after_restore = intent.get('connectAfterRestore')
     require(connect_after_restore is None or connect_after_restore in records
-            and intent['members'][connect_after_restore]['active'], 'MAINTENANCE_INTENT_CHANGED')
+            and intent['members'][connect_after_restore]['active']
+            and intent['members'][connect_after_restore]['labels'], 'MAINTENANCE_INTENT_CHANGED')
+
+    def offline(remote):
+        return remote.get('status') == 'offline' and remote.get('busy') is False
+
+    def require_reserved_connection(saved, remote):
+        require(intent.get('connectStartReserved') is True and saved.get('phase') == 'restored'
+                and labels(remote) == saved['labels'], 'MAINTENANCE_CONNECTION_START_UNPROVEN')
+
     # Preflight the whole pool before the first label restoration, including
     # exact effects left by an interrupted restoration of this operation.
     for identity in records:
         member, saved, remote = snapshot(identity)
-        if identity == connect_after_restore and host.removal_stopped(member):
+        if identity == connect_after_restore:
+            if not host.removal_stopped(member):
+                require_reserved_connection(saved, remote)
+                continue
             host.check_readiness()
+            deadline = now() + min(timeout, 30)
+            while not offline(remote):
+                require(now() < deadline, 'MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN')
+                wait(min(0.5, max(0, deadline - now())))
+                _, _, remote = snapshot(identity)
+                require(host.removal_stopped(member), 'MAINTENANCE_CONNECTION_NOT_WITHHELD')
         else:
             require(not saved['active'] or host.ready(member) and remote.get('status') == 'online',
                     'MAINTENANCE_RESTART_UNPROVEN')
@@ -661,11 +680,24 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
             if saved['active'] and identity != connect_after_restore:
                 report['ready'].append(identity)
         if connect_after_restore is not None:
-            member, saved, _ = snapshot(connect_after_restore)
-            if not host.ready(member):
-                require(host.removal_stopped(member), 'MAINTENANCE_RESTART_UNPROVEN')
+            member, saved, remote = snapshot(connect_after_restore)
+            if host.removal_stopped(member):
+                # Require an offline observation even after the label PUT so
+                # an old online status cannot satisfy the new start's readback.
+                require(offline(remote), 'MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN')
+                require(labels(remote) == saved['labels'], 'MAINTENANCE_RESUME_UNPROVEN')
+                intent['connectStartReserved'] = True
+                state_store.write(state)
                 host.start(member, enable=False)
-            wait_ready(member, saved['runnerId'], observe, host, now=now, wait=wait,
+            else:
+                require_reserved_connection(saved, remote)
+
+            def observe_restored(member):
+                current = observe(member)
+                require(labels(current) == saved['labels'], 'MAINTENANCE_RESUME_UNPROVEN')
+                return current
+
+            wait_ready(member, saved['runnerId'], observe_restored, host, now=now, wait=wait,
                        timeout=min(timeout, 30))
             report['ready'].append(connect_after_restore)
     except Exception:

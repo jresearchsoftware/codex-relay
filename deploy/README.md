@@ -1623,9 +1623,13 @@ After the existing gate, backend and installed-state checks succeed, Relay
 verifies Reviewer readiness and stages the originally active General units.
 It keeps one drained runner offline if available. After opening admission, it
 verifies that every pool-bound admission endpoint is open before restoring the
-original labels. It connects that runner with its labels already in place.
+original labels. The withheld runner's exact registration must report offline
+and idle before eligibility returns. Relay verifies its original labels, records
+the start intent, then verifies that the runner comes online with those labels.
 In TEST, restoring labels on online runners alone left original jobs
-queued until a matching runner reconnected. GitHub dispatches eligible original
+queued until a matching runner reconnected. When the owner invocation is the
+only originally active pool member, the pool preserves that transport and
+has no separate member to reconnect. GitHub dispatches eligible original
 events from its queue. Relay allocates a Step only after admission. The managed
 operation requires the same physical pool binding and capacity. Plain graceful
 stop and the separate recovery and reinstall paths retain their existing
@@ -1643,9 +1647,11 @@ and [job dispatcher](https://github.com/actions/runner/blob/v2.338.2/src/Runner.
 A single rehearsal establishes its observed timings only. Treat an
 uncertain stop, label mutation or restart as an original-operation blocker.
 Inspect the pool receipt, native jobs and admission gate before recovery.
-If pool maintenance fails before quiesce or after verified admission reopens,
-Apply reports the original pool operation and which boundary it reached. A
-failed eligibility restore can leave verified admission open while runner
+If Apply fails before quiesce after the pool has drained, it verifies the
+original runtime and restores runner eligibility while admission is open.
+If the pool state remains uncertain before quiesce or after verified admission
+reopens, Apply reports the original operation and the boundary it reached.
+A failed eligibility restore can leave verified admission open while runner
 availability is uncertain.
 
 An active Reviewer with the maintenance control acknowledges a Writer-only pause
@@ -1656,6 +1662,14 @@ socket-activated restart. An active legacy service without a proved request
 drain stops Apply before the runner pause. See
 [Reviewer planned maintenance](../reviewer/README.md#planned-apply-and-accepted-http-calls) for
 readiness, backlog limits and the 503 fallback.
+
+If Apply fails before quiesce or proves the original admission gate reopened,
+it restores Reviewer Writer submissions after authenticating the same ready
+Reviewer process. The existing closed-gate recovery resumes a retained pause
+only for the original operation after verifying activation. If the pause cannot
+be resolved, `RELAY_REVIEWER_RECOVERY_REQUIRED` reports the operation and gate
+boundary. Inspect that operation with the root-owned `relay-reviewer-maintenance
+status` helper and the existing deployment diagnostics before retrying.
 
 Manual Outcome socket helpers keep stderr in the protected host journal while
 stdout remains the bounded socket response. This retains early failures before
@@ -2139,7 +2153,7 @@ A reachable General or foreign unit refuses before restart, including indirect
 paths. The integration tests direct foreign `PartOf` and foreign-to-General
 chains with unchanged process identities, then the permitted adoption path.
 
-The governed standalone CLI is pinned to **0.171.0**. The credential-free
+The governed standalone CLI is pinned to **0.172.0**. The credential-free
 launcher default for new automatic invocations is native
 `--sandbox danger-full-access`, with the existing noninteractive approval policy
 `never`. No consumer permission fields or per-Task grant hierarchy are required.

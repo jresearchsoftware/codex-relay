@@ -183,6 +183,7 @@ def child_progress(line):
         'RELAY_LIFECYCLE_WARNING=child-cleanup-unproven;inspect-before-retry',
         'RELAY_ANSIBLE_WARNING=cleanup-unproven;primary-failure-preserved;inspect-before-retry'}
     if (observed and observed[2] in dependencies.get(observed[1], set())
+            or re.fullmatch(r'RELAY_REVIEWER_RECOVERY_REQUIRED=operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};phase=(?:before-quiesce|old-admission-open|admission-closed-or-unproven);next=inspect-original-reviewer-operation-before-retry', line)
             or re.fullmatch(r'RELAY_POOL_RECOVERY_REQUIRED=operation=[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12};phase=(?:verified-admission-open|before-quiesce);next=inspect-original-pool-operation-before-retry', line)
             or re.fullmatch(r'RELAY_LIFECYCLE_PROGRESS=(?:PREFLIGHT|STAGING|LOCK|QUIESCE|DRAIN|QUIESCED|APPLY|ACTIVATE/VERIFY|VERIFY_INSTALLED|RESUME|RECOVERY_REQUIRED|OPEN);target=[0-9a-f]{40}', line)
             or re.fullmatch(r'RELAY_DEPLOYMENT_LOG=protected-log/relay-[0-9a-f]{12}-[a-z-]{1,40}-[A-Za-z0-9_-]{6,32}\.log;access=protected;phase=[a-z-]{1,40}', line)
