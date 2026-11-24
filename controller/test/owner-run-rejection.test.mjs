@@ -78,10 +78,16 @@ test('only an in-progress first native run may pass the owner status predicate',
 test('automatic label admission reobserves the same queued run before allocating the admitted envelope', async t => {
   const f = await fixture(t, { labelLaunch: true, deferAdmission: true });
   let reads = 0;
-  const api = { ...f.api, getRun: async id => {
+  let previousBudget = 10_000;
+  const api = { ...f.api, getRun: async (id, options) => {
     assert.equal(id, f.run.id);
     assert.deepEqual(await f.store.all(), []);
     assert.deepEqual(f.issue.labels, [{ name: 'codex-ready-auto' }]);
+    if (reads === 0) assert.equal(options, undefined);
+    else {
+      assert(options.deadlineMs > 0 && options.deadlineMs < previousBudget);
+      previousBudget = options.deadlineMs;
+    }
     reads += 1;
     return { ...f.run, status: reads < 3 ? 'queued' : 'in_progress' };
   } };

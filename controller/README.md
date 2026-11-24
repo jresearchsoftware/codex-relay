@@ -1469,8 +1469,9 @@ job conclusion with worker admission, execution or Task completion.
 Native run guards retain the fixed `OWNER_RUN_NOT_ADMITTED` code and predicate
 reason from Task #243. When an automatic ready-label job reaches a runner while
 GitHub still reports its matching first run as queued, Writer briefly rereads
-that same run before admission. Each read rechecks native authority, and only
-an in-progress observation permits admission, under the normal ready-event and
+that same run before admission. Subsequent reads and their transport retries
+share a ten-second budget. Each read rechecks native authority, and only an
+in-progress observation permits admission, under the normal ready-event and
 Task checks. If the status remains queued or authority changes, the run stops
 before reservation, Step allocation or ready-label consumption.
 

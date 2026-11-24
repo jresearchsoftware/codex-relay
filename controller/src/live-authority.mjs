@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
+import { performance } from 'node:perf_hooks';
 import { failureFacts } from './failure-report.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, requireCurrentProtocol, branchName, exactSha, positive, isAdmissionDomainBlock, DEFAULT_NATIVE_VALIDATIONS, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
@@ -13,6 +14,7 @@ import { readPriorOutcomeContext, appendPriorOutcomeContext } from './prior-outc
 import { rejectOwnerRun } from './owner-run-rejection.mjs';
 
 const QUEUED_RUN_OBSERVATION_DELAYS_MS = [250, 500, 1000, 2000, 4000];
+const QUEUED_RUN_OBSERVATION_BUDGET_MS = 10_000;
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -169,10 +171,15 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   let queued = checkOwnerRun(run);
   // The job can reach its runner before GitHub's run status catches up.
   // Reobserve this exact run before allocating anything, without accepting queued.
+  const deadline = performance.now() + QUEUED_RUN_OBSERVATION_BUDGET_MS;
   for (const delay of QUEUED_RUN_OBSERVATION_DELAYS_MS) {
-    if (!queued) break;
+    if (!queued || performance.now() + delay >= deadline) break;
     await sleep(delay);
-    run = await api.getRun(runId);
+    const deadlineMs = Math.floor(deadline - performance.now());
+    if (deadlineMs <= 0) break;
+    const observed = await api.getRun(runId, { deadlineMs });
+    if (performance.now() >= deadline) break;
+    run = observed;
     queued = checkOwnerRun(run);
   }
   if (queued) rejectOwnerRun('status', 'in_progress', run.status);
