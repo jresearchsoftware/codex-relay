@@ -1148,14 +1148,27 @@ def run(args):
                             probe = run_target(target, key, ['/usr/bin/test', '-x',
                                 values['relay_install_root'] + '/relay-reviewer-maintenance'],
                                 timeout=30, local=qualified_local)
-                            if probe.returncode:
-                                raise LifecycleCheckError('reviewer-legacy-drain-unproven')
-                            reviewer_status = reviewer_maintenance('status')
-                            require(reviewer_status.get('ready') is True
-                                    and 'operation' in reviewer_status
-                                    and reviewer_status['operation'] in (None, admission_operation_id),
-                                    'reviewer-activity-boundary-unproven')
-                            reviewer_pid = reviewer_status['pid']
+                            if probe.returncode == 1:
+                                socket = run_target(target, key, ['/usr/bin/systemctl', 'show',
+                                    values['relay_reviewer_socket_service_name'], '--property=LoadState', '--value'],
+                                    timeout=30, local=qualified_local)
+                                legacy = run_target(target, key, ['/usr/bin/systemctl', 'show',
+                                    values['relay_reviewer_service_name'], '--property=MainPID', '--value'],
+                                    timeout=30, local=qualified_local)
+                                require(socket.returncode == 0 and socket.stdout.strip() == 'not-found'
+                                        and legacy.returncode == 0 and re.fullmatch(r'[1-9][0-9]*', legacy.stdout.strip()),
+                                        'reviewer-legacy-identity-unproven')
+                                values['relay_reviewer_legacy_pid'] = legacy.stdout.strip()
+                                inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                                (work / 'inventory.json').write_text(json.dumps(inventory))
+                            else:
+                                require(probe.returncode == 0, 'reviewer-maintenance-capability-unproven')
+                                reviewer_status = reviewer_maintenance('status')
+                                require(reviewer_status.get('ready') is True
+                                        and 'operation' in reviewer_status
+                                        and reviewer_status['operation'] in (None, admission_operation_id),
+                                        'reviewer-activity-boundary-unproven')
+                                reviewer_pid = reviewer_status['pid']
                     # Preparation is read-only with respect to serving execution. A
                     # Quickstrike that arrives there still admits and publishes normally.
                     # Withhold native eligibility and finish accepted General jobs before

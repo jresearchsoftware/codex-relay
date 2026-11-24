@@ -67,6 +67,13 @@ listener against its configured address and port. nginx continues to enforce
 the same client-certificate authentication and forwarded identity; the service
 does not gain a public bind or another HTTP/MCP administration endpoint.
 
+The first migration from an active Reviewer that owns its listening port
+and has neither a maintenance helper nor a socket unit is a bounded restart.
+Relay verifies the original process, stops it to release the port, and starts
+the socket-activated replacement. Accepted legacy requests may be interrupted.
+Managed nginx returns HTTP 503 with Retry-After during the restart gap.
+Publication with an uncertain response retains the original operation identity.
+
 During a compatible planned replacement, keep the old service running while
 staging the candidate, then perform one ordered service restart. SIGTERM closes
 the old accept loop gracefully and lets its accepted calls finish, including

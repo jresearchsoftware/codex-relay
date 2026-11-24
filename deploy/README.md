@@ -1658,10 +1658,15 @@ An active Reviewer with the maintenance control acknowledges a Writer-only pause
 and drains its accepted Writer submissions before replacement. Review and
 Decision requests keep using the Reviewer during preparation. The service
 owns its existing SQLite and native publication records throughout a compatible
-socket-activated restart. An active legacy service without a proved request
-drain stops Apply before the runner pause. See
-[Reviewer planned maintenance](../reviewer/README.md#planned-apply-and-accepted-http-calls) for
-readiness, backlog limits and the 503 fallback.
+socket-activated restart. The first migration from the active legacy service
+uses the previous stop and restart behavior when the installed maintenance
+helper and socket unit are absent. Apply binds that transition to the observed
+Reviewer PID and releases the old listener before starting the socket-activated
+replacement. Accepted legacy requests can be interrupted. The managed nginx
+configuration returns 503 with Retry-After during upstream unavailability.
+Later socket-activated updates require authenticated maintenance status.
+See [Reviewer planned maintenance](../reviewer/README.md#planned-apply-and-accepted-http-calls)
+for readiness, backlog limits and uncertain publication recovery.
 
 If Apply fails before quiesce or proves the original admission gate reopened,
 it restores Reviewer Writer submissions after authenticating the same ready

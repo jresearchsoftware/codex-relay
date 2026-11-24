@@ -16,7 +16,11 @@ recover_active=false
 maintained_config_adoption=false
 inherited_operation_lock=''
 recovery_operation=''
-if [[ "$#" -ne 0 ]]; then
+legacy_pid=''
+if [[ "$#" -eq 2 && "$1" == --migrate-legacy && "$2" =~ ^[1-9][0-9]*$ &&
+      "$(/usr/bin/id -u)" == 0 ]]; then
+  legacy_pid="$2"
+elif [[ "$#" -ne 0 ]]; then
   [[ (( "$#" -eq 2 && "$1" == --recover-active ) ||
       ( "$#" -eq 3 && "$1" == --maintained-config-adoption && "$3" =~ ^([3-9]|[1-9][0-9]{1,3})$ )) &&
      "$2" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ &&
@@ -144,18 +148,32 @@ if [[ "$maintained_config_adoption" == true &&
   exit 48
 fi
 {% if relay_reviewer_socket_activation | default(false) %}
-# A legacy process has no graceful-request boundary. Never infer that it is
-# idle from its TCP listener or restart it while publication may be in flight.
 maintenance='{{ relay_install_root }}/relay-reviewer-maintenance'
 previous_pid=''
-if [[ "$reviewer_was_active" == true ]]; then
+if [[ -n "$legacy_pid" ]]; then
+  socket='{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
+  [[ "$reviewer_was_active" == true &&
+     "$(/bin/systemctl show "$reviewer_service" --property=MainPID --value)" == "$legacy_pid" &&
+     "$(/bin/systemctl show "$socket" --property=ActiveState --value)" == inactive ]] || {
+    echo 'REVIEWER_LEGACY_MIGRATION_IDENTITY_CHANGED' >&2
+    exit 50
+  }
+  # Release the legacy process's listening port before the new service starts
+  # its required socket unit. nginx serves its controlled 503 during the gap.
+  echo 'REVIEWER_LEGACY_MIGRATION=restart;in-flight-requests-may-be-interrupted'
+  /usr/bin/timeout 30s /bin/systemctl stop "$reviewer_service" || {
+    echo 'REVIEWER_LEGACY_STOP_UNPROVEN: inspect the original stop before recovery' >&2
+    exit 50
+  }
+  previous_pid="$legacy_pid"
+elif [[ "$reviewer_was_active" == true ]]; then
   current_status="$("$maintenance" status)" || {
-    echo 'REVIEWER_LEGACY_DRAIN_UNPROVEN: retain the running Reviewer; qualify authenticated ingress pause and old-request drain before the first socket-activation migration' >&2
+    echo 'REVIEWER_MAINTENANCE_STATUS_UNPROVEN: retain the running Reviewer and inspect its authenticated control' >&2
     exit 50
   }
   previous_pid="$(/usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["pid"])' <<<"$current_status")"
 fi
-if [[ "$recover_active" == true && "$reviewer_was_active" == false ]]; then
+if [[ -n "$legacy_pid" || ( "$recover_active" == true && "$reviewer_was_active" == false ) ]]; then
   /bin/systemctl --no-block start "$reviewer_service"
 else
   /bin/systemctl --no-block try-restart "$reviewer_service"

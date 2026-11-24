@@ -151,9 +151,9 @@ class ReviewerMaintenanceTests(unittest.TestCase):
         self.assertIn('FlushPending=no', unit)
         self.assertNotIn('WantedBy=', unit)
 
-    def test_socket_restart_refuses_unsupported_active_legacy_before_mutation(self):
-        for supported in (False, True):
-            with self.subTest(supported=supported), tempfile.TemporaryDirectory() as temporary:
+    def test_socket_restart_and_explicit_first_legacy_migration(self):
+        for supported, legacy_pid in ((False, None), (True, None), (False, 33), (False, 99)):
+            with self.subTest(supported=supported, legacy_pid=legacy_pid), tempfile.TemporaryDirectory() as temporary:
                 directory = Path(temporary)
                 marker = directory / 'activated'
                 marker.write_text('authorized')
@@ -162,12 +162,14 @@ class ReviewerMaintenanceTests(unittest.TestCase):
                 systemctl = directory / 'systemctl'
                 systemctl.write_text('#!/usr/bin/python3\nimport sys\n'
                     f'with open({str(calls)!r}, "a") as stream: stream.write(" ".join(sys.argv[1:])+"\\n")\n'
+                    'if "--property=MainPID" in sys.argv: print(33)\n'
+                    'if "--property=ActiveState" in sys.argv: print("inactive")\n'
                     'raise SystemExit(3 if sys.argv[1:] == ["is-active", "runner.service"] else 0)\n')
                 systemctl.chmod(0o755)
                 maintenance = directory / 'relay-reviewer-maintenance'
                 maintenance.write_text('#!/usr/bin/python3\nimport json,sys\n'
                     f'with open({str(calls)!r}, "a") as stream: stream.write("maintenance "+" ".join(sys.argv[1:])+"\\n")\n'
-                    f'if not {supported!r}: raise SystemExit(1)\n'
+                    f'if not {supported!r} and sys.argv[1] == "status": raise SystemExit(1)\n'
                     'print(json.dumps({"pid":33}))\n')
                 maintenance.chmod(0o755)
                 state = directory / 'operation-state'
@@ -186,16 +188,29 @@ class ReviewerMaintenanceTests(unittest.TestCase):
                 source = source.replace('"$marker_owner" == root', '"$marker_owner" == ' + pwd.getpwuid(os.geteuid()).pw_name)
                 helper = directory / 'restart'
                 helper.write_text(source)
-                result = subprocess.run(['/bin/bash', str(helper)], capture_output=True, text=True, timeout=10)
-                self.assertEqual(result.returncode, 0 if supported else 50, result.stdout + result.stderr)
+                args = ['/bin/bash', str(helper)]
+                if legacy_pid is not None:
+                    if os.geteuid() != 0:
+                        continue
+                    args += ['--migrate-legacy', str(legacy_pid)]
+                result = subprocess.run(args, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0 if supported or legacy_pid == 33 else 50,
+                                 result.stdout + result.stderr)
                 trace = calls.read_text()
                 if supported:
                     self.assertIn('--no-block try-restart reviewer.service', trace)
                     self.assertIn('--previous-pid 33', trace)
                     self.assertIn('maintenance ready --expected-commit ' + 'a' * 40, trace)
+                elif legacy_pid == 33:
+                    self.assertLess(trace.index('stop reviewer.service'), trace.index('--no-block start reviewer.service'))
+                    self.assertNotIn('maintenance status', trace)
+                    self.assertIn('--previous-pid 33', trace)
+                    self.assertIn('in-flight-requests-may-be-interrupted', result.stdout)
                 else:
-                    self.assertIn('REVIEWER_LEGACY_DRAIN_UNPROVEN', result.stderr)
-                    self.assertNotIn('try-restart', trace)
+                    code = ('REVIEWER_MAINTENANCE_STATUS_UNPROVEN' if legacy_pid is None
+                            else 'REVIEWER_LEGACY_MIGRATION_IDENTITY_CHANGED')
+                    self.assertIn(code, result.stderr)
+                    self.assertNotIn('stop reviewer.service', trace)
                     self.assertNotIn('start ', trace)
 
 

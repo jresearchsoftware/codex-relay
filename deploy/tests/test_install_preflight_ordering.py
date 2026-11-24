@@ -86,13 +86,21 @@ def invocation(tmp_path, monkeypatch):
 
     def target_call(_target, _key, argv, **_options):
         if argv[0] == '/usr/bin/systemctl':
-            assert argv[1] == 'show' and argv[-2:] == ['--property=ActiveState', '--value']
+            assert argv[1] == 'show' and argv[-1] == '--value'
+            if argv[-2] == '--property=LoadState':
+                assert argv[2].endswith('.socket')
+                injected('reviewer-socket')
+                return SimpleNamespace(returncode=0, stdout=state.get('reviewer_socket', 'not-found'))
+            if argv[-2] == '--property=MainPID':
+                injected('reviewer-legacy-pid')
+                return SimpleNamespace(returncode=0, stdout='10\n')
+            assert argv[-2] == '--property=ActiveState'
             injected('reviewer-state')
             return SimpleNamespace(returncode=0, stdout='active\n' if state['reviewer_active'] else 'inactive\n')
         if argv[0] == '/usr/bin/test':
             if argv[1] == '-x':
                 assert argv[-1].endswith('/relay-reviewer-maintenance')
-                return SimpleNamespace(returncode=0)
+                return SimpleNamespace(returncode=1 if state.get('reviewer_legacy') else 0)
             assert argv[1:3] == ['-e', '/etc/codex-relay/reviewer-maintenance.json']
             assert argv[3:] == ['-o', '-L', argv[2]]
             injected('reviewer-marker-probe')
@@ -235,6 +243,8 @@ def invocation(tmp_path, monkeypatch):
                 assert not any(key.startswith('relay_intent_stage') or key == 'relay_intent_writer_lock_lease'
                                for key in installed_values)
             if '--check' not in argv:
+                if state.get('reviewer_legacy'):
+                    assert installed_values['relay_reviewer_legacy_pid'] == '10'
                 injected('backend')
                 assert state['preparation'].holder is not None or args.intent_expected_installed_revision == 'none'
                 assert state['preparation'].cutover_started
@@ -642,3 +652,19 @@ def test_changed_consumer_cannot_nominate_native_and_keeps_both_pool_checks(invo
     assert 'source-reuse' not in events
     assert events.count('pool-preflight') == 2
     assert events.index('history') < events.index('pool-preflight') < events.index('compatibility')
+
+
+def test_legacy_reviewer_admits_first_socket_migration_without_writer_pause(invocation):
+    args, events, _gate, state, _records = invocation
+    state.update(reviewer_active=True, reviewer_legacy=True)
+    backend.run(args)
+    assert events.index('reviewer-legacy-pid') < events.index('pool-pause') < events.index('backend')
+    assert 'reviewer-pause-writer' not in events
+
+
+def test_installed_socket_with_missing_control_is_not_legacy(invocation):
+    args, events, _gate, state, _records = invocation
+    state.update(reviewer_active=True, reviewer_legacy=True, reviewer_socket='loaded')
+    with pytest.raises(ValueError, match='reviewer-legacy-identity-unproven'):
+        backend.run(args)
+    assert 'pool-pause' not in events

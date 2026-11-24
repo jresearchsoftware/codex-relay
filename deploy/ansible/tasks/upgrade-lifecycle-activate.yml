@@ -24,7 +24,8 @@
   ansible.builtin.command:
     argv: >-
       {{ [relay_reviewer_operation_restart_path] +
-         (['--recover-active', relay_admission_operation_id] if relay_admission_recovery_authorized | default(false) | bool else []) }}
+         (['--recover-active', relay_admission_operation_id] if relay_admission_recovery_authorized | default(false) | bool else
+          (['--migrate-legacy', relay_reviewer_legacy_pid | string] if relay_reviewer_legacy_pid is defined else [])) }}
   changed_when: true
   when:
     - relay_upgrade_lifecycle_reviewer_was_active | bool
