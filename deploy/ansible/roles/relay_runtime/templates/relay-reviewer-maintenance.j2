@@ -18,6 +18,7 @@ import uuid
 CONTROL = '{{ relay_runtime_root }}/reviewer-proof/maintenance.sock'
 MARKER = Path('{{ relay_config_root }}/reviewer-maintenance.json')
 SERVICE = '{{ relay_reviewer_service_name }}'
+SOCKET_UNIT = '{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
 USER = '{{ relay_reviewer_user }}'
 GROUP = '{{ relay_reviewer_group }}'
 
@@ -86,6 +87,26 @@ def request(command):
     return value
 
 
+def startup_limit_reached():
+    # A listening socket and an auto-restarting process are normal during
+    # replacement. Stop waiting only once systemd has exhausted this start
+    # policy, closed the socket and has no replacement job pending.
+    try:
+        result = subprocess.run(['/bin/systemctl', 'show', SERVICE, SOCKET_UNIT,
+                                 '--property=Id,LoadState,ActiveState,MainPID,Result,Job'],
+                                capture_output=True, text=True, timeout=2, check=True)
+        units = {}
+        for block in result.stdout.strip().split('\n\n'):
+            fields = dict(line.split('=', 1) for line in block.splitlines())
+            units[fields['Id']] = fields
+        service, listener = units[SERVICE], units[SOCKET_UNIT]
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+        return False
+    return (all(unit.get('LoadState') == 'loaded' and unit.get('ActiveState') == 'failed'
+                and unit.get('Job') == '' for unit in (service, listener))
+            and service.get('MainPID') == '0' and listener.get('Result') == 'service-start-limit-hit')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', choices=['status', 'pause', 'pause-writer', 'resume', 'wait', 'ready'])
@@ -135,12 +156,18 @@ def main():
                 value = request(command)
         else:
             deadline = time.monotonic() + args.timeout
+            next_startup_check = 0
             while True:
                 try:
                     value = request('status')
-                except (OSError, subprocess.SubprocessError, ValueError, RuntimeError):
-                    if args.action != 'ready' or time.monotonic() >= deadline:
+                except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as error:
+                    now = time.monotonic()
+                    if args.action != 'ready' or now >= deadline:
                         raise
+                    if args.expected_commit is not None and now >= next_startup_check:
+                        next_startup_check = now + 1
+                        if startup_limit_reached():
+                            raise RuntimeError('REVIEWER_MAINTENANCE_START_LIMIT_HIT') from error
                     time.sleep(0.2)
                     continue
                 if args.action == 'wait':

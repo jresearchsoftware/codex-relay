@@ -89,9 +89,12 @@ socket backlog, nginx's existing request deadline and the caller's own deadline
 still apply. nginx never retries an upstream mutation and translates upstream
 connection failure/deadline errors to HTTP 503 with `Retry-After: 5`. An explicit
 Reviewer pause returns the same controlled status. No automatic ChatGPT retry
-is promised. After any uncertain result, recover using the exact original
-operation payload and its existing native readback rules; do not author a new
-Review or Decision merely because the caller saw a timeout or 503.
+is promised. If startup fails repeatedly, callers can time out while systemd
+still retains the listener for another attempt. When systemd exhausts the
+start limit and closes the listener, the owner Apply readiness check reports
+that terminal failure once it verifies no replacement is pending. After any
+uncertain result, recover using the exact original operation payload and its
+existing native readback rules. Keep the same Review or Decision identity.
 
 `relay-reviewer-maintenance` uses a service-private Unix socket and kernel peer
 credentials to check the exact non-root systemd MainPID. `status` reports only

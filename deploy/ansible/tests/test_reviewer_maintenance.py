@@ -25,11 +25,47 @@ class ReviewerMaintenanceTests(unittest.TestCase):
         source = Environment(undefined=StrictUndefined).from_string(
             (TEMPLATES / 'relay-reviewer-maintenance.j2').read_text()).render(
                 relay_runtime_root=str(directory), relay_config_root=str(directory),
-                relay_reviewer_service_name='test.service', relay_reviewer_user=pwd.getpwuid(os.geteuid()).pw_name,
+                relay_reviewer_service_name='test.service', relay_reviewer_socket_service_name='test.socket',
+                relay_reviewer_user=pwd.getpwuid(os.geteuid()).pw_name,
                 relay_reviewer_group=pwd.getpwuid(os.geteuid()).pw_name)
         module = types.ModuleType('maintenance_fixture')
         exec(compile(source, 'maintenance_fixture', 'exec'), module.__dict__)
         return module
+
+    @unittest.skipUnless(os.geteuid() == 0, 'root maintenance helper')
+    def test_replacement_readiness_reports_terminal_socket_start_limit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            module = self.load(Path(temporary))
+            output = ('Id=test.service\nLoadState=loaded\nActiveState=failed\nMainPID=0\nJob=\n\n'
+                      'Id=test.socket\nLoadState=loaded\nActiveState=failed\n'
+                      'Result=service-start-limit-hit\nJob=\n')
+            with patch('sys.argv', ['maintenance', 'ready', '--expected-commit', 'a' * 40]), \
+                    patch.object(module, 'request', side_effect=FileNotFoundError), \
+                    patch.object(module.subprocess, 'run',
+                                 return_value=subprocess.CompletedProcess([], 0, stdout=output)) as show, \
+                    patch.object(module.time, 'sleep', side_effect=AssertionError('terminal wait continued')):
+                with self.assertRaisesRegex(RuntimeError, 'REVIEWER_MAINTENANCE_START_LIMIT_HIT'):
+                    module.main()
+            self.assertEqual(show.call_args.args[0][:4], ['/bin/systemctl', 'show', 'test.service', 'test.socket'])
+
+    @unittest.skipUnless(os.geteuid() == 0, 'root maintenance helper')
+    def test_replacement_readiness_keeps_waiting_on_transient_or_unproved_state(self):
+        terminal = ('Id=test.service\nLoadState=loaded\nActiveState=failed\nMainPID=0\nJob=\n\n'
+                    'Id=test.socket\nLoadState=loaded\nActiveState=failed\n'
+                    'Result=service-start-limit-hit\nJob=\n')
+        for output in [terminal.replace('Job=', 'Job=42', 1),
+                       terminal.replace('ActiveState=failed', 'ActiveState=activating', 1), '']:
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as temporary:
+                module = self.load(Path(temporary))
+                ready = {'pid': 7, 'ready': True, 'artifact': {'commit': 'a' * 40}}
+                with patch('sys.argv', ['maintenance', 'ready', '--expected-commit', 'a' * 40]), \
+                        patch.object(module, 'request', side_effect=[FileNotFoundError(), ready]), \
+                        patch.object(module.subprocess, 'run',
+                                     return_value=subprocess.CompletedProcess([], 0, stdout=output)) as show, \
+                        patch.object(module.time, 'sleep'), contextlib.redirect_stdout(io.StringIO()) as result:
+                    module.main()
+                show.assert_called_once()
+                self.assertEqual(json.loads(result.getvalue())['pid'], 7)
 
     @unittest.skipUnless(os.geteuid() == 0, 'root marker ownership contract')
     def test_pause_survives_process_replacement_and_another_operation_cannot_resume(self):
