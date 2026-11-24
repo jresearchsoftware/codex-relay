@@ -292,6 +292,8 @@ elif '--hold' in sys.argv[-1]:
     if Path({str(cls.base / 'guard-fail')!r}).exists(): sys.exit(1)
 elif sys.argv[-1].startswith('/usr/bin/systemctl show '):
     print('inactive')
+elif sys.argv[-1].startswith('/usr/bin/test -e ') and sys.argv[-1].endswith('/reviewer-maintenance.json'):
+    sys.exit(1)
 elif '/relay-admission' in sys.argv[-1]:
     with Path({str(cls.base / 'admission-calls')!r}).open('a') as stream:
         stream.write(sys.argv[-1]+'\\n')

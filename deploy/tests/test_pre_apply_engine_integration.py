@@ -142,6 +142,7 @@ def test_real_engine_keeps_frozen_product_and_original_operation(
             # Retain real run(), source_identity(), clean_git() and git(). Only
             # external operational adapters use the existing ordering fixture.
             engine.remote_admission = ordering.backend.remote_admission
+            engine.run_target = ordering.backend.run_target
 
             def backend(argv, cwd, environment, log, guard=None, extra_guard=None):
                 assert engine.BACKEND == root / 'deploy/ansible'
