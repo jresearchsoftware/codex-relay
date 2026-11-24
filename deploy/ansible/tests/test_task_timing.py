@@ -138,3 +138,34 @@ raise SystemExit(7)
     assert 'private-secret-payload' not in output
     assert f'operation={INV};' not in output
     assert 'private-secret-payload' in log_path.read_text()
+
+
+def test_backend_forwards_summary_beyond_the_final_read_chunk(tmp_path, capsys, monkeypatch):
+    spec = importlib.util.spec_from_file_location('timing_deploy_tail', ROOT / 'deploy/relay-deploy.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    popen = subprocess.Popen
+
+    def completed_backend(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        process.wait(timeout=10)
+        return process
+
+    # Model a backend that writes a large final burst and exits between
+    # samples, without depending on the observer's polling schedule.
+    monkeypatch.setattr(module.subprocess, 'Popen', completed_backend)
+    program = '''import os
+prefix='RELAY_ANSIBLE_TIMING=operation='+os.environ['RELAY_TIMING_OPERATION']+';invocation='+os.environ['RELAY_TIMING_INVOCATION']+';'
+for _ in range(2048):
+    print('private-backend-payload' * 32)
+print(prefix+'kind=summary;wall_ms=50;observed_union_ms=31;gap_ms=19;unfinished=0;overlap=possible')
+'''
+    log_path = tmp_path / 'backend.log'
+    with log_path.open('w') as log:
+        assert module.run_backend([sys.executable, '-c', program], ROOT,
+            dict(os.environ, RELAY_TIMING_OPERATION=OP), log) == 0
+    output = capsys.readouterr().out
+    assert output.count('kind=summary;wall_ms=50') == 1
+    assert output.index('kind=summary;') < output.index('kind=backend;')
+    assert 'private-backend-payload' not in output
+    assert 'private-backend-payload' in log_path.read_text()

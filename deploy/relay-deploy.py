@@ -249,14 +249,14 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
         'Require preserved activation intent and healthy previously active components': 'runtime-verification',
     }
     print('RELAY_DEPLOYMENT_PROGRESS=backend;dependency=ansible-playbook;state=started', flush=True)
-    def observe():
+    def observe(remaining=65536):
         nonlocal offset, pending, dependency, next_progress
         log.flush()
         # Read through a separate descriptor: the backend's shared write offset
         # must never move while observing progress. Bound each observation.
         with open(log.name if isinstance(log.name, str) else '/proc/self/fd/' + str(log.fileno()), 'rb') as reader:
             reader.seek(offset)
-            chunk = reader.read(65536)
+            chunk = reader.read(min(65536, remaining))
         offset += len(chunk)
         pending += chunk
         while b'\n' in pending:
@@ -276,6 +276,7 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
                     next_progress = time.monotonic() + 30
         if len(pending) > 4096:
             pending = b'oversized:'
+        return bool(chunk)
     try:
         while process.poll() is None:
             observe()
@@ -290,7 +291,11 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
                 pass
         if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
             raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
-        observe()
+        # Ansible can finish with a burst larger than one observation chunk.
+        # Drain only the bytes already written at child exit.
+        final_offset = os.fstat(log.fileno()).st_size
+        while offset < final_offset and observe(final_offset - offset):
+            pass
         observe_failure_state(boundary='backend-returned', backend=dependency, backend_exit=process.returncode)
         print(f'RELAY_ANSIBLE_TIMING=operation={operation};invocation={invocation};kind=backend;wall_ms={int((time.monotonic()-started)*1000)}', flush=True)
         print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state={"completed" if process.returncode == 0 else "failed"};exit={process.returncode};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
