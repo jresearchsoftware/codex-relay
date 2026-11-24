@@ -1467,9 +1467,15 @@ Existing consumers must inspect the semantic JSON/Outcome rather than equate the
 job conclusion with worker admission, execution or Task completion.
 
 Native run guards retain the fixed `OWNER_RUN_NOT_ADMITTED` code and predicate
-reason from Task #243. The original failed observation (expected and observed
-run/actor/status/workflow/title/target fields) now also enters the protected
-normal-mode diagnostic bundle. Ready-event checks preserve their exact failed
+reason from Task #243. When an automatic ready-label job reaches a runner while
+GitHub still reports its matching first run as queued, Writer briefly rereads
+that same run before admission. Each read rechecks native authority, and only
+an in-progress observation permits admission, under the normal ready-event and
+Task checks. If the status remains queued or authority changes, the run stops
+before reservation, Step allocation or ready-label consumption.
+
+The failed observation (expected and observed run/actor/status/workflow/title/
+target fields) enters the protected normal-mode diagnostic bundle. Ready-event checks preserve their exact failed
 field and available timeline values. An unavailable response is recorded as
 unavailable; no later API read becomes a historical observation. Nothing here
 diagnoses or replays Shared Governance Task #96.

@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from 'node:timers/promises';
 import { failureFacts } from './failure-report.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, requireCurrentProtocol, branchName, exactSha, positive, isAdmissionDomainBlock, DEFAULT_NATIVE_VALIDATIONS, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
@@ -10,6 +11,8 @@ import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, cano
 import { blockedCrContinuation } from './blocked-cr-continuation.mjs';
 import { readPriorOutcomeContext, appendPriorOutcomeContext } from './prior-outcome-context.mjs';
 import { rejectOwnerRun } from './owner-run-rejection.mjs';
+
+const QUEUED_RUN_OBSERVATION_DELAYS_MS = [250, 500, 1000, 2000, 4000];
 
 // Ordering is native identity, never API order or a prose reference to an older review.
 export function currentReview(reviews) {
@@ -142,18 +145,37 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     if (!positive(issueNumber) || (target === 'issue' && number !== issueNumber)) fail('ROUTE_INVALID');
     if (step !== null && step !== undefined) step = launchStep(step);
   }
-  const run = await api.getRun(runId);
   const eventName = transport === 'label' ? target === 'issue' ? 'issues' : 'pull_request_target' : 'workflow_dispatch';
-  if (run?.id !== runId) rejectOwnerRun('run_id', runId, run?.id);
-  if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository', REPOSITORY, run.repository?.full_name);
-  if (run.actor?.login !== OWNER) rejectOwnerRun('actor', OWNER, run.actor?.login);
-  if (run.triggering_actor && run.triggering_actor.login !== OWNER) rejectOwnerRun('triggering_actor', OWNER, run.triggering_actor?.login);
-  if (run.status !== 'in_progress') rejectOwnerRun('status', 'in_progress', run.status);
-  if (run.path !== CONSUMER.routingWorkflow) rejectOwnerRun('workflow_path', CONSUMER.routingWorkflow, run.path);
-  if (run.event !== eventName) rejectOwnerRun('event', eventName, run.event);
-  if (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) rejectOwnerRun('head_branch', CONSUMER.baseBranch, run.head_branch);
-  if (run.run_attempt !== 1) rejectOwnerRun('run_attempt', 1, run.run_attempt);
-  if (transport !== 'label' && run.display_title !== dispatchRunName({ route, issueNumber, step, target, number })) rejectOwnerRun('run_title', transport === 'label' ? { route, target, number } : dispatchRunName({ route, issueNumber, step, target, number }), run.display_title);
+  const label = { route, target, number };
+  const expectedTitle = transport === 'label' ? label : dispatchRunName({ route, issueNumber, step, target, number });
+  function checkOwnerRun(run) {
+    if (run?.id !== runId) rejectOwnerRun('run_id', runId, run?.id);
+    if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository', REPOSITORY, run.repository?.full_name);
+    if (run.actor?.login !== OWNER) rejectOwnerRun('actor', OWNER, run.actor?.login);
+    if (run.triggering_actor && run.triggering_actor.login !== OWNER) rejectOwnerRun('triggering_actor', OWNER, run.triggering_actor?.login);
+    const queued = transport === 'label' && route === 'auto' && run.status === 'queued';
+    if (run.status !== 'in_progress' && !queued) rejectOwnerRun('status', 'in_progress', run.status);
+    if (run.path !== CONSUMER.routingWorkflow) rejectOwnerRun('workflow_path', CONSUMER.routingWorkflow, run.path);
+    if (run.event !== eventName) rejectOwnerRun('event', eventName, run.event);
+    if (eventName !== 'pull_request_target' && run.head_branch !== CONSUMER.baseBranch) rejectOwnerRun('head_branch', CONSUMER.baseBranch, run.head_branch);
+    if (run.run_attempt !== 1) rejectOwnerRun('run_attempt', 1, run.run_attempt);
+    if ((transport !== 'label' && run.display_title !== expectedTitle)
+        || (queued && !labelRunCommandMatches(run.display_title, label))) {
+      rejectOwnerRun('run_title', expectedTitle, run.display_title);
+    }
+    return queued;
+  }
+  let run = await api.getRun(runId);
+  let queued = checkOwnerRun(run);
+  // The job can reach its runner before GitHub's run status catches up.
+  // Reobserve this exact run before allocating anything, without accepting queued.
+  for (const delay of QUEUED_RUN_OBSERVATION_DELAYS_MS) {
+    if (!queued) break;
+    await sleep(delay);
+    run = await api.getRun(runId);
+    queued = checkOwnerRun(run);
+  }
+  if (queued) rejectOwnerRun('status', 'in_progress', run.status);
   let subject, command;
   if (transport === 'label') {
     // Establish the native target before any domain-block Outcome may be
@@ -161,7 +183,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     // an admission error at an unrelated Issue/PR with invalid authority.
     subject = await api.get(target === 'issue' ? `/issues/${number}` : `/pulls/${number}`);
     if (subject?.number !== number) rejectOwnerRun('subject_number', number, subject?.number);
-    if (!labelRunCommandMatches(run.display_title, { route, target, number })) rejectOwnerRun('run_title', transport === 'label' ? { route, target, number } : dispatchRunName({ route, issueNumber, step, target, number }), run.display_title);
+    if (!labelRunCommandMatches(run.display_title, label)) rejectOwnerRun('run_title', expectedTitle, run.display_title);
     if (target === 'issue' && subject.pull_request) rejectOwnerRun('issue_kind', 'issue', 'pull_request');
     if (target === 'pull_request') {
       if (subject.base?.repo?.full_name !== REPOSITORY) rejectOwnerRun('pr_base_repository', REPOSITORY, subject.base?.repo?.full_name);

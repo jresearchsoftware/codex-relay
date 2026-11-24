@@ -75,6 +75,42 @@ test('only an in-progress first native run may pass the owner status predicate',
   assert.deepEqual(await f.store.all(), []);
 });
 
+test('automatic label admission reobserves the same queued run before allocating the admitted envelope', async t => {
+  const f = await fixture(t, { labelLaunch: true, deferAdmission: true });
+  let reads = 0;
+  const api = { ...f.api, getRun: async id => {
+    assert.equal(id, f.run.id);
+    assert.deepEqual(await f.store.all(), []);
+    assert.deepEqual(f.issue.labels, [{ name: 'codex-ready-auto' }]);
+    reads += 1;
+    return { ...f.run, status: reads < 3 ? 'queued' : 'in_progress' };
+  } };
+  const admitted = await admitEnvelope(api, f.admissionRequest, { nextStep: f.envelope.step });
+  assert.equal(admitted.runId, f.run.id);
+  assert.equal(admitted.readyEventId, f.envelope.readyEventId);
+  assert.equal(admitted.step, f.envelope.step);
+  assert.equal(reads, 3);
+});
+
+test('queued run reobservation checks authority again and stops if the run has ended', async t => {
+  const f = await fixture(t, { labelLaunch: true, deferAdmission: true });
+  for (const [followup, reason] of [
+    [{ status: 'in_progress', run_attempt: 2 }, 'run_attempt'],
+    [{ status: 'completed' }, 'status']
+  ]) {
+    const observations = [{ ...f.run, status: 'queued' }, { ...f.run, ...followup }];
+    const api = { ...f.api, getRun: async id => {
+      assert.equal(id, f.run.id);
+      assert(observations.length);
+      return observations.shift();
+    } };
+    await assert.rejects(admitEnvelope(api, f.admissionRequest, { nextStep: f.envelope.step }), rejection(reason));
+    assert.deepEqual(observations, []);
+    assert.deepEqual(await f.store.all(), []);
+    assert.deepEqual(f.issue.labels, [{ name: 'codex-ready-auto' }]);
+  }
+});
+
 test('dispatch title rejection uses the same category as label title rejection', async t => {
   const f = await fixture(t, { deferAdmission: true });
   await refused(f, { reason: 'run_title', run: { display_title: 'Auto implementation · Task 42 · Step 99' } });
