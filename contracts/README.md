@@ -431,7 +431,7 @@ contract creates no authority registry or parallel Task ledger.
 ### Closure policy authoring
 
 Portable charter, chronological amendment and completion semantics belong to
-pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/task-handoff.md).
+pinned [Task Handoff TH-002, TH-003 and TH-026](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/task-handoff.md).
 Relay binds the one explicit `Issue closure policy` field to the current
 v4 charter/Task-scoped trusted Decision mechanism; a native CR cannot change
 Task-wide closure semantics. Preserve retained schema-v3/legacy charter,
@@ -439,19 +439,27 @@ digest and successor-Request rules for already-admitted attempts through their
 frozen qualified runtime. The [legacy transition](../docs/relay-guidance-ownership.md#temporary-legacy-closure-binding)
 never extends support to unqualified combinations.
 
+Shared TH-026 calls the same two modes `close-on-final-result` and
+`close-on-condition`. Author Relay Issues and trusted Decisions with
+`close-authorized` and `keep-open` respectively. These are the spellings
+supported by the current Relay JavaScript and Rust readers and schemas.
+The Shared semantic equivalence supplies no parser or schema support for
+the new literals.
+
 For every new or materially revised Task, explain concrete human-readable Task
 completion and closure conditions adjacent to that field. Distinguish development,
 independent exact-result acceptance, merge, required authorized Apply/deployment,
 package publication, original-operation evidence and explicit holds.
 
-- Choose `close-authorized` when the designated final PR's successful default-branch
-  merge will genuinely complete all required Task work. After native exact-head
-  acceptance and checks, trusted owner continuation designates that PR with
-  `Closes #N` or a supported native closing link. Intermediate PRs use
-  `Related to #N`; unmerged or abandoned PRs cannot complete or close the Task.
-- Choose `keep-open` when work must remain after merge, including required Apply,
-  qualification or actual publication of the accepted package. Use a neutral PR
-  reference and state the remaining condition and sufficient evidence beside the
+- Choose `close-authorized` for completion on the designated final merge or
+  through the authorized no-PR completion path. When successful default-branch
+  merge will complete all required Task work, trusted owner continuation verifies
+  the accepted exact head, required checks and native closing linkage
+  (`Closes #N` or the supported equivalent). Intermediate PRs use
+  `Related to #N`. Unmerged or abandoned PRs leave the Task open.
+- Choose `keep-open` for a stated completion condition, including required Apply,
+  qualification or actual publication of the accepted package. Use a neutral
+  reference on any PR and state the condition and sufficient evidence beside the
   policy. After verified satisfaction, required acceptance/integration and no
   remaining work/protected hold, trusted owner continuation closes the Issue and
   records verification in its existing chronology. No policy conversion, redundant
@@ -467,8 +475,14 @@ package publication, original-operation evidence and explicit holds.
 
 No-PR results retain native exact-result Task Approval and the existing trusted
 owner completion path; fabricate neither PR nor merge. Step completion, an Outcome
-and approval alone do not prove Task completion. This contract adds no closure
-field, completion-prose parser, registry, daemon or automatic closure engine.
+and approval alone do not prove Task completion. The owner may use the supported
+GitHub Issue disposition path to record actual completion or an authorized
+duplicate, superseded, cancelled or not-planned disposition. For a disposition
+without completion, preserve outstanding conditions and reconcile protected or
+admitted work. Record the reason and link the replacement or duplicate where
+known. Use the trusted Decision path when the disposition changes substantive
+authority. This contract adds no closure field, completion-prose parser,
+registry, daemon or automatic closure engine.
 
 ### Continuation after changes requested
 

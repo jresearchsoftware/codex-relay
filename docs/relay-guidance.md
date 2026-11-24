@@ -212,7 +212,7 @@ SemVer requirement from the standalone snapshot and its exact identities:
 Task/Decision/CR, admission, Writer/Reviewer, exact-result and protected-operation
 mechanics. Shared protocol presence alone does not adopt them for another
 consumer. Package versioning and frozen distribution meaning belong to the
-pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/package-versioning.md).
+pinned [Package Versioning protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/package-versioning.md).
 Native release and qualification mechanisms remain here and in
 [self-adoption](self-adoption.md).
 
@@ -250,7 +250,7 @@ installer requires no pre-install workflow publication. Maintain these
 product bindings together with affected workflow changes.
 
 Producer/candidate governance follows the pinned complete
-[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0/vibevm/vibespecs/protocols/self-adoption.md)
+[Self Adoption protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/self-adoption.md)
 and [native accepted-source binding](self-adoption.md#accepted-source-binding-and-ordinary-use).
 Use the existing Task/PR and checks:
 
@@ -281,7 +281,7 @@ lower bound from required protocol semantics and their accepted history, not a
 package major number. The supported VibeVM SemVer
 requirement permits one resolved dependency to satisfy the consumer and Relay.
 It does not silently adopt topics or guarantee compatibility with unknown
-future releases. Relay's root policy selects Shared 12.1.0. The current standalone snapshot
+future releases. Relay's root development policy selects Shared 12.5.0. The current standalone snapshot
 and release-closure evidence use the same exact immutable distribution. Other consumers
 retain their own deliberate selections.
 

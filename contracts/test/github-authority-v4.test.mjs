@@ -454,3 +454,28 @@ test('ambiguous closure metadata refuses implicit close authorization while reta
     assert.equal(resolved.request.continuation.hold, false, 'protective metadata fallback invents no permanent owner hold');
   }
 });
+
+test('Relay authoring retains legacy closure literals until aliases are qualified', () => {
+  for (const [supported, alias] of [
+    ['close-authorized', 'close-on-final-result'],
+    ['keep-open', 'close-on-condition'],
+  ]) {
+    const read = policy => {
+      const source = charter.replace('Issue closure policy: keep-open', `Issue closure policy: ${policy}`);
+      return resolveTaskAuthority([{ ...charterNative, body: source }], { ...binding, charterBody: source });
+    };
+    const authored = read(supported);
+    assert.equal(authored.request.issue_closure_policy, supported);
+    assert.ok(!authored.warnings.includes('ISSUE_CLOSURE_POLICY_INVALID'));
+    assert.equal(admits(authored).issue_closure_policy, supported);
+    assert.equal(validateAuthorityRecord({ ...common('decision'), purpose: 'Record closure policy',
+      amendments: { issue_closure_policy: supported }, supersedes: null, context: [] })
+      .amendments.issue_closure_policy, supported);
+
+    const unsupported = read(alias);
+    assert.equal(unsupported.request.issue_closure_policy, 'keep-open');
+    assert.ok(unsupported.warnings.includes('ISSUE_CLOSURE_POLICY_INVALID'));
+    reject(() => validateAuthorityRecord({ ...common('decision'), purpose: 'Record closure policy',
+      amendments: { issue_closure_policy: alias }, supersedes: null, context: [] }), 'AUTHORITY_RECORD_INVALID');
+  }
+});

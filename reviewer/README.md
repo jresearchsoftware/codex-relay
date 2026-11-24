@@ -172,7 +172,7 @@ acceptance for an old admitted attempt remains supported.
 ## Independent review and finding provenance
 
 The complete assessment methodology is the adopted pinned
-[Shared Governance 7.0.1 Independent Review protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/7.0.1/vibevm/vibespecs/protocols/independent-review.md).
+[Shared Governance 12.5.0 Independent Review protocol](../vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0/vibevm/vibespecs/protocols/independent-review.md).
 Read it in full for independent assessment, including finding provenance,
 binding-obligation evidence, defect/gap/debt/optional-change classification and
 rereview. The shared protocol owns those rules; this component owns their native
@@ -191,6 +191,8 @@ The shared method grants no native publication, admission, merge or closure
 permission. Keep findings and their required evidence in the existing native
 review/CR record; acquire Relay warning surfaces through the
 [execution warning binding](../docs/execution-policy.md#execution-warning-disposition).
+For required checks, deliberately enabled optional checks and unsolicited App
+suites, apply the [Relay result and acceptance binding](../docs/relay-guidance-ownership.md#result-and-acceptance-bindings).
 
 ## Current protocol capabilities
 
@@ -420,9 +422,12 @@ legitimate; publication cannot infer authority from incomplete acquisition.
 A native exact-head PR `APPROVE` also returns the bounded
 `native-approve-exact-head-squash-v1` continuation policy. It authorizes automatic
 continuation only for that reviewed head, squash merge, passing native required
-checks and verified mergeability. Unresolved checks block continuation;
-an explicit hold blocks continuation, and incomplete Task work or an unsatisfied
-completion condition blocks Issue closure. Native next-request or selected Task
+checks and verified mergeability. Interpret `unresolved_checks` using GH-011
+and IR-007/008. Identify the actual unmet check or validation obligation
+before treating the receipt as a check-specific blocker. Preserve native
+refusals and required checks. An explicit hold blocks continuation. Incomplete
+Task work or an unsatisfied completion condition blocks Issue closure.
+Native next-request or selected Task
 Decision references are re-read before publication. Use
 `automatic_continuation_authorized` for the bounded policy decision and
 `merge_performed` and `issue_closure_performed` for effect reporting. The Reviewer

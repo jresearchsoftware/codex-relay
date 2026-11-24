@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import posixpath
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -18,7 +19,8 @@ BOOT = Path("vibevm/vibespecs/boot")
 AGENTS = ("AGENTS.md", "CLAUDE.md", "GEMINI.md")
 SOURCES = ("00-core.md", "90-user.md")
 COORDINATE = "org.jresearch.ai/development-governance"
-VERSION = "12.1.0"
+VERSION = "12.5.0"
+STANDALONE_SHARED_VERSION = "12.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
 SELF_VERSION = "10.0.0"
@@ -36,6 +38,8 @@ PROTOCOLS = tuple("vibevm/vibespecs/protocols/" + name + ".md" for name in
                   ("package-versioning", "proportional-controls", "requirement-authority",
                    "task-handoff", "self-adoption", "github-repository-governance",
                    "independent-review", "contract-and-decision-maintenance", "context-loading"))
+ADOPTED_PROTOCOLS = PROTOCOLS + tuple("vibevm/vibespecs/protocols/" + name + ".md"
+                                     for name in ("small-improvements", "human-command-interaction"))
 GUIDES = tuple("vibevm/vibespecs/guides/" + name + ".md" for name in
                ("engineering-methods", "onboarding", "onboarding-examples"))
 HISTORICAL_PAYLOAD = {"LICENSE", "README.md", "CHANGELOG.md", "vibe.toml", PACKAGE_BOOT,
@@ -50,15 +54,26 @@ SOURCE_ONLY = {"AGENTS.md", "CLAUDE.md", "GEMINI.md", "vibevm/vibespecs/boot/IND
 RECEIPT = "DISTRIBUTION.json"
 MARKER = ".vibe-slot.toml"
 DISTRIBUTION_REPOSITORY = "https://github.com/jrs-vibevm/org.jresearch.ai.development-governance.git"
-DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
+DISTRIBUTION_REVISION = "e19ceeaa3ffe608fe078d37171ddd7cd5a940dda"
 SOURCE_REPOSITORY = "https://github.com/jresearchsoftware/shared-governance"
-SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
-PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
-RECEIPT_HASH = "86d63eb311906dde6593e81c65a32274be3e31463e8b84268ba20759c43117f7"
-TREE_HASH = "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89"
+SOURCE_REVISION = "f51fd0ab22ff61fab48bd1e5af96918d77af1ec6"
+PAYLOAD_HASH = "4c0738f63d3169ea6ae460e0af0bc24e83218172d69e6e7cd54df92db121f854"
+RECEIPT_HASH = "86e75cb5e43e86c9528fca02cc75e4659eb2adaf0f864199b5927eb34b45270f"
+TREE_HASH = "sha256:57792a91e04ccf0e40e22e8778e10304d93a408f23376ae5627b23df2bfd9258"
+# Relay 10.0.0's published surface has its own immutable selection.
+STANDALONE_DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
+STANDALONE_SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
+STANDALONE_PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
+STANDALONE_RECEIPT_HASH = "86d63eb311906dde6593e81c65a32274be3e31463e8b84268ba20759c43117f7"
+STANDALONE_TREE_HASH = "sha256:165f6d8d6dab0e8f018f6f1df52051337579cd827fa8699054723587fd189f89"
 # Admitted baseline 9c01c5d; native block also reproduced by the pinned generator.
 CORE_HASH = "7ee75b41d178fd639d3bc97521cf950a96915ba0bfae29269b564e9ea515df3a"
-NATIVE_BLOCK_HASH = "b6586c59ad7e755a7474c7917e2eeee1f5c09a9f5d1874775fd53675e5b18c1f"
+NATIVE_BLOCK_HASH = "9a1e8a2a5be0abe5ada5b2602dc3bdf5654fdf8633a2633612e2def9c9adabd9"
+PROJECT_BOOT_SCOPE = """Read the project static lane when present and the applicable INDEX entries in
+order from the accepted project snapshot selected for this work. This authored
+scope takes precedence over the generated router's personal and override lanes,
+memory routing, lane receipts and subagent quiet clause. Those features supply
+no additional instruction sources or exceptions to required project reading."""
 BLOCK = re.compile(rb"^<vibevm>\n.*?^</vibevm>\n", re.M | re.S)
 LOCAL_SUBAGENTS = Path("docs/codex/SUBAGENTS.md")
 LOCAL_GOVERNANCE = Path("docs/relay-guidance-ownership.md")
@@ -66,22 +81,22 @@ LOCAL_GOVERNANCE = Path("docs/relay-guidance-ownership.md")
 # package, Skill projection or standalone delivery. Opaque public receipts do
 # not assert a private producer source revision.
 LANDSCAPE = (
-    {"name": "landscape-model-guidance", "version": "1.0.3",
-     "revision": "48432f00802f5aad106f3e1a9264e17c1edc354c",
-     "payload_hash": "cd55c682497ee9724063c04d776e8ed9243129aa29de5c12b5d607980c8918ca",
-     "receipt_hash": "2112fccf42acbf4b4ca6a228369e5779f961f27887f02941106e23e8ffff6d31",
-     "tree_hash": "sha256:a64d829c0e50ac228d9bc39608db7e081e87c13d69e9cfeafc46720ec022f7f6",
+    {"name": "landscape-model-guidance", "version": "1.1.0",
+     "revision": "a810317f87fb4378be19edb04506444553f60148",
+     "payload_hash": "f91d17bdb391f194eabcf46d5318fb87023e0c7686e2f5a9b0d65becddfddba7",
+     "receipt_hash": "9dc827fd561d9b17795238981992607efe382f24869fc0dc687df7195207f71b",
+     "tree_hash": "sha256:f7245df4142fe6d9651f1050edc493dfe0b7078e0075211e7190440ff04cbd5d",
      "description": "Passive, frozen general model and effort recommendations from accepted Landscape evidence.",
      "policy": "vibevm/vibespecs/protocols/model-selection.md",
      "payload": {"LICENSE", "README.md", "vibe.toml",
                  "vibevm/vibespecs/boot/landscape-model-guidance.md",
                  "vibevm/vibespecs/protocols/model-selection.md",
                  "vibevm/vibespecs/reference/evidence.md"}},
-    {"name": "landscape-subagents", "version": "1.0.2",
-     "revision": "042e92884278d748502157945301dbc3f3c8318c",
-     "payload_hash": "01fd1e83a3e8b0458a872393a1fe70218e20b0ff4650a43721ec1bf74132ffb2",
-     "receipt_hash": "8df45f25a3a134ae95c628ff5766b19b4ab4f549a689cce655e5ab1c9f994b31",
-     "tree_hash": "sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56",
+    {"name": "landscape-subagents", "version": "1.1.0",
+     "revision": "b3e9da5a10af2b258699e7d1667dc925d247ae8d",
+     "payload_hash": "23db5fe37bad3cc4cd5705b7bf47ed7b5940b5f63d3e6dcc24a8df589c7d030d",
+     "receipt_hash": "ab28cfa5275a916c8871dd627deac78ecfb5f9ac5733dff9d0b012208fb3405f",
+     "tree_hash": "sha256:4ea4a61964e63d2fc91a6aa2ae486e6edc8231823266f6feefb83de6b615f1ae",
      "description": "Passive, explicitly adopted subagent workflow and child-profile guidance.",
      "policy": "vibevm/vibespecs/protocols/subagents.md",
      "payload": {".gitattributes", "LICENSE", "QUALIFICATION.md", "README.md", "vibe.toml",
@@ -141,8 +156,7 @@ def check_relocation_lock(before, after, source, label):
             label + " did not bind the relocated first-party source")
     previous["meta"]["generated_at"] = current["meta"]["generated_at"]
     entries[0]["source_url"] = entries[1]["source_url"]
-    # Native 1.0.11 resolves an existing LocalRegistry entry as local, while the
-    # committed/native-update lock may call that same in-tree source registry.
+    # Native solves can describe the same in-tree source as local or registry.
     # Version, hashes, source refs, graph and every other package field stay exact.
     entries[0]["source_kind"] = entries[1]["source_kind"]
     require(current == previous, label + " changed more than native checkout metadata/timestamp")
@@ -245,8 +259,10 @@ def check_small_improvements_adoption(root):
     _, human = managed(read_file(root, "AGENTS.md"))
     human = " ".join(human.decode().split())
     policy = (SLOT / "vibevm/vibespecs/protocols/small-improvements.md").as_posix()
-    require("Relay explicitly adopts all eleven complete applicable Shared Governance **12.1.0** protocols" in human
-            and "[Small improvements](" + policy + ")" in human,
+    require(f"Relay explicitly adopts all eleven complete applicable Shared Governance **{VERSION}** protocols" in human
+            and all(f"({(SLOT / name).as_posix()})" in human for name in ADOPTED_PROTOCOLS),
+            "Human-owned adoption must select all eleven complete installed Shared protocols")
+    require("[Small improvements](" + policy + ")" in human,
             "Human-owned adoption must select the complete installed Small Improvements protocol")
     boot = " ".join(read_file(root, BOOT / "90-user.md").decode().split())
     require("Small Improvements is adopted" in boot
@@ -296,7 +312,7 @@ def check_landscape_adoption(root):
         require("(" + (selection["slot"] / selection["policy"]).as_posix() + ")" in content,
                 selection["name"] + " human-owned route must select the installed complete policy")
     require(all(phrase in subagent_section for phrase in (
-        "Relay explicitly adopts the installed passive `org.jresearch.ai/landscape-subagents` **1.0.2** flow",
+        "Relay explicitly adopts the installed passive `org.jresearch.ai/landscape-subagents` **1.1.0** flow",
         "Task and runtime permit delegation", "Keep the adopted version and admitted profiles stable",
         "Local Task/CR authority, execution boundaries and Writer/Reviewer separation")),
         "Subagent adoption lost its explicit selection or local authority boundary")
@@ -323,6 +339,10 @@ def check_package(directory, *, standalone=False, historical=False):
     # Build/release evidence is a separate frozen delivery, never a policy fallback.
     version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
         VERSION, SOURCE_REVISION, PAYLOAD_HASH, RECEIPT_HASH, TREE_HASH)
+    if standalone:
+        version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
+            STANDALONE_SHARED_VERSION, STANDALONE_SOURCE_REVISION, STANDALONE_PAYLOAD_HASH,
+            STANDALONE_RECEIPT_HASH, STANDALONE_TREE_HASH)
     if historical:
         require(not standalone, "Historical project evidence is not standalone delivery")
         version, source_revision, payload_hash_expected, receipt_hash, tree_hash_expected = (
@@ -376,7 +396,8 @@ def check_package(directory, *, standalone=False, historical=False):
                         if url.path else name)
             require(resolved in materialized, "Missing or escaping passive reference: " + name)
     pointer = files[PACKAGE_BOOT].decode()
-    require(all("../protocols/" + Path(name).name in pointer for name in PROTOCOLS)
+    require(all("../protocols/" + Path(name).name in pointer
+                for name in (PROTOCOLS if historical else ADOPTED_PROTOCOLS))
             and "Unrelated tasks" in pointer and "explicitly adopted" in pointer,
             "Conditional full-procedure navigation is missing")
     return files
@@ -446,13 +467,12 @@ def check_first_party_registry(root, expected):
 
 def check_standalone_snapshot(root):
     metadata = json.loads(read_file(root, "guidance/source.json"))
-    require(metadata["shared_version"] == VERSION
-            and metadata["shared_source_revision"] == SOURCE_REVISION
-            and metadata["shared_distribution_revision"] == DISTRIBUTION_REVISION
-            and metadata["shared_distribution_tree_hash"] ==
-                TREE_HASH,
+    require(metadata["shared_version"] == STANDALONE_SHARED_VERSION
+            and metadata["shared_source_revision"] == STANDALONE_SOURCE_REVISION
+            and metadata["shared_distribution_revision"] == STANDALONE_DISTRIBUTION_REVISION
+            and metadata["shared_distribution_tree_hash"] == STANDALONE_TREE_HASH,
             "Standalone selection differs from the accepted immutable Shared snapshot")
-    snapshot = SLOT
+    snapshot = SLOT.with_name(STANDALONE_SHARED_VERSION)
     files = check_package(root / "guidance/artifacts/vpm" / snapshot, standalone=True)
     files.pop(MARKER)
     standalone = files_in(root / "guidance/artifacts/standalone/codex-relay/references/shared")
@@ -568,24 +588,25 @@ def check_project(root):
     first = next((entry for entry in packages if entry.get("name") == "codex-relay"), None)
     require(set(lock) == {"meta", "package"} and set(lock["meta"]) == {
         "generated_by", "generated_at", "schema_version", "root_dependencies"}
-        # Native install preserves the old meta header when updating an existing
-        # schema-7 lock; a clean 1.0.11 install writes its actual new version.
-        and lock["meta"]["generated_by"] in {"vibe 1.0.7", "vibe 1.0.11"}
+        and lock["meta"]["generated_by"] == "vibe 1.0.12"
         and type(lock["meta"]["schema_version"]) is int and lock["meta"]["schema_version"] == 7
         and isinstance(lock["meta"]["generated_at"], str)
         and re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", lock["meta"]["generated_at"])
-        and lock["meta"]["root_dependencies"] == ["flow:" + SELF_COORDINATE + "@=" + SELF_VERSION, COORDINATE,
-                                                   *(selection["coordinate"] for selection in LANDSCAPE)]
+        and lock["meta"]["root_dependencies"] == [
+            "flow:" + SELF_COORDINATE + "@=" + SELF_VERSION, COORDINATE + "@=" + VERSION,
+            *(selection["coordinate"] + "@=" + selection["version"] for selection in LANDSCAPE)]
         and shared == {"kind": "flow", "name": "development-governance", "group": "org.jresearch.ai",
                                  "version": VERSION, "source_url": DISTRIBUTION_REPOSITORY,
-                                 "source_ref": DISTRIBUTION_REVISION, "content_hash": TREE_HASH,
+                                 "source_ref": DISTRIBUTION_REVISION, "resolved_commit": DISTRIBUTION_REVISION,
+                                 "content_hash": TREE_HASH,
                                  "files_written": [], "admitted_by": "root-edge", "source_kind": "git"},
         "Schema-7 lock differs from the admitted graph/source/content identity")
     for selection in LANDSCAPE:
         entry = next(entry for entry in packages if entry["name"] == selection["name"])
         require(entry == {"kind": "flow", "name": selection["name"], "group": "org.jresearch.ai",
                           "version": selection["version"], "source_url": selection["repository"],
-                          "source_ref": selection["revision"], "content_hash": selection["tree_hash"],
+                          "source_ref": selection["revision"], "resolved_commit": selection["revision"],
+                          "content_hash": selection["tree_hash"],
                           "files_written": [], "admitted_by": "root-edge", "source_kind": "git"},
                 selection["name"] + " lock differs from the selected passive root identity")
     require(first is not None, "Missing first-party native lock entry")
@@ -607,7 +628,7 @@ def check_project(root):
              (SELF_SLOT / SELF_BOOT).as_posix(),
              *((selection["slot"] / selection["boot"]).as_posix() for selection in LANDSCAPE),
              (BOOT / SOURCES[1]).as_posix()]
-    # Native v1.0.11 emits static here despite boot_snippet.link = "dynamic".
+    # Native v1.0.12 emits static here despite boot_snippet.link = "dynamic".
     require(type(index.get("schema")) is int
             and index == {"schema": 1, "entry": [{"path": name, "kind": "static"} for name in paths]},
             "Generated INDEX differs from the actual native route")
@@ -615,9 +636,13 @@ def check_project(root):
         "INDEX.md", *SOURCES, ".vibe-boot-artifacts.lock"}, "Unexpected boot content")
     require(hashlib.sha256(read_file(root, BOOT / SOURCES[0])).hexdigest() == CORE_HASH,
             "Authored core differs from the admitted routing boundary")
-    blocks = [managed(read_file(root, name))[0] for name in AGENTS]
-    require(len(set(blocks)) == 1 and hashlib.sha256(blocks[0]).hexdigest() == NATIVE_BLOCK_HASH,
-            "Native redirects differ from the accepted generated block")
+    entrypoints = [managed(read_file(root, name)) for name in AGENTS]
+    blocks = {block for block, _ in entrypoints}
+    require(len(blocks) == 1 and hashlib.sha256(entrypoints[0][0]).hexdigest() == NATIVE_BLOCK_HASH,
+            "Native redirects differ from the pinned generated block")
+    scope = " ".join(PROJECT_BOOT_SCOPE.split())
+    require(all(scope in " ".join(human.decode().split()) for _, human in entrypoints),
+            "Every entrypoint must preserve the authored project boot scope")
     # Task #199 preserves this exact accepted slot as inactive historical evidence.
     # Native maintenance may prune it; it never enters the selected graph or routes.
     historical_files = (check_package(root / HISTORICAL_SLOT, historical=True)
@@ -640,7 +665,7 @@ def check_project(root):
             "payload_files": len(PAYLOAD), "tree_hash": TREE_HASH, "payload_sha256": PAYLOAD_HASH,
             "source_revision": SOURCE_REVISION, "distribution_revision": DISTRIBUTION_REVISION,
             "first_party_version": SELF_VERSION, "first_party_tree_hash": source_hash,
-            "project_skill": "PASS", "standalone_snapshot": VERSION,
+            "project_skill": "PASS", "standalone_snapshot": STANDALONE_SHARED_VERSION,
             "landscape": {selection["coordinate"]: {
                 "version": selection["version"], "distribution_revision": selection["revision"],
                 "tree_hash": selection["tree_hash"], "payload_files": len(selection["payload"]),
@@ -686,14 +711,13 @@ def probe(vibe, pin, project_root=ROOT):
             env[key] = str(root / relative)
             (root / relative).mkdir()
         env["VIBEVM_USER_CONFIG"] = str(root / "settings/config.toml")
-        # The install flag alone does not prevent 1.0.11 from seeding the
-        # user-global GitHub/GitVerse registries. Keep this probe isolated;
-        # the explicit project-local producer registry and pinned Git sources
-        # remain available for relocation and clean installation.
         env["VIBE_NO_DEFAULT_REGISTRY"] = "1"
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_TERMINAL_PROMPT"] = "0"
         reports = {}
 
-        def run(project, label, *arguments, collision=False, incomplete=False, hash_mismatch=False, source_mismatch=False, offline=True):
+        def run(project, label, *arguments, collision=False, incomplete=False,
+                hash_mismatch=False, source_mismatch=False, offline=True, expected_warning=""):
             result = subprocess.run([str(vibe), *(["--offline"] if offline else []), "--json", *arguments], cwd=project, env=env,
                                     text=True, capture_output=True, timeout=120)
             if collision or incomplete or hash_mismatch or source_mismatch:
@@ -716,8 +740,9 @@ def probe(vibe, pin, project_root=ROOT):
                     require(document["summary"]["error"] == 0 and document["summary"]["warning"] == 0
                             and document["findings"] == [],
                             label + " has unexpected findings: " + result.stdout)
-            require(not result.stderr.strip(), label + " emitted diagnostics: " + result.stderr)
-            reports[label] = documents
+            require(result.stderr.strip() == expected_warning, label + " emitted unexpected diagnostics: " + result.stderr)
+            reports[label] = {"documents": documents, "warning": expected_warning} if expected_warning else documents
+            return documents
 
         version = subprocess.check_output([str(vibe), "--version"], cwd=root, env=env, text=True).strip()
         require(version == "vibe " + pin["version"], "Unexpected tool version")
@@ -740,11 +765,11 @@ def probe(vibe, pin, project_root=ROOT):
                 require(read_file(project, name) == data, "Authored/generated bytes drifted: " + name)
 
         def rebind(project, label):
-            # LocalRegistry deliberately serializes an absolute file:// source.
-            # A copied checkout must resolve it again through native install;
-            # never rewrite the lock or ignore local_source_freshness findings.
+            # Plain install replays the recorded absolute local registry URL.
+            # Resolve afresh in this disposable copy and compare the result.
             check_project(project)
             before = {name: read_file(project, name) for name in route_paths}
+            (project / "vibe.lock").unlink()
             run(project, label, "install", "--no-default-registry", "--assume-yes", offline=False)
             check_relocation_lock(before["vibe.lock"], read_file(project, "vibe.lock"),
                                   project / SELF_SOURCE, label)
@@ -753,13 +778,25 @@ def probe(vibe, pin, project_root=ROOT):
                     require(read_file(project, name) == data, label + " changed ready bytes: " + name)
             check_project(project)
 
-        # Reproduce a real checkout move with its origin absent, not merely a
-        # copy whose original local registry remains accessible on this host.
-        origin = root / "origin"
-        copy_project(project_root, origin)
-        rebind(origin, "origin-install")
+        # Use the empty tool cache for cold Git acquisition before any rebind.
+        clean = root / "clean"
+        copy_project(project_root, clean)
+        (clean / "vibe.lock").unlink()
+        shutil.rmtree(clean / "vibevm/vibedeps")
+        run(clean, "clean-install", "install", "--no-default-registry", "--assume-yes", offline=False)
+        check_project(clean)
+        clean_lock = read_file(clean, "vibe.lock")
+        check_relocation_lock(original["vibe.lock"], clean_lock, clean / SELF_SOURCE, "clean-install")
+        clean_before = files_in(clean / "vibevm/vibedeps")
+        run(clean, "repeat-install", "install", "--no-default-registry", "--assume-yes")
+        require(files_in(clean / "vibevm/vibedeps") == clean_before,
+                "Repeat install drifted from clean native generation")
+        check_repeat_lock(clean_lock, read_file(clean, "vibe.lock"))
+        check_project(clean)
+
+        # Reproduce a checkout move with the originating location absent.
         relocated = root / "relocated"
-        origin.rename(relocated)
+        clean.rename(relocated)
         result = subprocess.run([str(vibe), "--offline", "--json", "check", "--path", "."],
                                 cwd=relocated, env=env, text=True, capture_output=True, timeout=120)
         report = json.loads(result.stdout)
@@ -770,7 +807,12 @@ def probe(vibe, pin, project_root=ROOT):
                 and "no longer on disk" in report["findings"][0]["message"],
                 "Moved checkout did not expose its missing original source: " + result.stdout + result.stderr)
         reports["relocation-before-install"] = report
-        rebind(relocated, "relocation-install")
+        run(relocated, "relocation-offline-reinstall", "reinstall", ".", "--assume-yes",
+            expected_warning="! specification authority is missing/stale; boot repair remains source-free; "
+                             "run vibe install to refresh AI-native authority")
+        check_repeat_lock(clean_lock, read_file(relocated, "vibe.lock"))
+        check_project(relocated)
+        rebind(relocated, "relocation-fresh-resolution")
         run(relocated, "relocation-check", "check", "--path", ".")
         rebind(project, "checkout-install")
         original = {name: read_file(project, name) for name in route_paths}
@@ -783,22 +825,34 @@ def probe(vibe, pin, project_root=ROOT):
             else:
                 raise RuntimeError(label + " was accepted by the local verifier")
 
-        clean = root / "clean"
-        copy_project(project_root, clean)
-        (clean / "vibe.lock").unlink()
-        import shutil
-        shutil.rmtree(clean / "vibevm/vibedeps")
-        run(clean, "clean-install", "install", "--no-default-registry", "--assume-yes", offline=False)
-        check_project(clean)
-        require(tomllib.loads((clean / "vibe.lock").read_text())["meta"]["generated_by"] == version,
-                "Clean install did not record the verified tool version")
-        clean_before = files_in(clean / "vibevm/vibedeps")
-        clean_lock = (clean / "vibe.lock").read_bytes()
-        run(clean, "repeat-install", "install", "--no-default-registry", "--assume-yes")
-        require(files_in(clean / "vibevm/vibedeps") == clean_before,
-                "Repeat install drifted from clean native generation")
-        check_repeat_lock(clean_lock, (clean / "vibe.lock").read_bytes())
-        check_project(clean)
+        skill_args = ("skill", "install", "--skill", "codex-relay", "--agent", "codex",
+                      "--scope", "project", "--yes")
+        local_receipt = relocated / ".vibe/package-skills.toml"
+        portable = tomllib.loads(read_file(relocated, SKILL_RECEIPT).decode())
+        target = {"agents": ["codex"], "path": str(relocated / PROJECTION),
+                  "file": [{**entry, "sha256": "sha256:" + entry["sha256"]} for entry in portable["file"]]}
+        run(relocated, "skill-plan", *skill_args, "--dry-run")
+        require((relocated / SKILL_RECEIPT).exists() and not local_receipt.exists(),
+                "Dry-run changed committed Skill seed or created local receipt state")
+
+        def unchanged_skill(label):
+            result, = run(relocated, label, *skill_args)
+            require([entry["status"] for entry in result["results"]] == ["unchanged"],
+                    label + " did not preserve the projected Skill")
+            require(files_in(relocated / PROJECTION) == files_in(project / PROJECTION),
+                    label + " changed projected Skill bytes")
+
+        unchanged_skill("skill-migrate")
+        require(not (relocated / SKILL_RECEIPT).exists(), "Skill projection did not consume the portable seed")
+        activation = local_receipt.read_bytes()
+        receipt = tomllib.loads(activation.decode())
+        require(receipt["schema"] == 4 and len(receipt["binding"]) == 1
+                and receipt["binding"][0]["provider"] == SELF_COORDINATE
+                and receipt["binding"][0]["skill"] == "codex-relay"
+                and receipt["binding"][0]["target"] == [target],
+                "Migrated Skill receipt differs from the portable inventory")
+        unchanged_skill("skill-repeat")
+        require(activation == local_receipt.read_bytes(), "Repeat Skill projection changed local activation")
 
         run(project, "validate", "validate", "--path", ".", "--no-default-registry")
         run(project, "check", "check", "--path", ".")
@@ -811,9 +865,13 @@ def probe(vibe, pin, project_root=ROOT):
             "--version", "0.0.0", "--no-registry", "--author", "Synthetic fixture")
         unchanged(original)
 
+        prefix, suffix = b"Synthetic human prefix\n", b"Human suffix\n"
+        overlays = {}
         for name in AGENTS:
-            (project / name).write_bytes(b"Synthetic human prefix\n" + original[name] + b"Human suffix\n")
-        overlays = {name: read_file(project, name) for name in AGENTS}
+            (project / name).write_bytes(prefix + original[name] + suffix)
+            block, human = managed(original[name])
+            # The new generator leads with the managed block and a separator.
+            overlays[name] = block + b"\n" + prefix + human + suffix
         run(project, "overlay-regeneration", "reinstall", ".", "--assume-yes")
         unchanged({**original, **overlays})
         for name in AGENTS:
@@ -825,6 +883,12 @@ def probe(vibe, pin, project_root=ROOT):
         run(project, "missing-index-upstream-check", "check", "--path", ".")
         (project / "GEMINI.md").unlink()
         run(project, "repair-generated-files", "reinstall", ".", "--assume-yes")
+        block, _ = managed(original["GEMINI.md"])
+        require(read_file(project, "GEMINI.md") == block,
+                "Native reinstall did not reconstruct the missing generated GEMINI route")
+        # A missing whole entrypoint also loses its authored scope. Its accepted
+        # bytes come from version control, not generator defaults.
+        (project / "GEMINI.md").write_bytes(original["GEMINI.md"])
         unchanged(original)
         check_project(project)
 
@@ -868,9 +932,10 @@ def probe(vibe, pin, project_root=ROOT):
             before = {name: read_file(project, name) for name in original}
             run(project, label, "reinstall", ".", "--assume-yes", collision=True)
             unchanged(before)
-        (project / "AGENTS.md").write_bytes(original["AGENTS.md"])
-        unchanged(original)
-        check_project(project)
+            (project / "AGENTS.md").write_bytes(original["AGENTS.md"])
+            run(project, label + "-recovery", "reinstall", ".", "--assume-yes")
+            unchanged(original)
+            check_project(project)
         require(not (Path(env["VIBE_SETTINGS"]) / "registry.toml").exists(),
                 "Isolated probe unexpectedly seeded a user-global registry")
         print(json.dumps({"tool_probe": "PASS", "version": version, **facts,
@@ -886,7 +951,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-root", type=Path, default=ROOT,
                         help="complete ready checkout/isolated fixture to verify (default: this checkout)")
-    parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.11 binary")
+    parser.add_argument("--vibe", type=Path, help="already acquired, hash-pinned Linux x86_64 musl v1.0.12 binary")
     parser.add_argument("--source-dir", type=Path, help="optional accepted source package directory for whole-payload byte comparison")
     parser.add_argument("--distribution-dir", type=Path, help="optional acquired public distribution directory for whole-payload/receipt byte comparison")
     args = parser.parse_args()
@@ -899,7 +964,7 @@ def main():
                       "distribution_byte_comparison": "PASS" if args.distribution_dir else "not requested",
                       "tool_probe": "pending" if args.vibe else "not requested", "model_behavior": "UNVERIFIED"}))
     if args.vibe:
-        pin = json.loads((ROOT / "toolchain/vibevm.json").read_text())
+        pin = json.loads((ROOT / "toolchain/vibevm-development.json").read_text())
         probe(args.vibe.resolve(), pin, project_root)
 
 

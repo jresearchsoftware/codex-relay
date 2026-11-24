@@ -329,10 +329,12 @@ class GeneratedTests(unittest.TestCase):
         self.assertEqual(old_info["shared_version"], "5.0.0")
         self.assertIn("including a later expressly authorized Apply", old_workflow)
         self.assertIn("Closure requires effective `close-authorized`", old_workflow)
-        shared = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.1.0"
+        shared = ROOT / "vibevm/vibedeps/org.jresearch.ai.development-governance/12.5.0"
         handoff = " ".join((shared / "vibevm/vibespecs/protocols/task-handoff.md").read_text().split())
-        self.assertIn("closure on successful merge of the designated completing PR", handoff)
-        self.assertIn("no new owner-choice prompt, policy-change Decision", handoff)
+        self.assertIn("closes on successful merge of the designated completing PR", handoff)
+        self.assertIn("close-on-final-result` (equivalently `close-authorized`)", handoff)
+        self.assertIn("close-on-condition` (equivalently `keep-open`)", handoff)
+        self.assertIn("without another owner-choice prompt, policy-change Decision", handoff)
         current = json.loads((ROOT / "guidance/source.json").read_text())
         self.assertEqual((current["version"], current["shared_requirement"], current["shared_version"]),
                          ("10.0.0", ">=12.1.0", "12.1.0"))

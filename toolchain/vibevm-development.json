@@ -1,0 +1,16 @@
+{
+  "version": "1.0.12",
+  "source_repository": "https://github.com/vibevm/vibevm",
+  "source_revision": "98a9716d93ec9a9f3ea07084c0f9a370df38466e",
+  "release_id": 455111490,
+  "distribution_manifest": {
+    "asset_id": 782191260,
+    "url": "https://github.com/vibevm/vibevm/releases/download/v1.0.12/DISTRIBUTIONS.json",
+    "sha256": "6500b1c57a2c03373de446dd16308bd50faec5f6f94b8bc53c9324acb356a3b1"
+  },
+  "linux_x86_64_musl_binary": {
+    "asset_id": 782179347,
+    "url": "https://github.com/vibevm/vibevm/releases/download/v1.0.12/vibe-bootstrap-x86_64-unknown-linux-musl",
+    "sha256": "6be1555e2b526167d94d9ae9527bc6d2b638089cf24c89b441dd3f741bb1b097"
+  }
+}
