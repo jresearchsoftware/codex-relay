@@ -1,11 +1,10 @@
-# Landscape model guidance 1.0.3
+# Landscape model guidance 1.1.0
 
-`org.jresearch.ai/landscape-model-guidance@1.0.3` is a passive VibeVM
+`org.jresearch.ai/landscape-model-guidance@1.1.0` is a passive VibeVM
 `flow` for choosing general model and reasoning-effort profiles. Public sources
-were checked on **2026-11-02**, incorporating the October 24 refresh. This patch
-refreshes dated qualitative evidence for Coding Agent Index v2.0, Intelligence
-Index v5.0, Terra and provider/client updates. The general profiles,
-assignment recommendations and consumer authority remain unchanged.
+were checked on **2026-11-22**. This MINOR release ships the November 17
+advisory profiles, with GPT-6.2 Sol/medium as the general default, and includes
+qualitative interpretation of the Coding Agent Index v2.1 effort rows.
 
 ## Reading route
 
@@ -18,15 +17,14 @@ Installed reading is self-contained; following citations is optional.
 
 ## Frozen compatibility contract
 
-Version `1.0.3`, epoch `1`, format `simple` preserves the passive reading route,
+Version `1.1.0`, epoch `1`, format `simple` preserves the passive reading route,
 explicit model/effort recommendations and consumer authority boundary. It
 contains authored interpretation and dated source references. There is no
-supported machine-readable benchmark interface. The six-file public inventory
-and qualitative-only distribution boundary are unchanged from 1.0.2. Current
-coding evidence does not measure Sol/xhigh; retaining the default is not a new
-experimental validation or an instruction to replace it with max or Terra.
-`frozen = true` declares the intended snapshot contract; it does not prove a
-published tag exists or that hosting enforces immutability.
+supported machine-readable benchmark interface. The six-file public inventory,
+qualitative-only distribution boundary and passive manifest contract carry
+forward from 1.0.3. The revised recommendations add no mandatory consumer or
+operator work. `frozen = true` declares the snapshot contract. Publication and
+the immutable tag are verified separately.
 
 This version does not follow moving recommendations, discover account access,
 choose a runtime model, configure a client, launch helpers or change an admitted

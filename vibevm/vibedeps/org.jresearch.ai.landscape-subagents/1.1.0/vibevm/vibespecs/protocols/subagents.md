@@ -1,6 +1,6 @@
 # Shared subagent instructions
 
-Reviewed: **October 9, 2026**.
+Reviewed: **November 17, 2026**.
 
 This is reusable guidance for projects that explicitly adopt it in their
 `AGENTS.md` or global Codex instructions. Adoption **highly recommends proactive
@@ -69,19 +69,25 @@ synthesis; a technical task may be mechanical or security-critical. Job titles
 alone do not determine the profile.
 
 These are **our starting recommendations**, not provider guarantees or a
-benchmarked optimum for every subtask. They preserve Landscape's existing
-Sol/xhigh recommendation for complex work. Supporting model evidence is maintained
-by the producer; this policy contains the recommendations needed for delegation
-without loading that evidence.
+benchmarked optimum for every subtask. They implement the owner's November 17
+Sol 6.2/medium default even for complex work, reserving higher effort for
+specific needs. The producer maintains the supporting model evidence. This
+policy contains the recommendations needed for delegation.
 
 | Assignment | Starting model / effort | Escalate when |
 | --- | --- | --- |
 | Locate symbols, inventory files, extract specified facts, check a known documentation option | `gpt-6-luna / high` | The answer requires causal reasoning, conflicting evidence or broad inference |
 | Narrow, mechanical change with an explicit recipe and an objective local check | `gpt-6-luna / high` | Requirements or impact are uncertain; the change affects a sensitive boundary |
-| Ordinary bounded implementation, test design, or synthesis of clear sources | `gpt-6.1-sol / medium` | Hidden dependencies, non-obvious failures or competing interpretations appear |
-| Cross-component debugging, evidence reconciliation, substantive correctness or security review | `gpt-6.1-sol / high` | Deep causal analysis, concurrency, trust boundaries or architectural ambiguity dominate |
-| Complex coding, architecture, difficult research synthesis or high-consequence analysis | `gpt-6.1-sol / xhigh` | A specific unresolved reasoning problem justifies further escalation |
-| Exceptional escalation with a concrete remaining question and permission for the profile | `gpt-6.1-sol / max`, then optionally `gpt-6-astra / max` | Consumer policy and task evidence justify the marginal cost |
+| Ordinary bounded implementation, test design, or synthesis of clear sources | `gpt-6.2-sol / medium` | Unresolved dependencies or competing interpretations warrant High |
+| Cross-component debugging, evidence reconciliation, substantive correctness or security review | `gpt-6.2-sol / medium` | Use High when causal ambiguity, trust boundaries or consequences justify extra reasoning |
+| Complex coding, architecture, difficult research synthesis or high-consequence analysis | `gpt-6.2-sol / medium` | Use High or xhigh only for a concrete unresolved reasoning problem |
+| Exceptional escalation with a concrete remaining question and permission for the profile | `gpt-6.2-sol / max`, then optionally `gpt-6.2-astra / max` | Consumer policy and task evidence justify the marginal cost |
+
+[OpenAI announced GPT-6.2 Sol and Astra on November 17](https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol).
+Check access in the consumer's own client. If 6.2 is unavailable, a consumer
+can explicitly select `gpt-6.1-sol / medium` for a new task. Preserve an already
+admitted task profile. Medium reflects practical Sol 6.1 allowance experience
+and is an advisory preference.
 
 Use Sol rather than Luna when you cannot bound the task confidently. Do not use
 a lightweight helper as the sole judge of an uncertain or consequential change.
@@ -198,7 +204,7 @@ delegation in their actual client; no helper count is guaranteed.
 
 For direct-copy integrations, the canonical source recommends selecting the
 latest policy from Landscape `main` when deliberately integrating or updating
-between tasks. This versioned flow instead supplies the installed 1.0.2 snapshot.
+between tasks. This versioned flow instead supplies the installed 1.1.0 snapshot.
 Producer-only records retain its accepted source baseline. Consumers separately
 choose adoption and future updates; it never fetches moving `main`. At task
 admission or session start, keep the adopted installed guidance stable for that

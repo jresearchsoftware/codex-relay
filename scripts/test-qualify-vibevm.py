@@ -148,8 +148,8 @@ class CommittedFlowTests(unittest.TestCase):
         self.assertEqual(facts["first_party_version"], "10.0.0")
         self.assertEqual(facts["standalone_snapshot"], "12.1.0")
         self.assertEqual({name: value["version"] for name, value in facts["landscape"].items()}, {
-            "org.jresearch.ai/landscape-model-guidance": "1.0.3",
-            "org.jresearch.ai/landscape-subagents": "1.0.2"})
+            "org.jresearch.ai/landscape-model-guidance": "1.1.0",
+            "org.jresearch.ai/landscape-subagents": "1.1.0"})
 
     def test_historical_slot_is_immutable_and_never_a_missing_selected_fallback(self):
         historical = QUALIFICATION.ROOT / QUALIFICATION.HISTORICAL_SLOT
@@ -437,6 +437,11 @@ class CommittedFlowTests(unittest.TestCase):
                                 'version = "=1.0.0"')]),
                 ("vibe.lock", [(QUALIFICATION.TREE_HASH, "sha256:" + "0" * 64),
                                (QUALIFICATION.DISTRIBUTION_REVISION, "0" * 40),
+                               ('resolved_commit = "' + QUALIFICATION.DISTRIBUTION_REVISION + '"',
+                                'resolved_commit = "' + "0" * 40 + '"'),
+                               ('resolved_commit = "' + QUALIFICATION.DISTRIBUTION_REVISION + '"\n', ""),
+                               (QUALIFICATION.COORDINATE + "@=" + QUALIFICATION.VERSION,
+                                QUALIFICATION.COORDINATE),
                                ('source_kind = "git"', 'source_kind = "registry"'),
                                ('schema_version = 7', 'schema_version = 6'),
                                ('schema_version = 7', 'schema_version = 7.0'),
@@ -451,6 +456,19 @@ class CommittedFlowTests(unittest.TestCase):
             path.write_text(original)
             path.unlink()
             self.rejects()
+            path.write_text(original)
+
+    def test_each_entrypoint_keeps_authored_project_boot_scope(self):
+        for name in QUALIFICATION.AGENTS:
+            path = self.root / name
+            original = path.read_text()
+            block, _ = QUALIFICATION.managed(original.encode())
+            with self.subTest(entrypoint=name):
+                self.assertIn(QUALIFICATION.PROJECT_BOOT_SCOPE, original)
+                path.write_text(original.replace(QUALIFICATION.PROJECT_BOOT_SCOPE, ""))
+                self.assertEqual(QUALIFICATION.managed(path.read_bytes())[0], block)
+                with self.assertRaisesRegex(RuntimeError, "authored project boot scope"):
+                    QUALIFICATION.check_project(self.root)
             path.write_text(original)
 
     def test_extra_packages_skills_and_executables_are_rejected(self):

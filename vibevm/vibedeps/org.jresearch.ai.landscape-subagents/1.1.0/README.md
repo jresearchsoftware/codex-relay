@@ -1,11 +1,11 @@
-# Landscape subagents 1.0.2
+# Landscape subagents 1.1.0
 
-`org.jresearch.ai/landscape-subagents@1.0.2` is a passive, frozen VibeVM
-`flow`. This PATCH removes private producer provenance from the distributable
-materials while retaining the delegation policy, child-profile matrix, MIT
-license and consumer contract. Earlier source versions remain unchanged in
-producer history. Publication, remote tags and consumer adoption are separate
-events, not consequences of `frozen = true`. `publish = false` remains unchanged.
+`org.jresearch.ai/landscape-subagents@1.1.0` is a passive, frozen VibeVM
+`flow`. This MINOR release updates the six assignment profiles to the
+November 17 policy, including GPT-6.2 Sol/medium for ordinary and complex work.
+It retains the passive delegation contract, MIT license and public file inventory.
+Publication and consumer adoption are separate from `frozen = true`.
+`publish = false` remains unchanged.
 
 ## Version contract
 
@@ -43,23 +43,25 @@ consumer-resolved profiles. Adoption and runtime checks are described in the
 
 The producer's canonical policy remains the source authority; this package is a
 versioned projection. Exact accepted-source identities, private source links and
-source-equivalence machinery remain producer-only. Policy and
-[runtime evidence](vibevm/vibespecs/guides/runtime-evidence.md) retain their
-**October 9, 2026** review dates. They are not refreshed claims about every
-current client. The runtime note cites the inspected public provider source.
+source-equivalence machinery remain producer-only. The policy reflects the
+**November 17, 2026** advisory update. The
+[runtime evidence](vibevm/vibespecs/guides/runtime-evidence.md) retains its
+**October 9, 2026** review date and cites the public implementation inspected then.
 
 The policy transport adaptations are:
 
 1. Replace the source-relative model-evidence sentence with a producer-evidence
    description. The complete delegation recommendations remain self-contained;
    the producer's private evidence is not a public runtime dependency.
-2. Retain attribution to Relay guidance for bounded context and authority without
+2. Cite the public GPT-6.2 launch and preserve the advisory fallback and
+   allowance caveats without publishing account-specific observations.
+3. Retain attribution to Relay guidance for bounded context and authority without
    exporting a producer-internal repository link.
-3. Replace the integration/update paragraph with versioned-package semantics:
+4. Replace the integration/update paragraph with versioned-package semantics:
    direct-copy adoption may select the latest policy between tasks; this flow
    uses its deliberately adopted installed version throughout a task. Consumer
    resolution, fixed parent profile and no moving runtime routing stay.
-4. Replace the source-relative adoption-guide paragraph with a working
+5. Replace the source-relative adoption-guide paragraph with a working
    package-local link. Setup remains optional execution context.
 
 The runtime note changes only its local adoption-guide link. The package-specific
@@ -113,8 +115,8 @@ The authored instructions and packaging carry the [MIT license](LICENSE) and
 copyright notice. Citations and links to external provider material do not
 relicense the original third-party works.
 
-This privacy cleanup is a PATCH with no new consumer obligations or model/effort
-changes. The public export inventory, distribution destination, publisher
+The revised profile advice adds no mandatory consumer or operator work. The
+public export inventory, distribution destination, publisher
 binding, credentials and actual publication require producer authorization and
 qualification. The package neither publishes itself nor changes any consumer
 settings. Public provider citations and package-local references are distinct

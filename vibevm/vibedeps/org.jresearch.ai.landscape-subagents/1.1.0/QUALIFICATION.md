@@ -2,8 +2,8 @@
 
 ## Current version
 
-Version **1.0.2** removes private producer provenance and keeps the accepted
-passive delegation contract. Portable checks cover this version's manifest,
+Version **1.1.0** updates the dated assignment profiles and retains the passive
+delegation contract. Portable checks cover this version's manifest,
 complete package inventory, conditional boot, policy/profile invariants, MIT
 notice, package-local links and public citations. Producer-only qualification
 retains full canonical source equivalence and private acceptance provenance.
@@ -14,9 +14,9 @@ native evidence below does not qualify this version's different bytes.
 
 The following is a sanitized historical record of the original **1.0.0** source
 candidate qualified on **October 16, 2026** in an isolated checkout. Later source
-versions include MIT licensing and different payload bytes. These results must
-not be claimed for 1.0.2. Private Task, branch and source identities remain in
-producer-only records.
+versions include MIT licensing and different payload bytes. These results apply
+only to the historical candidate. Private Task, branch and source identities
+remain in producer-only records.
 
 ### Source checks
 

@@ -90,8 +90,8 @@ Shared PC/RA owns proportional controls and requirement origin; Relay keeps
 collection, technical Stop helper and warning API acquisition. Independent Review
 and Task Handoff own warning meaning/disposition; supported API completeness,
 original-run binding and the UI-only access limit remain Relay-specific.
-The complete candidate commands in AGENTS are this product's qualification set,
-not a new consumer prerequisite.
+The [candidate commands](../vibevm/vibespecs/boot/90-user.md#validate-and-hand-off)
+are Relay's qualification set.
 
 PC-014 owns cross-system responsibility in Task authoring, implementation, tests
 and review. Relay's component contracts retain Relay-owned authorization,

@@ -21,7 +21,7 @@ class PackageChecks(unittest.TestCase):
             manifest["package"],
             {
                 "group": "org.jresearch.ai", "name": "landscape-subagents",
-                "version": "1.0.2", "kind": "flow", "format": "simple",
+                "version": "1.1.0", "kind": "flow", "format": "simple",
                 "epoch": 1, "publish": False, "frozen": True, "license": "MIT",
                 "description": "Passive, explicitly adopted subagent workflow and child-profile guidance.",
             },
@@ -41,7 +41,7 @@ class PackageChecks(unittest.TestCase):
     def test_policy_and_profile_contract(self):
         policy = (PACKAGE / POLICY).read_text(encoding="utf-8")
         for fragment in (
-            "Reviewed: **October 9, 2026**", "no minimum subagent",
+            "Reviewed: **November 17, 2026**", "no minimum subagent",
             "strongly prefer delegating them in parallel", "Subagents Off",
             "consumer's allowed choices", "Keep the parent's selected model and effort unchanged",
             "Preserve explicit child profiles and effort ceilings",
@@ -54,11 +54,11 @@ class PackageChecks(unittest.TestCase):
         rows = [line for line in policy.splitlines()
                 if line.startswith("| ") and "`gpt-" in line]
         self.assertEqual(len(rows), 6)
-        profiles = ("gpt-6-luna / high", "gpt-6-luna / high", "gpt-6.1-sol / medium",
-                    "gpt-6.1-sol / high", "gpt-6.1-sol / xhigh", "gpt-6.1-sol / max")
+        profiles = ("gpt-6-luna / high", "gpt-6-luna / high", "gpt-6.2-sol / medium",
+                    "gpt-6.2-sol / medium", "gpt-6.2-sol / medium", "gpt-6.2-sol / max")
         for row, profile in zip(rows, profiles, strict=True):
             self.assertIn(f"`{profile}`", row)
-        self.assertIn("`gpt-6-astra / max`", rows[-1])
+        self.assertIn("`gpt-6.2-astra / max`", rows[-1])
 
     def test_dated_runtime_scope(self):
         runtime = (PACKAGE / RUNTIME).read_text(encoding="utf-8")

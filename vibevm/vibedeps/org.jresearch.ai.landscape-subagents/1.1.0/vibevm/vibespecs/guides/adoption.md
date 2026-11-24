@@ -1,4 +1,4 @@
-# Assessing adoption of landscape-subagents 1.0.2
+# Assessing adoption of landscape-subagents 1.1.0
 
 This is setup guidance, read for a consumer's explicit adoption/update request.
 Installing the package or reading its boot does not adopt it, grant delegation,
@@ -17,7 +17,7 @@ After a separately authorized integration, applicable human-owned instructions
 can explicitly adopt the flow. For example, adapt this text to the real consumer:
 
 ```markdown
-We explicitly adopt the installed landscape-subagents flow 1.0.2.
+We explicitly adopt the installed landscape-subagents flow 1.1.0.
 When Subagents is On and this task and runtime permit delegation, follow its
 conditional boot and full policy before substantial work. This requests useful
 proactive delegation at every supported parent effort, without a helper quota

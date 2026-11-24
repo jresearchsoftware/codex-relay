@@ -36,13 +36,15 @@ skips it. Shared meanings have one canonical owner. Native Task/Decision/CR,
 admission, Writer/Reviewer publication, exact-result identity and protected
 operations remain Relay product mechanisms.
 
-The generated index uses `kind = "static"` for package pointers with VibeVM
-1.0.11, even when a package declares `boot_snippet.link = "dynamic"`. These
-short pointers perform conditional Markdown routing; no executable resolver
-runs during startup. A client entering through CLAUDE/GEMINI follows
-[00-core](../vibevm/vibespecs/boot/00-core.md) to human AGENTS once, without a
-managed-block traversal loop. The authored
-[user route](../vibevm/vibespecs/boot/90-user.md) supplies local bindings.
+VibeVM 1.0.12 emits `kind = "static"` for these short package pointers,
+including packages that declare `boot_snippet.link = "dynamic"`. The pointers
+route full-policy reading conditionally. Each root entrypoint preserves the
+authored project-only scope over the generated optional personal, override and
+memory routes, lane receipts and quiet clause. CLAUDE/GEMINI follow
+[00-core](../vibevm/vibespecs/boot/00-core.md) to human AGENTS once. The authored
+[user boot file](../vibevm/vibespecs/boot/90-user.md) carries product boundaries
+and validation/handoff rules alongside local routing, keeping required policy
+readable within the default Codex root instruction budget.
 
 Ordinary manual Codex and automatic workers read committed plain files offline.
 No VibeVM binary, registry, cache, network or new owner command is required.
@@ -56,15 +58,15 @@ not actual model traversal or compliance.
 ## Landscape flows and local adoption
 
 Root [AGENTS](../AGENTS.md#shared-subagent-workflow) explicitly adopts the passive
-`org.jresearch.ai/landscape-subagents@1.0.2` flow for Relay's own development.
-Its [complete installed policy](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2/vibevm/vibespecs/protocols/subagents.md)
+`org.jresearch.ai/landscape-subagents@1.1.0` flow for Relay's own development.
+Its [complete installed policy](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.1.0/vibevm/vibespecs/protocols/subagents.md)
 replaces the reusable text formerly maintained in `docs/codex/SUBAGENTS.md`.
 That [local binding](codex/SUBAGENTS.md) now records the semantic migration and
 only Relay-specific authority. Useful proactive delegation remains recommended
 at every supported parent effort, with no helper quota or Ultra requirement.
-The installed October 9 policy clarifies parallel independent work and follow-up
-reassessment while retaining the complete child matrix and zero-helper cases.
-No competing mutable policy copy remains.
+The November 17 revision updates the advisory child matrix and retains the
+criteria for useful parallel work, reassessment and zero-helper cases. The
+existing permission, override and review boundaries continue to govern.
 
 Native INDEX includes both short package boot pointers as `static`; conditional
 Markdown reading supplies the relevant detail, not an executable loader:
@@ -73,10 +75,10 @@ Markdown reading supplies the relevant detail, not an executable loader:
 | --- | --- |
 | Unrelated session or Subagents Off/prohibited | Short boot pointers only; skip delegation policy and detailed model evidence |
 | Substantial Relay work, Subagents On, Task/runtime permit delegation | Complete adopted subagent policy before substantial work; setup/runtime notes only when assessing adoption/client support |
-| Task model/effort recommendation or evidence assessment | [Selection guidance](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/protocols/model-selection.md), then [dated evidence](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/vibevm/vibespecs/reference/evidence.md) when the factual basis matters |
+| Task model/effort recommendation or evidence assessment | [Selection guidance](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.1.0/vibevm/vibespecs/protocols/model-selection.md), then [dated evidence](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.1.0/vibevm/vibespecs/reference/evidence.md) when the factual basis matters |
 
 The [task authoring route](task-workflow.md#relay-development-model-recommendations)
-and root model reference make `landscape-model-guidance@1.0.3` available as
+and root model reference make `landscape-model-guidance@1.1.0` available as
 recommendation/evidence reading. This does not adopt new recommendations or change
 `gpt-6.1-sol / xhigh / Subagents On`, explicit Task/CR profiles, allowlists,
 consumer configuration or runtime selection. Actual policy/default changes need
@@ -85,7 +87,7 @@ configuration, autonomous model router or service. Installation/presence alone
 never activates delegation or reselects an admitted parent or child. Relay keeps
 immutable admission, GitHub authority and owner/worker/Writer/Reviewer separation.
 
-Both root constraints are exact content-review selections (`=1.0.3`, `=1.0.2`),
+Both flows use an exact root constraint (`=1.1.0`),
 with anonymous public Git sources pinned to the commits below. This is a reviewed
 snapshot/reproducibility choice under PV-014, not evidence that earlier versions
 are functionally incompatible or a promise about future releases. Both are frozen,
@@ -97,25 +99,28 @@ including public `DISTRIBUTION.json` receipts and `.vibe-slot.toml` metadata.
 | Published identity | Exact value |
 | --- | --- |
 | Model distribution repository | `jrs-vibevm/org.jresearch.ai.landscape-model-guidance` |
-| Model `v1.0.3` annotated tag object | `8409e60d819a1553dc4dff89ba55799c8e0e451b` |
-| Model peeled distribution commit / root `rev` | `48432f00802f5aad106f3e1a9264e17c1edc354c` |
-| Model complete native tree hash | `sha256:a64d829c0e50ac228d9bc39608db7e081e87c13d69e9cfeafc46720ec022f7f6` |
+| Model `v1.1.0` annotated tag object | `230ed86a504fee3bac065958dc2e3ee18aefd1cf` |
+| Model peeled distribution commit / root `rev` | `a810317f87fb4378be19edb04506444553f60148` |
+| Model complete native tree hash | `sha256:f7245df4142fe6d9651f1050edc493dfe0b7078e0075211e7190440ff04cbd5d` |
 | Subagents distribution repository | `jrs-vibevm/org.jresearch.ai.landscape-subagents` |
-| Subagents `v1.0.2` annotated tag object | `c52414e83d25878c2f2cb90693c9328729286cd3` |
-| Subagents peeled distribution commit / root `rev` | `042e92884278d748502157945301dbc3f3c8318c` |
-| Subagents complete native tree hash | `sha256:58a76e39b4861f8205726930d89d4f16c320704cb21b146ce4c47c3d2b959e56` |
+| Subagents `v1.1.0` annotated tag object | `9b3cd32fd2f710851740bdf806f3837388ee0663` |
+| Subagents peeled distribution commit / root `rev` | `b3e9da5a10af2b258699e7d1667dc925d247ae8d` |
+| Subagents complete native tree hash | `sha256:4ea4a61964e63d2fc91a6aa2ae486e6edc8231823266f6feefb83de6b615f1ae` |
 
 The producer is `jresearchsoftware/codex-model-landscape`. The published
-[model contract](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.0.3/README.md)
-and [subagent contract](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2/README.md)
+[model contract](../vibevm/vibedeps/org.jresearch.ai.landscape-model-guidance/1.1.0/README.md)
+and [subagent contract](../vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.1.0/README.md)
 are frozen distribution contracts. Their receipts intentionally declare
 `disclosure = "opaque"`: payload hashes are public, exact private accepted-source
 identities and source-equivalence machinery remain producer-only. Distribution
 inspection must not be described as an independent comparison with that private
 source. No private provenance or upstream publication authority is inferred.
-The model evidence is dated November 2, 2026, and subagent/runtime guidance October
-9; neither claims a newly measured client or account. Source/routing checks do
-not prove actual model-visible traversal, child profiles, access or usefulness.
+The November 17 advisory profiles use `gpt-6.2-sol / medium` as a starting point
+for new ordinary and complex work, with targeted escalation and a consumer-selected
+`gpt-6.1-sol / medium` fallback for new work without 6.2 access. The model flow
+cites public evidence checked November 22, 2026. Subagent runtime context retains
+its October 9 source-inspection baseline. Source/routing checks leave actual
+client traversal, child profiles, access and usefulness unverified.
 
 ### Deliverable, updates and rollback
 
@@ -182,41 +187,39 @@ retain earlier migration evidence. Task 273 changes the product snapshot,
 release-evidence lock, requirement and payload as well as root project policy. Accepted source, external publication and installed runtime qualification
 remain separate.
 
-The [tool pin](../toolchain/vibevm.json) selects exact VibeVM **1.0.11**, lightweight
-Git tag `v1.0.11`, source `5e470926ad0f34d61e37d387ce4b7c153356a804`.
-The actual Linux x86_64 musl bootstrap binary SHA-256 is
-`5fe5b3efeb2eab7c7c49a8dc864864ffacac08a9d7be3dc9df0bc0bb15a8bd58`.
-Its upstream `DISTRIBUTIONS.json` SHA-256 is
-`a11b0812d6ee675eeb58166a066500f5c1bf02705608d1de6725e087e9d713e6`;
-manifest `source_commit`, bootstrap component digest, Git tag and actual
-`vibe 1.0.11` output agree. Release assets are mutable upstream, so the exact
-digest remains required. No binary is committed or installed by Relay.
+The [development tool pin](../toolchain/vibevm-development.json) selects
+VibeVM **1.0.12**. It records the tag's resolved source, mutable release ID,
+distribution manifest and Linux x86_64 musl bootstrap asset. At adoption the
+Git tag, verified manifest, platform bootstrap/component digests, release API
+and actual binary agreed. This Linux bootstrap is the artifact used in Relay
+development CI. The [existing product pin](../toolchain/vibevm.json) remains a
+frozen 10.0.0 builder input and identifies the separately qualified VPM tool.
+Keeping the development pin separate preserves the product provenance and
+delivery bytes.
 
-Public CI uses [the credential-free download helper](../scripts/download-vibevm.py)
-with three attempts per endpoint and a 30-second request timeout for transient
-HTTP/transport failures. If the pinned browser download remains unavailable,
-it uses reviewed release asset ID `704909893` through GitHub's anonymous API,
-avoiding the separately observed tag-metadata HTTP 504. The asset ID was verified
-against the exact 1.0.11 release, browser URL and digest. Pins without an asset ID
-still resolve the exact tag and asset; no moving release or alternate host is used.
-Both routes must match the unchanged pinned SHA-256 before writing an executable;
-missing assets, permanent HTTP failures and digest mismatches fail validation.
+Public CI uses [the credential-free download helper](../scripts/download-vibevm.py).
+It uses bounded retries for transient transport errors and falls back to the
+pinned public asset ID when the browser download is unavailable. It checks the
+exact digest before writing an executable. The distribution manifest anchors
+the selected asset at deliberate adoption. Routine CI uses the pinned digest.
 
-For 1.0.7 → 1.0.11, the used install/reinstall/validate/check/Skill commands and
-schema-7 lock/slot/boot layout remain compatible. 1.0.8 changes application
-installer/launcher/index contracts and adds optional `required_by`; this passive
-flow/Skill graph has no application packages or old user-application state to
-migrate. Unrelated app features remain unused. 1.0.9's JSON-versus-human output
-change requires selecting `--json` explicitly; probes already do. 1.0.10 adds
-remote lock/slot hash rejection and refuses forced same-version drift; probes
-now expect the remote hash error. 1.0.11 repairs GitHub/GitVerse Git-source cloning
-regressed in 1.0.9/10; the anonymous pinned GitHub acquisition exercises that
-path. Boot and Linux tree-hash recipes match the old source. Optional remap and
-reverse-dependency lock fields are absent for this graph; no unrelated capability
-is adopted. Native updating an existing lock preserves its historical
-`generated_by = "vibe 1.0.7"` header; clean 1.0.11 generation records 1.0.11.
-That retained header is not actual executable-version proof. Historical product
-closure locks and shipped tool references remain frozen independently.
+The root graph remains in lock schema 7 and the passive flows remain at epoch 1.
+Native generation now records exact requirements on all four root edges and
+`resolved_commit` for each Git package. The first-party development slot
+preserves the frozen export's 12.1.0 publisher evidence. Its native Skill
+follows the consumer's selected Shared slot. Native Skill content and the
+portable Skill receipt stay the same.
+The new tool migrates the portable seed to ignored schema-4 project activation
+state when explicitly projecting the Skill. Keep the portable seed in Git.
+
+The selected manifests use no `[hooks]` and Relay's qualification readers use
+status and their actual report fields, so removal of the lifecycle JSON
+`hooks` member needs no adapter. The tool also normalizes VibeVM-owned Git data
+checkouts independently of user EOL settings. The selected LF bytes were
+compared with native Linux acquisition. Windows and macOS were outside this
+local qualification. Shared Governance's independent implementation report
+supplies upstream context for the lock format, router, Skill migration, hooks
+and Git normalization. [Shared Governance Task 139 qualification](https://github.com/jresearchsoftware/shared-governance/blob/b102245bcd99e8f20c8f3cce9487705c3fbe19cf/docs/task-139/step-1/README.md)
 
 ## Admitted maintenance and qualification
 
@@ -270,16 +273,12 @@ Structural mode reads committed inputs without a network or VibeVM. Optional
 tool mode rechecks the binary digest and uses isolated projects to exercise
 native clean/repeat install, relocation with the original source absent,
 existing-slot offline reinstall, generated routes and human-overlay behavior.
-Repeat install may refresh the native lock's `generated_at`; qualification allows
-only that valid timestamp change and requires an identical resolved graph, source
-locations, content hashes and materialized slots.
-Local registry URLs are absolute native location metadata. Before checking a
-relocated fixture, the probe re-resolves the relative registry through native
-installation; it requires unchanged content hashes, dependency graph, source
-revision, slots, routes and Skill bytes, allowing only the local source URL and
-lock generation timestamp to change. The missing-origin warning must appear
-before this repair and disappear afterward. See the
-[maintenance binding](self-adoption.md#deliberate-source-maintenance). Supplied
+Repeat install preserves the resolved graph, source locations, content hashes and
+materialized slots. A relocated fixture exercises offline reinstall from retained
+slots and then a fresh native solve for maintenance. Lock comparisons permit
+generation timestamp and local location metadata changes where applicable. The
+probe also exercises migration and repeat projection of the portable Skill seed.
+See the [maintenance binding](self-adoption.md#deliberate-source-maintenance). Supplied
 source/distribution directories must first be acquired at the selected immutable
 identities. These commands describe the
 qualification contract; actual candidate results and warnings belong in its
@@ -296,13 +295,14 @@ historical evidence, not proof for this new candidate.
 ## Drift, missing files and rollback
 
 The verifier compares the exact four-package graph, lock/tree identities, complete
-Shared and Landscape slots/receipts, standalone snapshot, first-party
-export/registry/slot/Skill equality, local adoption boundaries and generated route.
-Missing or corrupt files, counterfeit identities, graph changes and malformed
-managed markers require diagnosis. Restore ordinary missing outputs from the
-accepted Git revision; do not force generation over human text or introduce a
-session-time resolver. Upstream `vibe check` alone does not establish these local
-content and reachability invariants.
+Shared and Landscape slots/receipts, the standalone snapshot, export/registry
+equality, the first-party native slot and projected Skill, local adoption
+boundaries and generated routing.
+Restore missing authored entrypoint bytes from the accepted Git revision. Native
+reinstall can restore the generated router and INDEX. A refused marker collision
+can leave native boot transaction files. After restoring the intended authored
+entrypoint, native reinstall completes recovery and clears them. Upstream
+`vibe check` alone does not establish Relay's content and reachability invariants.
 
 Committed ready files support offline reads and bounded existing-slot
 reinstall. Cold offline acquisition of a remote dependency without a slot/cache

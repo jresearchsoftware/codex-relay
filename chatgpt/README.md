@@ -73,10 +73,10 @@ The first projection used accepted starting source
 `b9de15342525da0144edf18b457f7e640a9bf087` (Shared 7.0.0 adoption, PR 214),
 under the Task 101 Decision above. The native validator consumes its committed
 INDEX schema 1, lock schema 7 and slot receipts schema 1. Toolchain selection is
-VibeVM **1.0.11**; the retained lock's `generated_by = "vibe 1.0.7"` is historical
-metadata, not a claim that this task ran that version. No resolver or lock edit
-is needed to generate this projection. Native OS/package conditions remain
-intact and do not select client roles.
+VibeVM **1.0.12** generates the current root lock. The exact root requirements,
+resolved Git commits and Landscape revision changes preserve the selected Shared
+generator and effective projection inputs. ChatGPT projection reads the committed
+closure. Native OS/package conditions stay independent of client roles.
 
 On material accepted base/custom/binding, product, dependency or routing changes,
 regenerate/check against the deliberately selected accepted source. VibeVM alone

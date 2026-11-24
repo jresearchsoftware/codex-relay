@@ -6,8 +6,8 @@ chooses to use these recommendations, read the full
 For its factual basis, read the [dated evidence](../reference/evidence.md).
 Unrelated work does not need those details.
 
-This is the frozen 1.0.3 guidance snapshot, with public evidence checked on
-2026-11-02. Its recommendations retain the preceding profile choices.
+This is the frozen 1.1.0 guidance snapshot, with public evidence checked on
+2026-11-22. The November 17 advisory default is `gpt-6.2-sol / medium`.
 Consumers retain adoption, allowlists, task profiles and external-action
 authority. An admitted model/effort stays fixed; neither installation nor a
 later Landscape/package change authorizes substitution or moving Relay routing.

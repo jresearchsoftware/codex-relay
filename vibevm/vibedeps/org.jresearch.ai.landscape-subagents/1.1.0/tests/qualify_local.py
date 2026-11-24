@@ -15,7 +15,7 @@ import tomllib
 PACKAGE = Path(__file__).resolve().parents[1]
 BINARY_SHA256 = "20d111df02eb28040ef4cb766bfcb0bde8ff4427b031f88f33eacb3711c3e240"
 COORDINATE = "org.jresearch.ai/landscape-subagents"
-SLOT = "vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.0.2"
+SLOT = "vibevm/vibedeps/org.jresearch.ai.landscape-subagents/1.1.0"
 BOOT = "vibevm/vibespecs/boot/landscape-subagents.md"
 SENTINEL = (
     "# Disposable subagent-flow consumer\n\n"
@@ -103,18 +103,18 @@ def verify_consumer(consumer, source_hashes):
     require(not (consumer / ".agents/skills").exists(), "Unexpected native Skill")
     lock = tomllib.loads((consumer / "vibe.lock").read_text())
     require(lock["meta"]["schema_version"] == 7, "Unexpected lock schema")
-    require(lock["meta"]["root_dependencies"] == [f"{COORDINATE}@=1.0.2"],
+    require(lock["meta"]["root_dependencies"] == [f"{COORDINATE}@=1.1.0"],
             f"Unexpected dependencies: {lock}")
     packages = lock.get("package", [])
     require(len(packages) == 1, "Unexpected transitive package")
     selected = packages[0]
     for key, value in {"group": "org.jresearch.ai", "name": "landscape-subagents",
-                       "version": "1.0.2", "kind": "flow", "files_written": []}.items():
+                       "version": "1.1.0", "kind": "flow", "files_written": []}.items():
         require(selected.get(key) == value, f"Unexpected lock field {key}: {selected}")
     require(selected["content_hash"].startswith("sha256:"), "Missing native content identity")
     require(selected.get("source_kind") == "registry", "Wrong fixture transport")
     require(selected.get("source_url") ==
-            (consumer.parent / "registry" / COORDINATE / "v1.0.2").as_uri(),
+            (consumer.parent / "registry" / COORDINATE / "v1.1.0").as_uri(),
             "Lock did not retain exact fixture source identity")
     require(selected.get("admitted_by") == "root-edge", "Wrong dependency admission")
     metadata = tomllib.loads((slot / ".vibe-slot.toml").read_text())
@@ -140,14 +140,14 @@ def main():
     with tempfile.TemporaryDirectory(prefix="landscape-subagents-") as directory:
         fixture = Path(directory)
         registry = fixture / "registry"
-        shutil.copytree(PACKAGE, registry / COORDINATE / "v1.0.2",
+        shutil.copytree(PACKAGE, registry / COORDINATE / "v1.1.0",
                         ignore=shutil.ignore_patterns("__pycache__"))
         consumer = fixture / "consumer"
         consumer.mkdir()
         (consumer / "vibe.toml").write_text(
             '[project]\nname = "landscape-subagents-fixture"\nversion = "0.0.0"\n'
             'spec_format = "mixed"\n\n[requires.packages]\n'
-            f'"{COORDINATE}" = "=1.0.2"\n', encoding="utf-8",
+            f'"{COORDINATE}" = "=1.1.0"\n', encoding="utf-8",
         )
         (consumer / "AGENTS.md").write_text(SENTINEL, encoding="utf-8")
         manifest_bytes = (consumer / "vibe.toml").read_bytes()

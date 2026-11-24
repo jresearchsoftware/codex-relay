@@ -61,6 +61,9 @@ Task #295 freezes the independently accepted PR #291 integration
 development lock before editing candidate routes. Shared 12.5.0 is the proposed
 development selection. The projected native Relay Skill still comes from the
 same 10.0.0 package and reads the selected Shared slot through the root lock.
+Step 2 also selects VibeVM 1.0.12 and both Landscape 1.1.0 flows. It preserves
+the admitted starting head as the Step 1 frontier and the accepted source above
+as its guidance baseline.
 
 Use supported Git/file reads, for example
 `git show <accepted-sha>:AGENTS.md`, then the accepted index and relevant routes.
@@ -72,7 +75,7 @@ proves neither actual model traversal nor isolation from arbitrary candidate cod
 
 Author the Skill under `packages/codex-relay/skill` and select truthful immutable
 identities in `guidance/source.json`. During admitted maintenance, use the
-hash-checked executable from `toolchain/vibevm.json`:
+hash-checked executable from the [development pin](../toolchain/vibevm-development.json):
 
 ```sh
 python3 scripts/build-relay-guidance.py
@@ -90,8 +93,11 @@ or version change is needed. The [Landscape integration](vibevm.md#landscape-flo
 is root development guidance outside the standalone Skill and release-evidence
 closure. Its installed boot/AGENTS routes remain candidate data until accepted;
 continue under the independently frozen admitted guidance. Native root install
-produces its lock, complete slots/receipts and INDEX together without requiring
-another Skill projection or startup command.
+produces its lock, slots/receipts and INDEX together. Run explicit Skill
+projection in a disposable copy for qualification. With 1.0.12, projection
+consumes the committed schema-1 seed and stores absolute activation state in
+ignored `.vibe/package-skills.toml`. Keep the portable seed and verified Skill
+bytes in Git for fresh checkouts.
 The single `build-relay-guidance.py` builder reads the pinned Shared 12.1.0
 release-evidence slot directly under `guidance/dependency-closure`; it needs no
 disposable input adapter or unselected root slot. This retains the accepted
@@ -117,26 +123,25 @@ Initial acquisition may contact the pinned public commit; cold offline resolutio
 with an empty cache is not promised. Existing-slot reinstall, retained-file reads
 and Skill projection are the bounded offline paths.
 
-The first-party native `source_url` is generated absolute location metadata and
-may name its generating checkout; it is not portable provenance or acceptance.
-Use exact export/registry/slot/Skill comparison and the owning Git commit for
-content identity. VibeVM 1.0.11's local-source freshness check nevertheless needs
-that location to exist. For deliberate native maintenance after moving/copying
-a checkout, run the supported `install --no-default-registry --assume-yes`
-command there to resolve the relative registry and regenerate its lock location.
-The qualification probe does this in disposable copies before offline checks,
-verifying that only the local URL and generation timestamp change. It also moves
-a generated checkout with its origin absent, observes the missing-source warning,
-and verifies native repair. Ordinary offline file-reading startup needs no such
-command. Shared and Landscape lock identities retain their public URLs, immutable revisions
-and tree hashes. Do not hand-edit generated URLs or ignore freshness warnings.
+The first-party native `source_url` records the generating checkout's absolute
+registry location. Ordinary offline reading and native offline reinstall can use
+the retained slots after relocation. VibeVM 1.0.12's default install replays the
+recorded location, so its missing-source check still warns afterward. For
+deliberate native maintenance, make a disposable staging copy, set aside its
+old lock and run the native install from its exact root requirements. Compare
+with the previous lock and ready files before taking any maintenance outputs
+back. In a relocation-only solve, the graph, hashes and ready bytes stay the
+same, and the local URL and generation timestamp can change. Keep the old lock
+and ready outputs in accepted Git for rollback. The qualification probe confirms
+the warning before the fresh solve and its absence afterward.
 
 ## Qualification, failure and rollback
 
 The structural verifier binds the exact project requirements, the native
 Shared lower bound, selected Shared payload/receipt, first-party native
 export/registry/slot equality, native metadata, boot order, managed blocks and
-project Skill/receipt. It checks that native shared routing reads this project's
+project Skill/receipt. The full pinned 12.1.0 publisher snapshot remains inert
+in the first-party package and the active native route selects Shared 12.5.0. It checks that native shared routing reads this project's
 selected dependency rather than a standalone bundle. A native install/check exit
 code alone cannot establish those invariants. Use the existing checks:
 
@@ -147,8 +152,7 @@ python3 scripts/qualify-vibevm.py --vibe /absolute/path/to/pinned/vibe
 
 The optional native probe uses isolated disposable storage and preserves human
 text around managed blocks. It sets `VIBE_NO_DEFAULT_REGISTRY=1` as well as
-`--no-default-registry`: pinned VibeVM 1.0.11 can otherwise seed its user-global
-GitHub/GitVerse registry during install. The probe verifies that no global
+`--no-default-registry` to isolate default registry seeding. The probe verifies that no global
 registry was created while retaining the project-local producer registry,
 pinned Git sources, relocation repair and clean-install checks. `--project-root <complete-ready-copy>` qualifies a
 complete fixture when the actual destination is unavailable; it does not prove
