@@ -541,6 +541,7 @@ class PreparedInstall:
         self.holder = None
         self.initial = None
         self.host_observation = None
+        self.stopped_pool_members = frozenset()
         self.captured = False
         self.cutover_started = False
         self.predispatch_bridge_attempted = False
@@ -755,7 +756,23 @@ try {
         receipt = self.execute(['/usr/bin/python3', '-I', self.source + '/deploy/host_preflight.py', '--input'],
                                payload={'values': self.values, 'sourceRoot': self.source})
         require(receipt.get('status') == 'PASS', 'HOST_UNPROVEN')
-        if final:
+        if final and self.stopped_pool_members:
+            initial, current = self.host_observation.get('poolActivity'), receipt.get('poolActivity')
+            require(isinstance(initial, dict) and isinstance(current, dict)
+                    and initial.keys() == current.keys() and self.stopped_pool_members <= current.keys()
+                    and self.host_observation.get('poolStableSha256') is not None
+                    and self.host_observation['poolStableSha256'] == receipt.get('poolStableSha256'),
+                    'HOST_PRECONDITION_CHANGED')
+            for slot, state in current.items():
+                if slot in self.stopped_pool_members:
+                    require(state == initial[slot] or state == {'ActiveState': 'inactive', 'SubState': 'dead',
+                                                                 'MainPID': '0', 'start': None},
+                            'HOST_PRECONDITION_CHANGED')
+                    require(state['MainPID'] == '0' and state['start'] is None
+                            and state['ActiveState'] in ('inactive', 'failed'), 'HOST_PRECONDITION_CHANGED')
+                else:
+                    require(state == initial[slot], 'HOST_PRECONDITION_CHANGED')
+        elif final:
             require(receipt['observedSha256'] == self.host_observation['observedSha256'], 'HOST_PRECONDITION_CHANGED')
         else:
             self.host_observation = receipt

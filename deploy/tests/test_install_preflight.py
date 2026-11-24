@@ -46,7 +46,7 @@ class LocalPrepared(preflight.PreparedInstall):
         if payload and 'action' in payload:
             return preflight.remote(payload, root=self.fixture.root, service_probe=self.fixture.service_probe)
         if len(argv) > 2 and argv[2].endswith('/deploy/host_preflight.py'):
-            return {'status': 'PASS', 'observedSha256': self.fixture.host_state}
+            return {'status': 'PASS', 'observedSha256': self.fixture.host_state, **self.fixture.host_pool}
         actual = [str(self.fixture.at(item)) if isinstance(item, str)
                   and item.startswith(('/opt/fixture', '/etc/fixture', '/var/lib/fixture')) else item
                   for item in argv]
@@ -121,6 +121,7 @@ class OldInstallationTests(unittest.TestCase):
         self.secret.write_text('synthetic private credential bytes must never be read')
         self.secret.chmod(0o600)
         self.host_state = 'c' * 64
+        self.host_pool = {}
         self.service_states = {
             'fixture-reviewer.service': {'MainPID': '0', 'ExecMainStartTimestampMonotonic': '0',
                 'ActiveState': 'inactive', 'SubState': 'dead', 'UnitFileState': 'enabled', 'LoadState': 'loaded'},
@@ -338,6 +339,27 @@ class OldInstallationTests(unittest.TestCase):
         self.prepared.abort()
         self.assertEqual(self.gate.read_bytes(), self.old_gate)
         self.assertTrue(self.prepared.initial['consumerRestoreRequired'])
+
+    def test_final_host_check_accepts_only_the_exact_drained_pool_member(self):
+        active = {'ActiveState': 'active', 'SubState': 'running', 'MainPID': '42', 'start': '61'}
+        other = {**active, 'MainPID': '44'}
+        stopped = {'ActiveState': 'inactive', 'SubState': 'dead', 'MainPID': '0', 'start': None}
+        self.host_pool = {'poolStableSha256': 'e' * 64, 'poolActivity': {'primary': active, 'pool-2': other}}
+        self.prepared.host()
+        self.prepared.stopped_pool_members = frozenset({'pool-2'})
+        self.host_state = 'd' * 64
+        self.host_pool['poolActivity'] = {'primary': active, 'pool-2': stopped}
+        self.prepared.host(final=True)
+        self.host_pool['poolActivity'] = {'primary': stopped, 'pool-2': stopped}
+        with self.assertRaisesRegex(RuntimeError, 'HOST_PRECONDITION_CHANGED'):
+            self.prepared.host(final=True)
+        self.host_pool['poolActivity'] = {'primary': active, 'pool-2': {**other, 'MainPID': '46'}}
+        with self.assertRaisesRegex(RuntimeError, 'HOST_PRECONDITION_CHANGED'):
+            self.prepared.host(final=True)
+        self.host_pool['poolActivity'] = {'primary': active, 'pool-2': stopped}
+        self.host_pool['poolStableSha256'] = 'f' * 64
+        with self.assertRaisesRegex(RuntimeError, 'HOST_PRECONDITION_CHANGED'):
+            self.prepared.host(final=True)
 
     def test_changed_host_or_old_helper_keeps_the_reserved_gate_closed(self):
         self.capture_and_reserve()

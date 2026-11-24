@@ -1220,7 +1220,9 @@ def run(args, *, reservation_token=None):
                         apply_timing('intake-pause', pause_started)
                         args._intent_failure_stage = 'general-runner-drain'
                         drain_started = time.monotonic()
-                        pool_maintenance('drain')
+                        drained = pool_maintenance('drain')
+                        if preparation is not None:
+                            preparation.stopped_pool_members = frozenset(drained['stopped'])
                         pool_drain_completed = True
                         apply_timing('runner-drain', drain_started)
                     if reviewer_pid is not None:
