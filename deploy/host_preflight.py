@@ -16,6 +16,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 
 sys.dont_write_bytecode = True
 
@@ -605,9 +606,20 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
     pool_activity = {}
     for label, unit in dict.fromkeys(services):
         require(re.fullmatch(r'[A-Za-z0-9_.@-]{1,160}', unit), 'HOST_SERVICE_INPUT_INVALID', label)
-        result = execute(['systemctl', 'show', '--no-pager', '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,User,Group,FragmentPath,DropInPaths', unit])
-        require_probe(result, result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
-        state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+        properties = 'LoadState,ActiveState,SubState,UnitFileState,MainPID,User,Group,FragmentPath,DropInPaths'
+        if label == 'recovery':
+            properties += ',Type'
+        for observation in range(5):
+            result = execute(['systemctl', 'show', '--no-pager', '--property=' + properties, unit])
+            require_probe(result, result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
+            state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+            service_type = state.pop('Type', None)
+            # The scheduled Reviewer health check normally exits immediately.
+            # Reobserve it before fingerprinting the settled service state.
+            if not (label == 'recovery' and service_type == 'oneshot' and state.get('LoadState') == 'loaded'
+                    and state.get('ActiveState') in ('activating', 'deactivating') and observation < 4):
+                break
+            time.sleep(0.25)
         require(state.get('LoadState') in ('loaded', 'not-found') and state.get('ActiveState') in ('active', 'inactive', 'failed'),
                 'HOST_SERVICE_STATE_AMBIGUOUS', label)
         require(state.get('UnitFileState', '') in ('', 'enabled', 'enabled-runtime', 'disabled', 'static', 'indirect', 'generated'),
