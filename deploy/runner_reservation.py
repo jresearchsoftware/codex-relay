@@ -59,6 +59,34 @@ def process_identity(root):
     return int(fields[1]), fields[19].decode('ascii')
 
 
+def verify_released_reservation(members, snapshots, receipt, *, proc_root=Path('/proc')):
+    """Refuse recovery while any original reservation transport is alive."""
+    require(isinstance(receipt, dict) and set(receipt) == set(snapshots) and 'primary' in receipt,
+            'RECOVERY_RECEIPT_INVALID')
+    jobs = set()
+    for slot, evidence in receipt.items():
+        expected = {'pid', 'started', 'cgroup', 'jobId', 'runnerId'}
+        if slot != 'primary':
+            expected |= {'workerPid', 'workerStarted'}
+        require(isinstance(evidence, dict) and set(evidence) == expected
+                and positive(evidence['jobId']) and evidence['jobId'] not in jobs
+                and positive(evidence['runnerId']) and evidence['runnerId'] == snapshots[slot]['runnerId']
+                and evidence['cgroup'] == service_cgroup(members[slot]), 'RECOVERY_RECEIPT_INVALID', slot)
+        jobs.add(evidence['jobId'])
+        processes = [(evidence['pid'], evidence['started'])]
+        if slot != 'primary':
+            processes.append((evidence['workerPid'], evidence['workerStarted']))
+        for pid, started in processes:
+            require(positive(pid) and valid_text(started, r'[0-9]{1,20}'), 'RECOVERY_RECEIPT_INVALID', slot)
+            try:
+                current = process_identity(proc_root / str(pid))
+            except FileNotFoundError:
+                continue
+            except OSError:
+                raise RunnerReservationError('RUNNER_RESERVATION_PROCESS_READ_FAILED') from None
+            require(current is None or current[1] != started, 'RECOVERY_HOLDER_STILL_LIVE', slot)
+
+
 def verify_process_binding(root, holder, group, slot):
     groups = read_bounded(root / 'cgroup', 4096).splitlines()
     require(root.stat().st_uid == holder['runnerUid'] and b'0::' + group.encode('ascii') in groups,

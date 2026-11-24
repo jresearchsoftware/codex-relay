@@ -151,6 +151,29 @@ def local(tmp_path, monkeypatch):
     return read, proc, unit, binding
 
 
+def test_expired_reservation_requires_both_exact_local_processes_to_release(local):
+    read, proc, _, binding = local
+    members = {'primary': {'service': 'primary.service'}, 'pool-2': binding}
+    snapshots = {'primary': {'runnerId': 11}, 'pool-2': {'runnerId': 12}}
+    receipt = {
+        'primary': {'pid': 2, 'started': '1', 'cgroup': '/system.slice/primary.service',
+                    'jobId': 101, 'runnerId': 11},
+        'pool-2': {**read(), 'jobId': 102, 'runnerId': 12},
+    }
+
+    with pytest.raises(reservation.RunnerReservationError, match='RECOVERY_HOLDER_STILL_LIVE'):
+        reservation.verify_released_reservation(members, snapshots, receipt, proc_root=proc)
+    (proc / '21/stat').unlink()
+    with pytest.raises(reservation.RunnerReservationError, match='RECOVERY_HOLDER_STILL_LIVE'):
+        reservation.verify_released_reservation(members, snapshots, receipt, proc_root=proc)
+    # Reuse of a PID with a different start time is a different process.
+    receipt['pool-2']['workerStarted'] = '1'
+    reservation.verify_released_reservation(members, snapshots, receipt, proc_root=proc)
+    receipt['pool-2']['runnerId'] = 13
+    with pytest.raises(reservation.RunnerReservationError, match='RECOVERY_RECEIPT_INVALID'):
+        reservation.verify_released_reservation(members, snapshots, receipt, proc_root=proc)
+
+
 def test_kernel_proves_exact_holder_beneath_stock_worker(local):
     read, _, _, _ = local
     result = read()

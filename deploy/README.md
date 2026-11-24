@@ -1680,6 +1680,24 @@ reopens, Apply reports the original operation and the boundary it reached.
 A failed eligibility restore can leave verified admission open while runner
 availability is uncertain.
 
+When the original native reservation has ended, a host administrator can
+restore eligibility for its retained operation from a root session outside
+the General Runner pool:
+
+```sh
+/opt/<namespace>/relay-managed-pool <installed-sha> --recover-reservation <operation>
+```
+
+Use the installed reviewed revision and the operation reported by Apply.
+Confirm that the original GitHub reservation jobs have ended. This command
+requires the exact retained reservation, released local holder processes, and
+open admission for every bound consumer. It verifies that the existing pool
+can be preserved, stops one idle runner that still has its routing labels
+withdrawn, restores the saved labels, then brings that runner back online to
+wake pending GitHub jobs. Once restoration starts, a retry continues from
+the saved operation. A closed admission gate still requires the original
+Apply recovery procedure.
+
 An active Reviewer with the maintenance control acknowledges a Writer-only pause
 and drains its accepted Writer submissions before replacement. Review and
 Decision requests keep using the Reviewer during preparation. The service

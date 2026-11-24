@@ -55,12 +55,87 @@ def fixture(capacity=2):
     host = Host(github, state)
     pool.reconcile(contract, state, github, host)
     host.starts.clear()
+    host.labels_at_start.clear()
     github.label_mutations.clear()
     return contract, state, github, host
 
 
 def maintain(values, action, **kwargs):
     return pool.maintenance(*values, operation='synthetic-owner-operation', action=action, **kwargs)
+
+
+@pytest.mark.parametrize('capacity, selected', [(1, 'primary'), (2, 'pool-2')])
+def test_recover_cancelled_reservation_reconnects_after_labels(capacity, selected):
+    values = fixture(capacity)
+    _, state, github, host = values
+    original = {key: copy.deepcopy(value['labels']) for key, value in github.values.items()}
+    proof = {slot: {'jobId': runner} for slot, runner in host.local.items()}
+    maintain(values, 'pause', reservation=lambda *_: proof)
+
+    def released(members, snapshots, receipt):
+        assert receipt == proof and set(receipt) == set(snapshots) == set(host.local)
+        assert set(receipt) <= members.keys()
+
+    report = maintain(values, 'recover-reservation', check_released=released, timeout=0)
+    assert report['stopped'] == host.stops == [selected]
+    assert host.starts == [(selected, False)]
+    assert host.labels_at_start == [original[host.local[selected]]]
+    assert {key: value['labels'] for key, value in github.values.items()} == original
+    assert 'maintenance' not in state.value
+
+
+@pytest.mark.parametrize('blocker, code', [
+    ('gate', 'ADMISSION_NOT_OPEN'),
+    ('busy', 'RECOVERY_RUNNER_BUSY'),
+    ('attempt', 'ADMISSION_DRAIN_TIMEOUT'),
+    ('receipt', 'RECOVERY_HOLDER_STILL_LIVE'),
+    ('operation', 'OPERATION_CONFLICT'),
+])
+def test_recover_cancelled_reservation_preserves_fence_on_unproven_state(blocker, code):
+    values = fixture()
+    contract, state, github, host = values
+    maintain(values, 'pause', reservation=lambda *_: {'primary': {}, 'pool-2': {}})
+    github.label_mutations.clear()
+    if blocker == 'gate':
+        host.closed_admissions.add(contract['admission'])
+    elif blocker == 'busy':
+        github.values[host.local['pool-2']]['busy'] = True
+    elif blocker == 'attempt':
+        host.pending_attempts = True
+    elif blocker == 'operation':
+        state.value['maintenance']['operation'] = 'another-owner-operation'
+
+    def released(*_):
+        if blocker == 'receipt':
+            raise pool.PoolError('RECOVERY_HOLDER_STILL_LIVE')
+
+    with pytest.raises(pool.PoolError, match=code):
+        maintain(values, 'recover-reservation', check_released=released, timeout=0)
+    assert host.stops == host.starts == github.label_mutations == []
+    assert state.value['maintenance']['phase'] == 'paused'
+
+
+def test_recover_cancelled_reservation_replays_lost_label_response():
+    values = fixture()
+    _, state, github, host = values
+    maintain(values, 'pause', reservation=lambda *_: {'primary': {}, 'pool-2': {}})
+    github.lose_labels_response = True
+
+    def released(*_):
+        pass
+
+    with pytest.raises(pool.PoolError, match='UNKNOWN_LABEL'):
+        maintain(values, 'recover-reservation', check_released=released, timeout=0)
+    assert state.value['maintenance']['phase'] == 'restore-unverified'
+    assert state.value['maintenance']['connectAfterRestore'] == 'pool-2'
+    assert host.stops == ['pool-2'] and host.starts == []
+
+    # The first runner already has its labels and could accept work again.
+    github.values[host.local['primary']]['busy'] = True
+    host.pending_attempts = True
+    maintain(values, 'recover-reservation', check_released=released, timeout=0)
+    assert host.stops == ['pool-2'] and host.starts == [('pool-2', False)]
+    assert 'maintenance' not in state.value
 
 
 def test_labels_withdraw_before_drain_preserving_ids_enablement_and_inactive_services():

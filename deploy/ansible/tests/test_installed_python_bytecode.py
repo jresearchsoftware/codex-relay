@@ -46,7 +46,8 @@ def installed_source():
         yield install, source
 
 
-def test_rendered_managed_pool_keeps_exact_source_tree(installed_source):
+@pytest.mark.parametrize('extra_args', [[], ['--recover-reservation', 'fixture-operation']])
+def test_rendered_managed_pool_keeps_exact_source_tree(installed_source, extra_args):
     install, source = installed_source
     template = ANSIBLE / 'roles/relay_runner/templates/relay-managed-pool.j2'
     helper = install / 'relay-managed-pool'
@@ -55,7 +56,7 @@ def test_rendered_managed_pool_keeps_exact_source_tree(installed_source):
     helper.chmod(0o750)
 
     before = snapshot(source)
-    result = subprocess.run(['/bin/sh', str(helper), HEAD], input='{}', env={}, text=True,
+    result = subprocess.run(['/bin/sh', str(helper), HEAD, *extra_args], input='{}', env={}, text=True,
                             capture_output=True, timeout=15)
     # The real entrypoint imports the installed config verifier before rejecting
     # the absent snapshot. The fixture never reaches GitHub or runner mutation.

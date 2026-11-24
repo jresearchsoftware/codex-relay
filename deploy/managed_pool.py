@@ -451,7 +451,7 @@ def wait_ready(member, runner_id, observe, host, *, now=time.monotonic, wait=tim
 
 def maintenance(contract, state_store, github, host, *, operation, action, owner_pid=None,
                 now=time.monotonic, wait=time.sleep, timeout=1800,
-                progress=None, reservation=None):
+                progress=None, reservation=None, check_released=None):
     """Maintain existing registrations under the caller's existing pool lock.
 
     Pause happens before closing admission: an assignment already in flight
@@ -463,7 +463,10 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     require(isinstance(operation, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation),
             'MAINTENANCE_OPERATION_INVALID')
     require(action in ['pause', 'drain', 'restart', 'resume']
-            or action in ['verify', 'rollback'] and reservation is not None, 'MAINTENANCE_ACTION_INVALID')
+            or action in ['verify', 'rollback'] and reservation is not None
+            or action == 'recover-reservation' and check_released is not None and reservation is None,
+            'MAINTENANCE_ACTION_INVALID')
+    recovering = action == 'recover-reservation'
     require(type(timeout) in [int, float] and 0 <= timeout <= 86400, 'MAINTENANCE_TIMEOUT_INVALID')
     require(type(contract['desiredCapacity']) is int and 1 <= contract['desiredCapacity'] <= CAPACITY,
             'CAPACITY_INVALID')
@@ -551,7 +554,7 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
                     and type(value.get('active')) is bool and isinstance(value.get('labels'), list)
                     for identity, value in intent['members'].items()), 'MAINTENANCE_INTENT_CHANGED')
 
-    require(('nativeReservation' in intent) == (reservation is not None),
+    require(('nativeReservation' in intent) == (reservation is not None or recovering),
             'MAINTENANCE_NATIVE_RESERVATION_MODE_CHANGED')
 
     def verify_reservation():
@@ -679,7 +682,18 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
         save('ready')
         return report
 
-    if action == 'rollback':
+    if recovering:
+        desired = {member['id'] for member in contract['members'][:contract['desiredCapacity']]}
+        require(set(records) == desired and all(saved['active'] for saved in intent['members'].values()),
+                'MAINTENANCE_NATIVE_RESERVATION_CAPACITY_UNPROVEN')
+        check_released(members, intent['members'], intent['nativeReservation'])
+        require(intent['phase'] in ['pausing', 'paused', 'draining', 'drained', 'restarting', 'ready',
+                                    'recovering-reservation', 'restoring', 'restore-unverified'],
+                'MAINTENANCE_RESERVATION_RECOVERY_UNPROVEN')
+        require(intent.get('connectAfterRestore') is None
+                or intent['phase'] in ['recovering-reservation', 'restoring', 'restore-unverified'],
+                'MAINTENANCE_INTENT_CHANGED')
+    elif action == 'rollback':
         require(intent['phase'] in ['pausing', 'paused', 'draining', 'drained', 'restoring', 'restore-unverified']
                 and intent.get('connectAfterRestore') is None, 'MAINTENANCE_ROLLBACK_UNPROVEN')
     else:
@@ -692,6 +706,34 @@ def maintenance(contract, state_store, github, host, *, operation, action, owner
     require(connect_after_restore is None or connect_after_restore in records
             and intent['members'][connect_after_restore]['active']
             and intent['members'][connect_after_restore]['labels'], 'MAINTENANCE_INTENT_CHANGED')
+
+    if recovering and (connect_after_restore is None or intent['phase'] == 'recovering-reservation'):
+        require(host.attempts_idle(consumers), 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+        observations = {identity: snapshot(identity) for identity in records}
+        if connect_after_restore is None:
+            connect_after_restore = next((identity for identity in reversed(members)
+                if identity in observations and observations[identity][1]['labels']
+                and not labels(observations[identity][2])), None)
+        require(connect_after_restore is not None, 'MAINTENANCE_NO_FENCED_CONNECTION')
+        for identity, (member, _, remote) in observations.items():
+            require(remote.get('busy') is False, 'MAINTENANCE_RECOVERY_RUNNER_BUSY')
+            if identity != connect_after_restore or not host.removal_stopped(member):
+                require(host.ready(member) and remote.get('status') == 'online',
+                        'MAINTENANCE_RESTART_UNPROVEN')
+        member, _, remote = observations[connect_after_restore]
+        require(not labels(remote), 'MAINTENANCE_INTAKE_REOPENED')
+        host.check_readiness()
+        intent['connectAfterRestore'] = connect_after_restore
+        save('recovering-reservation')
+
+        def remote_idle():
+            _, _, current = snapshot(connect_after_restore)
+            return not labels(current) and current.get('busy') is False
+
+        require(host.removal_stopped(member) or host.stop_idle(member, remote_idle, disable=False),
+                'MAINTENANCE_RECOVERY_STOP_UNPROVEN')
+        report['stopped'].append(connect_after_restore)
+        require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
 
     def offline(remote):
         return remote.get('status') == 'offline' and remote.get('busy') is False
@@ -911,6 +953,42 @@ def installed_main(revision):
         os.close(descriptor)
 
 
+def installed_recover_reservation(revision, operation):
+    require(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}', revision), 'ROOT_EXACT_REVISION_REQUIRED')
+    from installed_config import verify
+
+    source = Path(__file__).resolve().parents[1]
+    config, digest, _ = verify(source, revision, require_local_apply=False)
+    from deployment_lock import acquire
+    from pool_authorization import installation_authorization
+    from runner_reservation import RunnerReservationError, verify_released_reservation
+    from source_upgrade_proof import protected_read, require_unchanged_pool_plan
+
+    contract = pool_contract(config)
+    root = Path('/var/lib/codex-relay-pools') / contract['name']
+    with (acquire('/var/lib/' + contract['namespace'] + '-deployment.lock'),
+          acquire('/var/lib/codex-relay-pool-' + contract['name'] + '-deployment.lock'),
+          acquire(root / 'pool.lock')):
+        _, current_digest, _ = verify(source, revision, require_local_apply=False)
+        require(current_digest == digest, 'TARGET_CONFIG_BINDING_UNPROVEN')
+        host = Host(contract)
+        require(all(host.owner_transport(member, os.getpid()) is None
+                    for member in contract['members'][:contract['desiredCapacity']]),
+                'MAINTENANCE_RECOVERY_INSIDE_RUNNER')
+        template = source / 'deploy/ansible/roles/relay_runner/templates/relay-managed-pool.service.j2'
+        require_unchanged_pool_plan(installation_plan(contract, protected_read(template, boundary=source)[0].decode()))
+        authorization = installation_authorization(config)
+        require(all(authorization[key] == contract[key] for key in ['appId', 'installationId', 'organization']),
+                'TOKEN_BINDING_INVALID')
+        github = GitHub(authorization['installationToken'], contract['organization'])
+        try:
+            report = maintenance(contract, State(root), github, host, operation=operation,
+                                 action='recover-reservation', check_released=verify_released_reservation)
+        except RunnerReservationError as error:
+            raise PoolError(str(error)) from None
+        print('MANAGED_POOL_RESULT=' + json.dumps(report, sort_keys=True))
+
+
 def installation_plan(contract, unit_template, *, root=Path('/'), owner_uid=0,
                       runner_uid=None, service_probe=None):
     """Read existing ownership/bindings before any installer mutation.
@@ -1096,6 +1174,8 @@ if __name__ == '__main__':
     try:
         if sys.argv[1:] == ['--preflight']:
             preflight(json.loads(sys.stdin.read(1048577)))
+        elif len(sys.argv) == 5 and sys.argv[1] == '--installed-revision' and sys.argv[3] == '--recover-reservation':
+            installed_recover_reservation(sys.argv[2], sys.argv[4])
         else:
             require(len(sys.argv) == 3 and sys.argv[1] == '--installed-revision', 'ARGUMENTS')
             installed_main(sys.argv[2])
