@@ -1,0 +1,31 @@
+schema = 1
+source_hash = "sha256:f7245df4142fe6d9651f1050edc493dfe0b7078e0075211e7190440ff04cbd5d"
+spec_format = "mixed"
+
+[[file]]
+path = "DISTRIBUTION.json"
+sha256 = "9dc827fd561d9b17795238981992607efe382f24869fc0dc687df7195207f71b"
+
+[[file]]
+path = "LICENSE"
+sha256 = "ed2b2ca569b1fa8d368f3fb44800d97ead12f2286a164672c9dc20dfa87db552"
+
+[[file]]
+path = "README.md"
+sha256 = "9eff34a3b866238c3c6c21716332f8933c92f77aff6cbb80ab131cd5448341ba"
+
+[[file]]
+path = "vibe.toml"
+sha256 = "703b04bf98161a4fd706b32d5b52f4b68ad70417642a95b8a1192abc8f0e2550"
+
+[[file]]
+path = "vibevm/vibespecs/boot/landscape-model-guidance.md"
+sha256 = "f665c1e73d054c6e0cb06fd16c4c93720eaaf502319190ad805cbfec33687a9c"
+
+[[file]]
+path = "vibevm/vibespecs/protocols/model-selection.md"
+sha256 = "f7425a5155004e0d26124f555cf4d42389887d4c6d8641a353fb037ca761e2e3"
+
+[[file]]
+path = "vibevm/vibespecs/reference/evidence.md"
+sha256 = "8a186df35b42bb0449af7ed74857dcca73afb71cdc964203da8775e613e1ae02"

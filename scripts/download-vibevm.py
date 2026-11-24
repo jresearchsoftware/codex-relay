@@ -88,7 +88,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("destination", type=Path)
     args = parser.parse_args()
-    pin = json.loads((ROOT / "toolchain/vibevm.json").read_text())
+    pin = json.loads((ROOT / "toolchain/vibevm-development.json").read_text())
     download(pin["linux_x86_64_musl_binary"], args.destination)
 
 
