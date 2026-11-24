@@ -1571,7 +1571,7 @@ def run(args, *, reservation_token=None):
                         if pool_maintenance_started:
                             pool_maintenance('resume')
                         progress('OPEN', revision)
-                except Exception as error:
+                except (Exception, KeyboardInterrupt) as error:
                     report_failure(error, 'installer', private_log=log_name)
                     progress('RECOVERY', revision)
                     pool_restored = False

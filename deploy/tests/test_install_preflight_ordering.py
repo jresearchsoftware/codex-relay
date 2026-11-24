@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import sys
 from types import SimpleNamespace
 
@@ -83,6 +84,8 @@ def invocation(tmp_path, monkeypatch):
 
     def injected(name):
         events.append(name)
+        if state.get('interrupt') == name:
+            signal.raise_signal(signal.SIGINT)
         if state['failure'] == name:
             raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_' + name.upper().replace('-', '_'))
 
@@ -304,6 +307,31 @@ def test_post_mutation_failure_retains_same_operation_and_forward_recovery(invoc
     assert 'abort' not in events and 'resume' not in events
     assert events.index('writer-release') < events.index('phase:recovery-required')
     assert records == [{'runId': 7, 'terminal': True}]
+
+
+@pytest.mark.parametrize('interrupt_at', ['final', 'backend'])
+def test_sigint_after_quiesce_recovers_according_to_the_cutover_boundary(invocation, interrupt_at):
+    args, events, gate, state, records = invocation
+    state.update(interrupt=interrupt_at, reviewer_active=True)
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            backend.run(args)
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    assert events.index('quiesce') < events.index(interrupt_at)
+    assert records == [{'runId': 7, 'terminal': True}]
+    if interrupt_at == 'final':
+        assert gate == {'phase': 'open', 'operation': None}
+        assert state['installed'] == OLD and state['reviewer_marker'] is None
+        assert events.index('abort') < events.index('reviewer-resume') < events.index('pool-resume')
+        assert 'backend' not in events and 'phase:recovery-required' not in events
+    else:
+        assert gate['phase'] == 'recovery-required'
+        assert gate['operation'] == state['reviewer_marker'] == state['preparation'].operation
+        assert events.index('writer-release') < events.index('phase:recovery-required')
+        assert 'abort' not in events and 'resume' not in events and 'pool-resume' not in events
 
 
 def test_success_keeps_writer_mutex_through_first_active_effect(invocation):

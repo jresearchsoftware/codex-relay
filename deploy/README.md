@@ -1682,6 +1682,12 @@ Apply verified and restored the original gate during a pre-cutover abort, and
 `verified-admission-open` if Apply verified the target and reopened admission.
 In each case runner eligibility may still need recovery for the original operation.
 
+If the installer handles an interrupt after closing admission, it runs the
+same original-operation recovery checks as for an Apply error. Before cutover
+it can restore the verified old gate. Once cutover starts it retains the
+closed gate for recovery of that operation. An uncatchable process termination
+requires inspection of the last durable state.
+
 When the original native reservation has ended, a host administrator can
 restore eligibility for its retained operation from a root session outside
 the General Runner pool:
