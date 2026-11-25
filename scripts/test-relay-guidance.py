@@ -216,6 +216,22 @@ class ProjectionTests(unittest.TestCase):
 
 
 class GeneratedTests(unittest.TestCase):
+    def test_export_binding_covers_relay_package_and_redistribution_metadata(self):
+        binding, = json.loads((ROOT / "vibe-publisher.json").read_bytes())["packages"]
+        files = builder.inventory(ROOT / binding["root"])
+        self.assertCountEqual(binding["files"], files)
+        provenance = json.loads(files["skill/PROVENANCE.json"])
+        licenses = json.loads(files["LICENSES.json"])
+        self.assertEqual(binding["coordinate"], licenses["package"])
+        shared = licenses["components"][1]
+        slot = ("vibevm/vibedeps/" + provenance["shared_coordinate"].replace("/", ".")
+                + "/" + provenance["shared_version"])
+        self.assertEqual(shared["paths"], [slot + "/**"])
+        self.assertEqual(shared["license_files"], [slot + "/LICENSE"])
+        self.assertTrue(files[slot + "/LICENSE"].strip())
+        for key in ("source_revision", "distribution_revision"):
+            self.assertEqual(shared[key], provenance["shared_" + key])
+
     def build_fixture(self):
         storage = ROOT / ".vibe"
         storage.mkdir(exist_ok=True)
