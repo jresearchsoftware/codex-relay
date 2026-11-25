@@ -353,6 +353,20 @@ def publish(source, config_root, desired, claim_root, repository, operation, rev
                 _read(snapshot, options)
                 require(digest(snapshot) == receipt.get('target', {}).get('consumerDigest'),
                         'CONSUMER_PUBLICATION_SERIAL_TARGET_CHANGED')
+            # Desired capacity is deliberately outside the admission digest.
+            # Publish that change under this operation without rebinding claims.
+            current_pool = json.loads(old_bytes).get('generalRunnerPool', {})
+            desired_pool = json.loads(desired_bytes).get('generalRunnerPool', {})
+            if current_pool.get('desiredCapacity') != desired_pool.get('desiredCapacity'):
+                gate_name = 'admission-pool-v1.json' if receipt_path.exists() else 'admission-v1.json'
+                gate = json.loads(_read(claim_root / gate_name, options, limit=4096))
+                require(gate.get('operationId') == operation and gate.get('target') == revision
+                        and gate.get('phase') in ('drained', 'applying') and gate.get('consumerDigest') == current_digest,
+                        'CONSUMER_PUBLICATION_CAPACITY_OPERATION_UNPROVEN')
+                require(_read(consumer, options) == old_bytes, 'CONSUMER_PUBLICATION_INPUT_CHANGED')
+                _atomic(consumer, desired_bytes, 0o644)
+                require(_read(consumer, options) == desired_bytes, 'CONSUMER_PUBLICATION_INPUT_CHANGED')
+                return {'status': 'PUBLISHED', 'operationId': operation, 'target': revision, 'consumerDigest': current_digest}
             return {'status': 'UNCHANGED', 'operationId': operation, 'target': revision, 'consumerDigest': current_digest}
 
         if old_bytes == desired_bytes and backup.exists():

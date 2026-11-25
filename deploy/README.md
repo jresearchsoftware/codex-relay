@@ -288,6 +288,9 @@ There is one installation-wide consumer digest, Writer identity, credential and
 claim namespace. Admission selects a slot from the qualified native runner and
 Unix identity; Task/worker input cannot choose identities or protected paths.
 Desired physical capacity does not rewrite the internal slots or old digests.
+Git-managed Apply publishes a changed desired capacity in the consumer
+snapshot under the existing Writer lock for the active Apply operation.
+The unchanged admission digest continues to bind original attempts.
 Retained older explicit-slot/SERIAL attempts preserve their exact original
 configuration and source readers; those schemas grant no fresh installation,
 projection or execution option.
