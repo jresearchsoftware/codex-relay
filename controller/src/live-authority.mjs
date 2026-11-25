@@ -41,18 +41,52 @@ export function assertPr(pr, number) {
   ]) if (!valid) fail('PR_NOT_ADMITTED', { check, expected, observed: observed ?? null });
   branchName(pr.head.ref);
 }
-export async function readAuthority(api, target, number, { targetBase, step, route, runId, lineage, snapshot, previousRecord, resolution, publicationTarget } = {}) {
-  const pr = target === 'pull_request' ? await api.get(`/pulls/${number}`) : null;
-  if (pr) assertPr(pr, number);
-  const issueNumber = pr ? linkedIssue(pr.body) : number;
-  const issue = await api.get(`/issues/${issueNumber}`);
+
+async function observeTaskBranchHead(api, branch) {
+  const refs = await api.get(`/git/matching-refs/heads/${branchName(branch)}`);
+  if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
+  const matches = refs.filter(ref => ref?.ref === `refs/heads/${branch}`);
+  if (!matches.length) return null;
+  if (matches.length !== 1 || !exactSha(matches[0].object?.sha)) fail('STARTING_STATE_MISMATCH');
+  return matches[0].object.sha;
+}
+
+async function hasMergedPriorPullRequest(api, previousRecord, retainedHead) {
+  const previous = previousRecord.envelope;
+  const number = previousRecord.prNumber ?? previousRecord.outcome?.prNumber
+    ?? (previous.target === 'pull_request' ? previous.number : null);
+  if (!positive(number) || previousRecord.publicationIntent) return false;
+  const pr = await api.get(`/pulls/${number}`);
+  return pr?.number === number && pr.state === 'closed' && pr.merged === true
+    && pr.base?.ref === CONSUMER.baseBranch && pr.base?.repo?.full_name === REPOSITORY
+    && pr.head?.sha === retainedHead;
+}
+
+export function startsAtPublishedIssueBase(e) {
+  return e.target === 'issue' && e.branch !== null
+    && (!e.continuation || e.startHead === e.historicalBase && e.continuation.pullRequest === null);
+}
+
+function assertIssue(issue) {
   for (const [check, expected, observed, valid] of [
     ['issue.state', 'open', issue?.state, issue?.state === 'open'],
     ['issue.owner', OWNER, issue?.user?.login, issue?.user?.login === OWNER],
     ['issue.kind', 'issue', issue?.pull_request ? 'pull_request' : 'issue', !issue?.pull_request]
   ]) if (!valid) fail('ISSUE_NOT_ADMITTED', { check, expected, observed: observed ?? null });
+}
+
+export async function readAuthority(api, target, number, options = {}) {
+  const pr = target === 'pull_request' ? await api.get(`/pulls/${number}`) : null;
+  if (pr) assertPr(pr, number);
+  const issueNumber = pr ? linkedIssue(pr.body) : number;
+  const issue = await api.get(`/issues/${issueNumber}`);
+  assertIssue(issue);
   if (authorityMode(issue.body) !== 'github-native-v1') requireCurrentProtocol();
-  step = launchStep(step);
+  return resolveAuthority(api, { target, issueNumber, issue, pr }, { ...options, step: launchStep(options.step) });
+}
+
+async function resolveAuthority(api, { target, issueNumber, issue, pr }, { targetBase, step, route, runId, lineage, snapshot,
+  previousRecord, resolution, publicationTarget, admitting = false }) {
   const typed = await readTaskAuthority(api, issue, pr, {
     route, purpose: resolution?.purpose ?? snapshot?.purpose ?? issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
     projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
@@ -69,6 +103,8 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
       !== canonicalAuthorityJson(typed.originalAuthority.request[field]))) fail('AUTHORITY_CHANGED');
   if (!pr && semantic.kind === 'change-request') fail('AUTHORITY_SOURCE_TARGET_MISMATCH');
   let continuationState;
+  let observedBranchHead;
+  let observedPullRequest;
   const priorCr = previousRecord?.envelope;
   const retainedCrProgress = pr && priorCr?.target === 'pull_request' && priorCr.number === pr.number
     && priorCr.reviewId === typed.reference.id
@@ -81,18 +117,24 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
     .some(field => Object.hasOwn(item.decision.amendments, field))
     && !priorAuthority?.decisions.some(reference => canonicalAuthorityJson(reference) === canonicalAuthorityJson(item.reference)))
 ;
-  if (!pr && !snapshot && !newStartingPin && previousRecord?.envelope?.branch === semantic.branch) {
-    const previous = previousRecord.envelope;
+  if (!pr && !snapshot && semantic.branch !== null && !newStartingPin && previousRecord?.envelope?.branch === semantic.branch) {
     const retainedHead = previousRecord.publishedHead ?? previousRecord.outcome?.head;
     if (exactSha(retainedHead) && retainedHead !== semantic.base_sha) {
-      const refs = await api.get(`/git/matching-refs/heads/${semantic.branch}`);
-      const matches = Array.isArray(refs) ? refs.filter(ref => ref.ref === `refs/heads/${semantic.branch}`) : [];
-      if (matches.length !== 1 || matches[0].object?.sha !== retainedHead) fail('STARTING_STATE_MISMATCH', { check: 'task-branch-head', expected: retainedHead, observed: matches.map(ref => ref.object?.sha ?? null) });
-      const existing = await findCurrentIssuePullRequest(api, { issueNumber, branch: semantic.branch,
-        continuation: { head: retainedHead } }, previousRecord.prNumber ?? null);
-      if (existing && existing.head.sha !== retainedHead) fail('STARTING_STATE_MISMATCH');
-      continuationState = { branch: semantic.branch, base_sha: semantic.base_sha,
-        starting_head: retainedHead, existing_pr: existing?.number ?? null };
+      observedBranchHead = await observeTaskBranchHead(api, semantic.branch);
+      if (observedBranchHead === retainedHead) {
+        observedPullRequest = await findCurrentIssuePullRequest(api, { issueNumber, branch: semantic.branch,
+          continuation: { head: retainedHead } }, previousRecord.prNumber ?? null);
+        if (observedPullRequest && observedPullRequest.head.sha !== retainedHead) fail('STARTING_STATE_MISMATCH');
+        continuationState = { branch: semantic.branch, base_sha: semantic.base_sha,
+          starting_head: retainedHead, existing_pr: observedPullRequest?.number ?? null };
+      } else {
+        // A merged predecessor is history once the old ref has gone away.
+        // A re-created ref at the new authorized base is equivalent here.
+        const freshStart = semantic.existing_pr === null && semantic.starting_head === semantic.base_sha
+          && (observedBranchHead === null || observedBranchHead === semantic.starting_head);
+        if (!freshStart || !await hasMergedPriorPullRequest(api, previousRecord, retainedHead))
+          fail('STARTING_STATE_MISMATCH', { check: 'task-branch-head', expected: retainedHead, observed: observedBranchHead });
+      }
     }
   }
   let priorOutcome = continuationState?.priorOutcome;
@@ -111,8 +153,23 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
   if (!noSource && (!q.branch || !exactSha(q.base_sha) || !exactSha(q.starting_head))) fail('AUTHORITY_STARTING_STATE_INVALID');
   if (q.branch) branchName(q.branch);
   if (pr && pr.head.ref !== q.branch) fail('STARTING_STATE_MISMATCH');
-  const continuation = !pr && (q.existing_pr !== null || q.starting_head !== q.base_sha)
+  let continuation = !pr && (q.existing_pr !== null || q.starting_head !== q.base_sha)
     ? { head: q.starting_head, pullRequest: q.existing_pr } : null;
+  const admittingIssueSource = admitting && target === 'issue' && !noSource;
+  if (admittingIssueSource) {
+    if (!continuation) await verifyPublishedBase(api, q.base_sha, targetBase);
+    const observed = observedBranchHead === undefined ? await observeTaskBranchHead(api, q.branch) : observedBranchHead;
+    const headCheck = { check: 'task-branch-head', expected: q.starting_head, observed };
+    if (continuation) {
+      if (observed === null) fail('TASK_BRANCH_MISSING', headCheck);
+      if (observed !== q.starting_head) fail('STARTING_STATE_MISMATCH', headCheck);
+    } else if (observed !== null) {
+      if (observed !== q.starting_head) fail('TASK_BRANCH_ALREADY_EXISTS', headCheck);
+      // Keep the accepted base in the snapshot and pin the ref for checkout
+      // and publication without selecting a current PR.
+      continuation = { head: q.starting_head, pullRequest: null };
+    }
+  }
   const thread = `Task ${issueNumber} — Step ${q.step} — ${semantic.kind === 'change-request' ? `${semantic.change_request_id} — ` : ''}${q.purpose}`;
   const execution = { issue, ...(pr ? { pr, review: { ...typed.record, commit_id: semantic.reviewed_head_sha } } : {}),
     issueNumber, branch: q.branch, historicalBase: q.base_sha, startHead: q.starting_head,
@@ -132,8 +189,9 @@ export async function readAuthority(api, target, number, { targetBase, step, rou
         message: code === 'PRIOR_OUTCOME_CONTEXT_TRUNCATED' ? 'Prior Writer Outcome context was clipped to its bounded projection; inspect the exact native source for complete evidence.' : 'Prior Writer Outcome context could not be verified; no prior result or external effect is inferred.' }))] },
     ...(continuation ? { continuation } : {}) };
   if (continuation?.pullRequest) {
-    execution.pr = await findCurrentIssuePullRequest(api, execution, continuation.pullRequest);
-  }
+    execution.pr = observedPullRequest ?? await findCurrentIssuePullRequest(api, execution, continuation.pullRequest);
+  } else if (admittingIssueSource && continuation && observedPullRequest === undefined
+    && await findCurrentIssuePullRequest(api, execution)) fail('PR_AUTHORITY_CHANGED');
   return execution;
 }
 export async function admitEnvelope(api, { runId, target, number, route, issueNumber, step, transport }, { nextStep, lineage, previousRecord, recordFailure = async () => undefined } = {}) {
@@ -206,34 +264,24 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
   const attemptId = `run-${runId}`;
   let targetBase;
   try {
-    const admissionIssue = await api.get(`/issues/${target === 'issue' ? number : linkedIssue(subject?.body ?? (await api.get(`/pulls/${number}`)).body)}`);
-    if (command) issueNumber = target === 'issue' ? number : linkedIssue(subject.body);
-    if (authorityMode(admissionIssue.body) !== 'github-native-v1') requireCurrentProtocol();
-    step = launchStep(nextStep);
-    targetBase = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object.sha;
+    const pr = target === 'pull_request' ? subject ?? await api.get(`/pulls/${number}`) : null;
+    const canonicalIssueNumber = pr ? linkedIssue(pr.body) : number;
+    if (command) issueNumber = canonicalIssueNumber;
+    const issue = target === 'issue' && subject ? subject : await api.get(`/issues/${canonicalIssueNumber}`);
+    if (authorityMode(issue.body) !== 'github-native-v1') requireCurrentProtocol();
+    const admittedStep = launchStep(nextStep);
+    targetBase = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha;
     if (!exactSha(targetBase)) fail('TARGET_BASE_INVALID');
-    const a = await readAuthority(api, target, number, { targetBase, step, route, runId, lineage, previousRecord });
+    if (pr) assertPr(pr, number);
+    assertIssue(issue);
+    const a = await resolveAuthority(api, { target, issueNumber: canonicalIssueNumber, issue, pr },
+      { targetBase, step: admittedStep, route, runId, lineage, previousRecord, admitting: true });
     if (a.request && a.request.route !== route) fail('AUTHORITY_ROUTE_MISMATCH');
     if (a.issueNumber !== issueNumber) fail('CANONICAL_ISSUE_AMBIGUOUS');
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
-    const noSource = a.request?.route === 'manual' && a.branch === null;
-    if (!noSource && target === 'issue' && !a.continuation) {
-      await verifyPublishedBase(api, a.historicalBase, targetBase);
-      if (a.startHead !== a.historicalBase) await verifyPublishedBase(api, a.startHead, targetBase);
-    }
     if (a.pr && a.pr.head.sha !== a.startHead) fail('STARTING_STATE_MISMATCH', { check: 'pr.starting-head', expected: a.startHead, observed: a.pr.head.sha });
-    if (target === 'issue' && !noSource) {
-      const refs = await api.get(`/git/matching-refs/heads/${a.branch}`);
-      if (!Array.isArray(refs)) fail('STARTING_STATE_MISMATCH');
-      const exact = refs.filter(r => r.ref === `refs/heads/${a.branch}`);
-      if (a.continuation) {
-        if (!exact.length) fail('TASK_BRANCH_MISSING');
-        if (exact.length !== 1 || exact[0].object?.sha !== a.startHead) fail('STARTING_STATE_MISMATCH', { check: 'task-branch-head', expected: a.startHead, observed: exact.map(ref => ref.object?.sha ?? null) });
-        if (!a.continuation.pullRequest && await findCurrentIssuePullRequest(api, a)) fail('PR_AUTHORITY_CHANGED');
-      } else if (exact.length) fail('TASK_BRANCH_ALREADY_EXISTS');
-    }
     return { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
-      target, number, issueNumber: a.issueNumber, route, step,
+      target, number, issueNumber: a.issueNumber, route, step: admittedStep,
       ...command,
       branch: a.branch, startHead: a.startHead, historicalBase: a.historicalBase, targetBase,
       reviewId: a.review?.id ?? null, authorityDigest: a.authorityDigest,
@@ -347,7 +395,7 @@ export async function revalidateAuthority(api, e, { reporting = false, handoff =
     || current.continuation.hold && !old.continuation.hold)) fail('AUTHORITY_CHANGED');
   // This starting-state observation belongs only to active execution actions.
   // Exact retained result/recovery authority does not acquire a new main gate.
-  if (verifyStartingBase && !reporting && e.target === 'issue' && !e.continuation && e.branch !== null) {
+  if (verifyStartingBase && !reporting && startsAtPublishedIssueBase(e)) {
     const currentBase = (await api.get(`/git/ref/heads/${CONSUMER.baseBranch}`)).object?.sha;
     await verifyPublishedBase(api, e.historicalBase, currentBase);
     if (e.startHead !== e.historicalBase) await verifyPublishedBase(api, e.startHead, currentBase);
