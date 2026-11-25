@@ -345,6 +345,21 @@ class IntentArtifactStageTests(unittest.TestCase):
         self.assertEqual((destination / 'bin/reviewer-mcp-http').read_bytes(), Path('/usr/bin/true').read_bytes())
         self.assert_old_available()
 
+    def test_same_release_consume_retains_only_an_exact_matching_reviewer_binary(self):
+        self.prepare()
+        destination = self.parent / self.revision
+        binary = destination / 'bin/reviewer-mcp-http'
+        stage.run('consume', self.root, self.expected, destination)
+        original = stage.stamp(binary.stat())
+
+        stage.run('consume', self.root, self.expected, destination)
+        self.assertEqual(stage.stamp(binary.stat()), original)
+
+        binary.write_bytes(b'replace this incorrect binary')
+        stage.run('consume', self.root, self.expected, destination)
+        self.assertNotEqual(binary.stat().st_ino, original[1])
+        self.assertEqual(binary.read_bytes(), Path('/usr/bin/true').read_bytes())
+
     def test_changed_bytes_modes_unknown_aliases_and_hardlinks_fail_before_consume(self):
         self.prepare()
         source = self.root / 'release/reviewed-source/source-proof.txt'

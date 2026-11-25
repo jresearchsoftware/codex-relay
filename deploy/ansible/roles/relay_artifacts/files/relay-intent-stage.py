@@ -268,7 +268,7 @@ def verify(root, expected):
     return receipt
 
 
-def copy_tree(source, destination):
+def copy_tree(source, destination, *, retained_binary=None):
     if destination.exists() or destination.is_symlink():
         protected(destination, directory=True)
     else:
@@ -283,11 +283,18 @@ def copy_tree(source, destination):
             temporary.symlink_to(os.readlink(path))
             os.replace(temporary, target)
         elif path.is_dir():
-            copy_tree(path, target)
+            copy_tree(path, target, retained_binary=retained_binary)
         else:
+            raw = read_regular(path)
+            mode = stat.S_IMODE(path.stat().st_mode)
             if target.exists() or target.is_symlink():
-                protected(target)
-            atomic(target, read_regular(path), stat.S_IMODE(path.stat().st_mode))
+                current = protected(target)
+                # Replacing byte-identical executable bytes would invalidate
+                # the running Reviewer's kernel-mapped inode proof.
+                if (target == retained_binary and stat.S_IMODE(current.st_mode) == mode
+                        and read_regular(target) == raw):
+                    continue
+            atomic(target, raw, mode)
 
 
 def consume_destination(root, data, argument):
@@ -420,7 +427,7 @@ def run(action, root, data, argument=None):
     plan = check_destination(root / 'release', destination, allowed_links(receipt['sourceAcquisition']))
     if action == 'check-destination':
         return plan
-    copy_tree(root / 'release', destination)
+    copy_tree(root / 'release', destination, retained_binary=destination / 'bin/reviewer-mcp-http')
     return receipt
 
 
