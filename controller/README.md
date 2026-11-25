@@ -301,7 +301,9 @@ precreated ref at that same commit can be used directly. Writer records its
 observed head for the ordinary non-force publication. When the preceding PR
 merged the retained result into the configured base, deleting its branch or
 recreating it at the new authorized base permits a new Step on the same name.
-The prior admission and result keep their original identities. A different
+If the branch still points to Writer’s published head, a new Step can continue
+there after the merge. The prior admission and result keep their original
+identities. A different
 live tip, unresolved prior publication, or loss of unmerged retained work
 requires reconciliation. An explicit continuation must still match its selected
 head and PR. Writer checks existing branch PRs across bases before using the

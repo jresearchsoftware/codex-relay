@@ -97,9 +97,10 @@ test('a fresh native Step continues exact Writer-published progress from a conta
   assert.deepEqual((await f.store.get(99)).envelope, original);
 });
 
-for (const [description, { recreate = false, merged = true, wrongBase = false }] of [
+for (const [description, { recreate = false, retain = false, merged = true, wrongBase = false }] of [
   ['after a verified squash merge and branch deletion', {}],
   ['after a verified squash merge and recreation at the new base', { recreate: true }],
+  ['after a verified squash merge with the published ref retained', { retain: true }],
   ['after branch deletion without a merge', { merged: false }],
   ['when the historical PR was merged to the wrong base', { wrongBase: true }]
 ]) {
@@ -124,7 +125,7 @@ for (const [description, { recreate = false, merged = true, wrongBase = false }]
     }
     const base = await f.command(f.source, ['rev-parse', CONSUMER.baseBranch]);
     assert.notEqual(base, prior.publishedHead);
-    await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', '-d', `refs/heads/${original.branch}`]);
+    if (!retain) await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', '-d', `refs/heads/${original.branch}`]);
     if (recreate) await f.command(f.source, ['push', f.remote, `${base}:refs/heads/${original.branch}`]);
     const get = f.api.get.bind(f.api);
     const list = f.api.list.bind(f.api);
@@ -146,10 +147,11 @@ for (const [description, { recreate = false, merged = true, wrongBase = false }]
     assert.notEqual(admitted.status, 'BLOCKED', JSON.stringify(admitted.envelope));
     assert.equal(admitted.envelope.step, 2);
     assert.equal(admitted.envelope.branch, original.branch);
-    assert.equal(admitted.envelope.startHead, base);
+    const start = retain ? prior.publishedHead : base;
+    assert.equal(admitted.envelope.startHead, start);
     assert.equal(admitted.envelope.request.lineage.attempt, original.attemptId);
     assert.equal(admitted.envelope.request.existing_pr, null);
-    assert.deepEqual(admitted.envelope.continuation, recreate ? { head: base, pullRequest: null } : undefined);
+    assert.deepEqual(admitted.envelope.continuation, recreate || retain ? { head: start, pullRequest: null } : undefined);
     assert.deepEqual(f.issue.labels, [{ name: 'step-2' }]);
   });
 }

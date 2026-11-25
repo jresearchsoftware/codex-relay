@@ -123,7 +123,11 @@ async function resolveAuthority(api, { target, issueNumber, issue, pr }, { targe
       observedBranchHead = await observeTaskBranchHead(api, semantic.branch);
       if (observedBranchHead === retainedHead) {
         observedPullRequest = await findCurrentIssuePullRequest(api, { issueNumber, branch: semantic.branch,
-          continuation: { head: retainedHead } }, previousRecord.prNumber ?? null);
+          continuation: { head: retainedHead } });
+        if (previousRecord.prNumber && observedPullRequest?.number !== previousRecord.prNumber) {
+          if (observedPullRequest || semantic.existing_pr !== null
+            || !await hasMergedPriorPullRequest(api, previousRecord, retainedHead)) fail('PR_AUTHORITY_CHANGED');
+        }
         if (observedPullRequest && observedPullRequest.head.sha !== retainedHead) fail('STARTING_STATE_MISMATCH');
         continuationState = { branch: semantic.branch, base_sha: semantic.base_sha,
           starting_head: retainedHead, existing_pr: observedPullRequest?.number ?? null };
