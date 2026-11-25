@@ -305,12 +305,16 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       && (execution.containment === 'reaped' || execution.child === 'not_started' && execution.containment === 'not_required');
   }
   const retainedPublicationHead = r => r.publicationIntent ? r.publicationIntent.head : r.publishedHead;
+  function interruptedSuccessOutcome(r, saved) {
+    return exactSha(r.publishedHead) && r.successOutcomeIntent?.head === r.publishedHead
+      && saved?.progress?.head === r.publishedHead && saved.execution?.result?.status === 'success';
+  }
   async function retainedPublicationReplay(r) {
     const e = r.envelope;
     const head = retainedPublicationHead(r);
     if (e.route !== 'auto' || r.outcome || !exactSha(head)) return null;
     const saved = await journal?.get(e.runId, e.repository);
-    return containedExecutionJournal(saved, e) && !saved.outcome && !saved.diagnostic
+    return containedExecutionJournal(saved, e) && !saved.outcome && (!saved.diagnostic || interruptedSuccessOutcome(r, saved))
       && saved.collection?.preserved === true && saved.collection.head === head ? head : null;
   }
   async function commentOnce(r, key, number, body, { legacyBodies = [] } = {}) {
@@ -1066,7 +1070,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const saved = await journal?.get(e.runId);
         if (e.route !== 'auto' || !recovery && (r.finalHead || r.outcome)
           || !containedExecutionJournal(saved, e)
-          || !recovery && (saved.outcome || saved.diagnostic)) fail('COLLECTION_NOT_ADMITTED');
+          || !recovery && (saved.outcome || saved.diagnostic && !interruptedSuccessOutcome(r, saved))) fail('COLLECTION_NOT_ADMITTED');
         await guardPublication(e);
         const expected = recovery ? await authorizeRecoveryCollection({ api, record: r, authorizationId: request.authorizationId }) : null;
         if (recovery && (saved.execution.child !== 'started' || saved.execution.result?.status !== 'success'
