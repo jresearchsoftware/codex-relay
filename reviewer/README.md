@@ -77,8 +77,10 @@ Publication with an uncertain response retains the original operation identity.
 During a compatible planned replacement, keep the old service running while
 staging the candidate, then perform one ordered service restart. SIGTERM closes
 the old accept loop gracefully and lets its accepted calls finish, including
-native publication and manual Writer submissions. The socket retains pending
-connections until the new process can serve them. There is one serving process
+native publication and manual Writer submissions. Calls dispatched by the old
+HTTP server can still enter the handler after readiness switches to draining.
+The socket retains pending connections until the new process can serve them.
+There is one serving process
 at a time, so this change introduces no old/new overlap over SQLite or external
 effects. SQLite reservations, frozen bodies, original identities and uncertain
 POST recovery remain unchanged; historical unresolved rows alone do not describe
