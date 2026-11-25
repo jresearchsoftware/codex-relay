@@ -1119,6 +1119,7 @@ mod pagination {
             store: state.native.store.clone(),
             github,
             trusted_client_ca: Arc::new(Vec::new()),
+            maintenance: maintenance::Maintenance::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -1756,6 +1757,7 @@ async fn v4_fresh_cr_binds_observed_base_but_recovers_reserved_body_after_base_m
         store: Arc::new(Mutex::new(store)),
         github: github::Github::mock_api(mock_api(state.clone()).await),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: Default::default(),
     };
     let args = json!({"repository":TEST_REPOSITORY,"record":cr});
@@ -1848,6 +1850,7 @@ async fn historical_authority_reservation_recovers_exact_original_body_across_re
         store: Arc::new(Mutex::new(store)),
         github: github::Github::mock_api(mock_api(state.clone()).await),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: Default::default(),
     };
     let args = json!({"repository":TEST_REPOSITORY,"record":record});
@@ -2243,6 +2246,7 @@ async fn native_app(state: &MockState) -> App {
         store: state.store.clone(),
         github: github::Github::mock_api(mock_api(state.clone()).await),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: Default::default(),
     }
 }
@@ -4211,6 +4215,7 @@ async fn cancellation_app(gate: PublicationCancellationGate) -> App {
         github: github::Github::mock_api(format!("http://{address}"))
             .with_test_installation(state.installation_id),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: state.observed_arguments.clone(),
     }
 }

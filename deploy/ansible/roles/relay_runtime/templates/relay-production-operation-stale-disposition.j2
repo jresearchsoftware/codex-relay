@@ -316,6 +316,12 @@ PY
       exit 72
     }
     if [[ "$reviewer_enabled_before" == enabled || "$reviewer_enabled_before" == enabled-runtime ]]; then
+{% if relay_reviewer_socket_activation | default(false) %}
+      # A retained socket can reactivate a disabled service on incoming traffic.
+      # Keep the existing stale-operation preconditions above; this is only the
+      # socket half of that already-authorized disable transition.
+      /bin/systemctl stop '{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
+{% endif %}
       /bin/systemctl stop "$reviewer_service"
       /bin/systemctl disable "$reviewer_service"
     fi

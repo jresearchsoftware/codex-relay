@@ -13,17 +13,15 @@ workflow, generated integration directories and reviewed PROD cutover. The
 phase-specific commands below remain expert and retained compatibility APIs;
 their prepublication/configuration comparison rules are not Git Apply gates.
 
-For an owner-designated isolated TEST deployment, use the standing
+For disposable TEST, use the standing
 [TEST Environment Authority](../docs/execution-policy.md#test-environment-authority).
-Keep reproduction, related repairs, representative installation and the original
-operation within the [bounded repair policy](../docs/execution-policy.md), through
-durable result publication. Source acceptance and the normal owner-triggered
-deployment path follow the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes);
-documentation alone proves no installed capability or deployment result.
-Disposable TEST cleanup and rebuilding may use suitable shells and tools;
-these production-safe lifecycle procedures are optional inside that sandbox.
-When qualifying a product lifecycle interface, exercise and report its actual
-behavior rather than treating manual sandbox cleanup as proof of that interface.
+The owning execution can provision or expand TEST resources within established
+authority, including TEST-specific configuration of shared services when the
+effects preserve PROD and other non-TEST users. Use suitable shells, tools,
+integration and cleanup for TEST setup. Exercise the actual installed interface
+when qualifying the product lifecycle and report the observed identities and
+results. Product-source acceptance and normal owner-triggered deployment follow
+the [Task workflow](../docs/task-workflow.md#owner-acceptance-and-execution-routes).
 
 ## Inputs and invocation
 
@@ -1188,6 +1186,27 @@ are refused. It receives only
 `render_deployment()` and template as Git-managed Apply. Runner, actor and
 host lifecycle contracts are unchanged.
 
+Managed-pool Git Apply supports a staged rollout. First install a Relay
+release advertising `managed-pool-reservation-v1` while retaining the existing
+private configuration and deployment workflow. In isolated TEST, then add
+`"poolReservation": "same-run-v1"` to `environment.localApply` and review the
+regenerated private deployment workflow alongside that configuration. The
+projected workflow checks the installed capability before invoking sudo. The
+protected helper compares the exact workflow blob at the dispatch commit with
+the selected product's projection before any installation action.
+
+On that opt-in path, the Apply job acquires the primary runner and one short-lived
+reservation job from the same GitHub run acquires each remaining desired slot.
+An already running ordinary job finishes before its slot can be acquired.
+The protected helper proves the exact jobs and local processes, withdraws
+routing labels and waits for all bound consumers to drain. It restores the
+labels after admission reopens. When the jobs finish, GitHub can assign the
+original queued runs to the still-connected listeners. The mode requires the
+entire desired pool online and an unchanged registration and service plan.
+Keep the initial install and any managed-pool topology or runner-service
+change on the existing path. Loss of the exact reservation during Apply stops
+the operation and preserves maintenance evidence for diagnosis.
+
 The same `RELAY_WORKFLOW_PROJECTION_RESULT=` JSON line has `schemaVersion: 1`,
 `kind: "deployment"`, `repository`, `sourceRepository`, `productRevision`,
 `configSha256`, `directory`, `files` and `changed`. There is no consumer
@@ -1448,6 +1467,35 @@ completion, creates no lifecycle authority and never launches the helper again.
 A progress-channel or cleanup failure reports a visible warning while retaining
 the original operation result and private evidence.
 
+The owner preparation interval reports the native Actions run ID. The installer
+reports its own preparation, intake pause and runner drain durations in
+`RELAY_APPLY_TIMING`. The installer operation UUID joins these durations to
+its Ansible timing records. The outer Actions setup and teardown and process
+handoff gaps are outside these measurements.
+
+Apply also emits bounded `RELAY_ANSIBLE_TIMING` records through the existing
+private backend log and public progress filter. Each record carries the lifecycle
+operation UUID and a distinct backend invocation UUID. Task records expose only
+an opaque source identifier, fixed role category, outcome and monotonic start/end
+milliseconds since callback initialization; names, host identities, arguments,
+variables, paths and result data are excluded. `no_log` task identifiers and roles
+are redacted. Resolve an identifier locally with the exact observed product
+checkout: `python3 deploy/timing.py --resolve-task <12-hex-id>`.
+
+Task observations cover one host's whole task (including loop and retry time),
+with handlers and dynamic includes retaining normal Ansible semantics. They are
+wall observations, not exclusive execution costs: hosts, roles and includes may
+overlap, so never sum them as exclusive costs. Role records span first observed
+start through last completion, including intervening work. The summary reports
+the union of completed task intervals and remaining callback wall-clock gaps;
+gaps can include scheduling, parsing, callbacks and unobserved work. Separate
+backend wall time includes process startup/shutdown and transport overhead;
+subtracting callback wall time indicates an unattributed wrapper gap, not a
+specific task cost. Completed task records flush immediately, including failures;
+abrupt termination may omit summaries and leave active tasks unmeasured. Timing
+is diagnostic evidence and supplies no success or installation proof. The default
+Ansible stdout callback is unchanged, and no extra probe or deployment pass runs.
+
 Backend progress names the observed package, artifact, activation or verification
 dependency without copying task output or configuration into Actions. Long waits
 report elapsed time for that child/dependency. `child-completed` or a zero backend
@@ -1556,8 +1604,8 @@ command the owner must reproduce for each compatible update.
 
 Source installation and retained-release reconciliation normalize the fixed
 owner-lifecycle Python closure (`owner_lifecycle.py`, `lifecycle.py`,
-`lifecycle_process.py`, `config.py`,
-`installed_config.py`, `deployment_lock.py`) to root:root `0644`, its `deploy`
+`lifecycle_process.py`, `config.py`, `installed_config.py`, `deployment_lock.py`,
+`git_intent.py`, `repository_source.py`, `timing.py`) to root:root `0644`, its `deploy`
 parent to root:root `0755`. The existing directory tasks protect `reviewed-source`
 and its release parents, retaining their assigned groups and modes. The complete
 archived source loses group/world write permissions while retaining its bytes,
@@ -1579,7 +1627,104 @@ lock. Already admitted automatic controllers retain their reservation through
 child containment, publication and terminal evidence; queued/new Tasks and CRs
 cannot launch Codex. Drain releases that lock between observations, waits up to
 30 minutes for valid work and rejects unknown execution or publication evidence.
-No service or runner is stopped to drain. Registered runners remain online.
+For ordinary managed-pool Apply, the owner preflight first preserves the live
+installation while the candidate is prepared. Relay then reserves maintenance
+under the existing pool lock and withdraws custom GitHub scheduling labels
+from the exact registered General runners. Admission stays open while assigned
+jobs finish, including Controller and Writer publication. The drain checks each
+protected admission endpoint bound to the pool for active or unknown work,
+including effects from another consumer namespace. It stops the
+idle General units and keeps the cgroup-proven owner transport alive when the
+current owner invocation itself uses the pool. It leaves the dedicated
+Production Runner outside this pool operation.
+
+After the existing gate, backend and installed-state checks succeed, Relay
+verifies Reviewer readiness and stages the originally active General units.
+It keeps one drained runner offline if available. After opening admission, it
+verifies that every pool-bound admission endpoint is open before restoring the
+original labels. The withheld runner's exact registration must report offline
+and idle before eligibility returns. Relay verifies its original labels, records
+the start intent, then verifies that the runner comes online with those labels.
+In TEST, restoring labels on online runners alone left original jobs
+queued until a matching runner reconnected. When the owner invocation is the
+only originally active pool member, the pool preserves that transport and
+has no separate member to reconnect. GitHub dispatches eligible original
+events from its queue. Relay allocates a Step only after admission. The managed
+operation requires the same physical pool binding and capacity. Plain graceful
+stop and the separate recovery and reinstall paths retain their existing
+operational contracts.
+
+The live pause boundary combines observed label withdrawal, runner job state
+and a cgroup freeze before signaling an idle listener. GitHub does not
+document an atomic pause API for persistent runners. Its runner can acquire a
+job before starting a Worker, and listener shutdown cancels an active job
+dispatch. An idle cgroup and REST busy readback therefore leave an assignment
+window. GitHub requeues unclaimed assignments and applies a finite queue limit.
+See the [GitHub routing contract](https://docs.github.com/en/actions/reference/runners/self-hosted-runners),
+[runner listener](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/Runner.cs)
+and [job dispatcher](https://github.com/actions/runner/blob/v2.338.2/src/Runner.Listener/JobDispatcher.cs).
+A single rehearsal establishes its observed timings only. Treat an
+uncertain stop, label mutation or restart as an original-operation blocker.
+Inspect the pool receipt, native jobs and admission gate before recovery.
+If Apply fails before quiesce after the pool has drained, it verifies the
+original runtime and restores runner eligibility while admission is open.
+With same-run reservations, a failure before quiesce can also restore a
+partially withdrawn set of labels. This requires the original live reservation,
+healthy listeners and open admission for every bound consumer. After verified
+admission reopens, Apply also reconciles an uncertain label-restoration response
+against the same operation. A lost holder or unproven state retains the receipt.
+If the pool state remains uncertain while admission is open, Apply reports
+the original operation and the observed phase. The pool recovery warning
+reports `before-quiesce` if admission never closed, `old-admission-open` if
+Apply verified and restored the original gate during a pre-cutover abort, and
+`verified-admission-open` if Apply verified the target and reopened admission.
+In each case runner eligibility may still need recovery for the original operation.
+
+If the installer handles an interrupt after closing admission, it runs the
+same original-operation recovery checks as for an Apply error. Before cutover
+it can restore the verified old gate. Once cutover starts it retains the
+closed gate for recovery of that operation. An uncatchable process termination
+requires inspection of the last durable state.
+
+When the original native reservation has ended, a host administrator can
+restore eligibility for its retained operation from a root session outside
+the General Runner pool:
+
+```sh
+/opt/<namespace>/relay-managed-pool <installed-sha> --recover-reservation <operation>
+```
+
+Use the installed reviewed revision and the operation reported by Apply.
+Confirm that the original GitHub reservation jobs have ended. This command
+requires the exact retained reservation, released local holder processes, and
+open admission for every bound consumer. It verifies that the existing pool
+can be preserved, stops one idle runner that still has its routing labels
+withdrawn, restores the saved labels, then brings that runner back online to
+wake pending GitHub jobs. Once restoration starts, a retry continues from
+the saved operation. A closed admission gate still requires the original
+Apply recovery procedure.
+
+An active Reviewer with the maintenance control acknowledges a Writer-only pause
+and drains its accepted Writer submissions before replacement. Review and
+Decision requests keep using the Reviewer during preparation. The service
+owns its existing SQLite and native publication records throughout a compatible
+socket-activated restart. The first migration from the active legacy service
+uses the previous stop and restart behavior when the installed maintenance
+helper and socket unit are absent. Apply binds that transition to the observed
+Reviewer PID and releases the old listener before starting the socket-activated
+replacement. Accepted legacy requests can be interrupted. The managed nginx
+configuration returns 503 with Retry-After during upstream unavailability.
+Later socket-activated updates require authenticated maintenance status.
+See [Reviewer planned maintenance](../reviewer/README.md#planned-apply-and-accepted-http-calls)
+for readiness, backlog limits and uncertain publication recovery.
+
+If Apply fails before quiesce or proves the original admission gate reopened,
+it restores Reviewer Writer submissions after authenticating the same ready
+Reviewer process. The existing closed-gate recovery resumes a retained pause
+only for the original operation after verifying activation. If the pause cannot
+be resolved, `RELAY_REVIEWER_RECOVERY_REQUIRED` reports the operation and gate
+boundary. Inspect that operation with the root-owned `relay-reviewer-maintenance
+status` helper and the existing deployment diagnostics before retrying.
 
 Manual Outcome socket helpers keep stderr in the protected host journal while
 stdout remains the bounded socket response. This retains early failures before
@@ -1591,10 +1736,13 @@ The qualification snapshot omits host causal, recorder-failure and secondary
 evidence as well as protected streams; inspect the configured host diagnostic
 record or journal through the authorized host channel for that detail.
 
-For a source-only upgrade with unchanged effective deployment inputs, ordinary
-`install` can select a bounded native promotion instead of the full Ansible
-traversal. This requires exact unchanged Reviewer source, complete build inputs
-and pinned build contract; the current binary must match the installed manifest.
+Native source-only promotion requires unchanged effective deployment inputs,
+exact unchanged Reviewer source, complete build inputs and the pinned build
+contract. The current Reviewer binary must match the installed manifest.
+The final and post-promotion checks also require the same online General
+listeners and routing labels. When Apply plans to withdraw those labels and
+drain listeners, it stages the full path before starting pool maintenance and
+performs both ordinary pool preflights.
 Initial source-only preparation batches the existing frozen archive/tree
 validator, canonical consumer rendering and all six actual Node syntax checks
 into one private target call. The archive travels as bounded gzip data; the
@@ -1604,6 +1752,11 @@ Unsupported frontend rendering or payload bounds
 retain the original source preparation play before submission. A failed or
 unproved submitted batch stops the operation. First-install prerequisite
 preparation and the later complete artifact path keep their existing ordering.
+The complete artifact stage renders the desired Reviewer configuration with
+the same template and target gateway discovery as installation. Before
+Apply withdraws runner eligibility, the staged Reviewer validates this
+configuration with `--check-config`. That check exits before credential
+loading, binding the listener or opening SQLite.
 An operation-scoped catalogue renders canonical task-owned files, modes,
 identities and all 32 namespace probes. Native checks verify current host/App/TLS
 inputs, pool units/registrations/group eligibility, runtime imports and readiness,
@@ -1886,8 +2039,9 @@ Use an explicit Authorization header, or account for `GH_TOKEN` taking
 precedence over `GITHUB_TOKEN` when invoking `gh`; a default user token is not
 proof of App authentication. An organization runner token is not technically
 TEST-scoped. Preserve the selected TEST repository allowlist, restricted trusted
-workflow/ref policy and secret boundary during every operation. This authority
-does not permit production or shared-resource administration.
+workflow/ref policy and secret boundary during every operation. Keep
+PROD and non-TEST resources protected. TEST-specific changes to shared
+resources follow the same effect boundary.
 
 Use the public registration phase after installing the exact accepted product:
 
@@ -2063,7 +2217,7 @@ A reachable General or foreign unit refuses before restart, including indirect
 paths. The integration tests direct foreign `PartOf` and foreign-to-General
 chains with unchanged process identities, then the permitted adoption path.
 
-The governed standalone CLI is pinned to **0.171.0**. The credential-free
+The governed standalone CLI is pinned to **0.172.0**. The credential-free
 launcher default for new automatic invocations is native
 `--sandbox danger-full-access`, with the existing noninteractive approval policy
 `never`. No consumer permission fields or per-Task grant hierarchy are required.

@@ -585,8 +585,11 @@ trusted controller operation asks root to complete this reservation; root reads
 the matching runner journal itself and requires known containment, matching
 terminal receipts and no unresolved publication intent. Caller JSON cannot
 assert that proof. Earlier attempts without `controllerLifecycle` require the
-same existing terminal journal evidence. Missing, mismatched or unknown
-execution and ambiguous publication fail closed.
+same existing terminal journal evidence. For already recorded controller
+completion with known containment and resolved effects, a missing Outcome
+alone does not block a lifecycle drain. Exact Outcome proof still applies to
+Task continuation and consumer configuration replacement. Missing, mismatched
+or unknown execution and ambiguous publication fail closed.
 
 Drain polls bounded snapshots and releases the Writer lock between snapshots,
 allowing admitted controllers to finish. Each snapshot allows
@@ -602,8 +605,10 @@ configured execution slot when known, including peers in a multi-repository
 installation. Historical absent locations stay absent. These fields are
 projections of the protected inventory, never caller-selected metadata. Timeout, unreadable state or an unknown attempt preserves quiesce for
 owner inspection. Drain neither relaunches Codex nor discards retained work or
-diagnostics. Registered runners remain online; graceful stop disables new
-automatic admission without stopping those runners.
+diagnostics. During ordinary managed-pool Apply, this gate follows the native
+runner eligibility pause and physical drain. Graceful stop continues to close
+admission while leaving the units online. See the
+[Apply contract](../deploy/README.md#shared-managed-general-runner-pool).
 
 For new native automatic label admissions, Writer stores a pre-dispatch marker
 with the reservation before projecting the Step. It retains the marker through
@@ -1462,9 +1467,16 @@ Existing consumers must inspect the semantic JSON/Outcome rather than equate the
 job conclusion with worker admission, execution or Task completion.
 
 Native run guards retain the fixed `OWNER_RUN_NOT_ADMITTED` code and predicate
-reason from Task #243. The original failed observation (expected and observed
-run/actor/status/workflow/title/target fields) now also enters the protected
-normal-mode diagnostic bundle. Ready-event checks preserve their exact failed
+reason from Task #243. When an automatic ready-label job reaches a runner while
+GitHub still reports its matching first run as queued, Writer briefly rereads
+that same run before admission. Subsequent reads and their transport retries
+share a ten-second budget. Each read rechecks native authority, and only an
+in-progress observation permits admission, under the normal ready-event and
+Task checks. If the status remains queued or authority changes, the run stops
+before reservation, Step allocation or ready-label consumption.
+
+The failed observation (expected and observed run/actor/status/workflow/title/
+target fields) enters the protected normal-mode diagnostic bundle. Ready-event checks preserve their exact failed
 field and available timeline values. An unavailable response is recorded as
 unavailable; no later API read becomes a historical observation. Nothing here
 diagnoses or replays Shared Governance Task #96.

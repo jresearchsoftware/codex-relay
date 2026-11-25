@@ -42,7 +42,13 @@ class IntentArtifactStageTests(unittest.TestCase):
             'reviewer/Cargo.lock': 'version = 4\n\n[[package]]\nname = "reviewer-mcp-http"\nversion = "0.1.0"\n',
             'reviewer/src/main.rs': 'fn main(){let _=include_str!("../../contracts/src/github-authority-v1.json");'
                                     'let _=include_str!("../../contracts/src/github-authority-v4.json");'
-                                    'println!("Usage: isolated-reviewer [OPTIONS]");}\n',
+                                    'let args: Vec<String> = std::env::args().collect();'
+                                    'if args.get(1).map(String::as_str) == Some("--check-config") {'
+                                    'assert_eq!(args[2], "--config");'
+                                    'let config = std::fs::read_to_string(&args[3]).unwrap();'
+                                    'assert!(config.contains("reviewer-mcp") && config.contains("/mcp"));'
+                                    'println!("REVIEWER_CONFIG_VALID");'
+                                    '} else { println!("Usage: isolated-reviewer [OPTIONS]"); }}\n',
             'contracts/src/github-authority-v1.json': '{"schema_version":"3.0"}\n',
             'contracts/src/github-authority-v4.json': '{"schema_version":"4.0"}\n',
             'controller/src/codex-dispatch-entrypoint.mjs': 'export const status="ready";\n',
@@ -698,6 +704,12 @@ class IntentArtifactStageTests(unittest.TestCase):
                 self.assert_old_available()
         binary = self.root / 'release/bin/reviewer-mcp-http'
         self.assertTrue(binary.is_file())
+        config_path = self.root / 'reviewer-config.json'
+        self.assertEqual(stat.S_IMODE(config_path.stat().st_mode), 0o600)
+        staged_config = json.loads(config_path.read_bytes())
+        self.assertEqual(staged_config['artifact']['commit'], revision)
+        self.assertEqual(staged_config['service']['mount_path'], '/mcp')
+        self.assertFalse((Path(variables['relay_config_root']) / 'reviewer-mcp.json').exists())
         self.assertFalse((self.root / 'release/reviewer-target').exists())
         self.assertEqual(json.loads((self.root / 'release/artifact-manifest.json').read_text())['commit'], revision)
         self.assertFalse((self.parent / 'active-config').exists())

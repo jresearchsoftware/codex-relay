@@ -102,6 +102,7 @@ def unit_names(config):
     extra_slots = [] if 'generalRunnerPool' in config['consumer'] else config['consumer'].get('executionSlots', [])[1:]
     return names + [namespace + '-slot-' + slot['id'] + '-runner.service'
                     for slot in extra_slots] + [
+        names[2].removesuffix('.service') + '.socket',
         namespace + '-relay-manual-outcome.socket', namespace + '-relay-manual-outcome@.service']
 
 
@@ -228,9 +229,10 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         # A missing deployment snapshot cannot let a newly selected unit name
         # hide a differently named service still using this runtime namespace.
         metadata = {}
-        if any((prefix in line or line == 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock')
+        unknown_lines = unknown_unit_text(path, root, owner_uid, metadata).splitlines()
+        if ('# relay-install-root=' + prefix.rstrip('/') in unknown_lines or any((prefix in line or line == 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock')
                and not line.lstrip().startswith(('#', ';'))
-               for line in unknown_unit_text(path, root, owner_uid, metadata).splitlines()):
+               for line in unknown_lines)):
             raise ValueError('REINSTALL_UNSUPPORTED_RUNTIME_UNIT')
         warning = foreign_unit_warning(path, metadata, root, owner_uid)
         if warning is not None:
@@ -275,11 +277,16 @@ def inspect_units(config, paths, root, owner_uid, runner, *, stopped=False, list
         protected(path, root, owner_uid)
         lines = path.read_text().splitlines()
         socket = name.endswith('.socket')
-        binding = ('Unit=' + name.removesuffix('.timer') + '.service' in lines if name.endswith('.timer')
-                   else 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock' in lines
-                   and 'Accept=yes' in lines and 'SocketUser=root' in lines
-                   and 'SocketGroup=' + config['environment']['reviewerUser'] in lines and 'SocketMode=0660' in lines if socket
-                   else any(line.startswith('ExecStart=' + prefix) for line in lines))
+        if name == names[2].removesuffix('.service') + '.socket':
+            binding = ('# managed-by: codex-relay-reviewer-socket' in lines
+                       and '# relay-install-root=' + prefix.rstrip('/') in lines
+                       and 'Service=' + names[2] in lines and 'Accept=no' in lines)
+        else:
+            binding = ('Unit=' + name.removesuffix('.timer') + '.service' in lines if name.endswith('.timer')
+                       else 'ListenStream=/run/' + config['environment']['namespace'] + '-manual-outcome.sock' in lines
+                       and 'Accept=yes' in lines and 'SocketUser=root' in lines
+                       and 'SocketGroup=' + config['environment']['reviewerUser'] in lines and 'SocketMode=0660' in lines if socket
+                       else any(line.startswith('ExecStart=' + prefix) for line in lines))
         if fragment == template:
             binding = binding and 'ExecStart=' + prefix + 'relay-manual-outcome-writer' in lines and 'User=root' in lines
         require(binding and fields.get('FragmentPath') == '/etc/systemd/system/' + fragment,
@@ -723,7 +730,9 @@ def decommission(config, revision, report, *, root=Path('/'), owner_uid=0,
         write_new(paths['journal'], journal)
         write_new(paths['operation'], {'schemaVersion': '1', 'state': 'RECOVERY_REQUIRED',
                                       'phase': 'apply', 'target_head': revision})
-        for name in units:
+        # Stop activation sources before their services, otherwise an arriving
+        # private TCP request can reactivate Reviewer during retirement.
+        for name in sorted(units, key=lambda name: not name.endswith(('.timer', '.socket'))):
             for action in ['stop', 'disable']:
                 journal['serviceTransition'] = {'unit': name, 'action': action}
                 update_journal(paths['journal'], journal, 'RESERVED')
@@ -1139,9 +1148,9 @@ def recover(config, revision, *, root=Path('/'), owner_uid=0, owner_gid=0,
         timer = unit_names(config)[0]
         if units.get(timer) == 'active':
             checked_systemctl(runner, 'stop', timer)
-        socket = unit_names(config)[-2]
-        if units.get(socket) == 'active':
-            checked_systemctl(runner, 'stop', socket)
+        for socket in (name for name in units if name.endswith('.socket')):
+            if units.get(socket) == 'active':
+                checked_systemctl(runner, 'stop', socket)
         stopped = inspect_units(config, paths, root, owner_uid, runner, stopped=True, warnings=warnings)
         require(set(stopped) == set(units), 'RECOVERY_UNIT_STATE_CHANGED')
         workers_quiescent(config, root, user_ids, stopped_units=stopped)

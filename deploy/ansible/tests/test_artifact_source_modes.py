@@ -34,7 +34,7 @@ def test_actual_archive_export_and_retained_repair_preserve_bytes_modes_and_syml
     payload = {'controller/src/codex-dispatch-entrypoint.mjs': ('dispatch fixture\n', 0o644),
                'controller/src/diagnostic-store-entrypoint.mjs': ('diagnostic fixture\n', 0o644),
                'bin/executable': ('#!/bin/sh\nexit 0\n', 0o755)}
-    for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py',
+    for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'timing.py', 'config.py', 'installed_config.py',
                  'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
         payload['deploy/' + name] = ('# dependency fixture\n', 0o644)
     for name, (body, mode) in payload.items():

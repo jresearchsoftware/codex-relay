@@ -153,6 +153,33 @@ test('explicit recovery target requires the bound recovery phase and drained rec
   assert.equal((await admission.resume({ operationId })).phase, 'open');
 });
 
+test('maintenance can drain a contained historical attempt without manufacturing its missing Outcome', async t => {
+  const { admission, store } = await control(t);
+  const runId = 118;
+  const record = {
+    envelope: { version: VERSION, runId, attemptId: 'run-118', route: 'auto',
+      consumerDigest: CONSUMER_DIGEST, repository: CONSUMER.repository, issueNumber: 78 },
+    controllerLifecycle: { version: 1, status: 'complete', child: 'started', containment: 'reaped' },
+  };
+  await store.put(runId, record);
+  assert.equal((await admission.preflightConsumerTransition({ desiredDigest: CONSUMER_DIGEST })).eligible, true);
+  const changedDigest = 'f'.repeat(64);
+  const transition = await admission.preflightConsumerTransition({ desiredDigest: changedDigest });
+  assert.equal(transition.consumerChange, true);
+  assert.deepEqual(transition.unknown, [runId]);
+  await admission.quiesce({ operationId, target });
+  assert.equal((await admission.drained({ operationId })).drained, true);
+  assert.equal((await store.get(runId)).outcome, undefined);
+  await assert.rejects(admission.assertTaskComplete(78), { code: 'PRIOR_EXECUTION_UNRESOLVED' });
+  await assert.rejects(admission.checkConsumerTransition({ operationId, target }), { code: 'ADMISSION_NOT_DRAINED' });
+  await assert.rejects(admission.transitionConsumer({ operationId, previousDigest: CONSUMER_DIGEST, target }),
+    { code: 'ADMISSION_NOT_DRAINED' });
+  await store.put(runId, { ...record, commentIntent: { kind: 'outcome' } });
+  await assert.rejects(admission.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+  await store.put(runId, { ...record, controllerLifecycle: { ...record.controllerLifecycle, containment: 'unknown' } });
+  await assert.rejects(admission.drained({ operationId }), { code: 'ADMISSION_DRAIN_UNKNOWN' });
+});
+
 test('quiesce denies new automatic admission before label consumption, journal reservation or GitHub mutation', async t => {
   let recordStore; let readyIssue;
   await assert.rejects(fixtureWithGate(t, { labelLaunch: true, beforeAdmission: async ({ admissionControl, store, issue }) => {

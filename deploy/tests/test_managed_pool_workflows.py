@@ -56,6 +56,15 @@ def workflows(value, repository=None):
     return {name: yaml.safe_load(raw) for name, raw in rendered.items()}
 
 
+def private_git_configuration(capacity=6, *, reservation=False):
+    value = pool_configuration(capacity)
+    local_apply = {'source': 'git', 'repository': 'example-org/private-config', 'configPath': 'prod/relay.json'}
+    if reservation:
+        local_apply['poolReservation'] = 'same-run-v1'
+    value['environment']['localApply'] = local_apply
+    return normalized(value)
+
+
 def step(workflow):
     job, = workflow['jobs'].values()
     selected, = job['steps']
@@ -258,10 +267,7 @@ def test_all_six_general_members_execute_apply_stop_resume_transport(installed_r
 
 def test_private_git_actions_include_explicit_recover_through_each_existing_member(installed_runtime):
     execute, _ = installed_runtime
-    value = pool_configuration()
-    value['environment']['localApply'] = {'source': 'git', 'repository': 'example-org/private-config',
-                                         'configPath': 'prod/relay.json'}
-    value = normalized(value)
+    value = private_git_configuration()
     workflow = yaml.safe_load(workflow_projection.render_deployment(value, HEAD, ROOT)[workflow_projection.PRODUCTION])
     assert workflow[True]['workflow_dispatch']['inputs']['action']['options'] == ['apply', 'stop', 'resume', 'recover']
     selected = step(workflow)
@@ -285,6 +291,106 @@ def test_private_git_actions_include_explicit_recover_through_each_existing_memb
                 '-n', '/usr/local/sbin/codex-relay-owner-lifecycle',
                 'git:' + action + ':' + HEAD + ':' + CONSUMER_HEAD + ':31']}]
             assert 'synthetic-private-workflow-token' not in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize('capacity', [1, 4, 32])
+def test_opt_in_reservation_projects_only_the_apply_members(capacity):
+    value = private_git_configuration(capacity, reservation=True)
+    workflow = yaml.safe_load(workflow_projection.render_deployment(value, HEAD, ROOT)[workflow_projection.PRODUCTION])
+    jobs = workflow['jobs']
+    assert set(jobs) == ({'lifecycle', 'reserve'} if capacity > 1 else {'lifecycle'})
+    selector = jobs['lifecycle']['runs-on']
+    specification = json.loads(selector.split("fromJSON('", 1)[1].split("')", 1)[0])
+    slots = value['consumer']['executionSlots'][:capacity]
+    assert specification['apply'] == specification['recover']
+    assert specification['apply']['labels'] == [*specification['ordinary']['labels'],
+                                               config.execution_slot_label(value, slots[0])]
+    assert "inputs.action == 'apply' && 'apply' || inputs.action == 'recover' && 'recover' || 'ordinary'" in selector
+    if capacity > 1:
+        reserve = jobs['reserve']
+        assert reserve['name'] == 'Reserve General runner ${{ matrix.slot }}'
+        assert "inputs.action == 'apply'" in reserve['if'] and jobs['lifecycle']['if'].endswith("github.ref == 'refs/heads/main' }}")
+        assert reserve['strategy']['fail-fast'] is False and reserve['permissions'] == {'actions': 'read'}
+        assert reserve['timeout-minutes'] == 245
+        assert reserve['runs-on'] == '${{ fromJSON(matrix.runs_on) }}'
+        assert [member['slot'] for member in reserve['strategy']['matrix']['include']] == [slot['id'] for slot in slots[1:]]
+        for member, slot in zip(reserve['strategy']['matrix']['include'], slots[1:]):
+            assert json.loads(member['runs_on']) == {**specification['ordinary'], 'labels': [
+                *specification['ordinary']['labels'], config.execution_slot_label(value, slot)]}
+        assert reserve['steps'][0]['env']['RELAY_HOLDER_SLOT'] == '${{ matrix.slot }}'
+    assert workflows(value) == workflows(private_git_configuration(capacity))
+
+
+def test_opt_in_projection_requires_selected_source_capability(tmp_path):
+    source = tmp_path / 'deploy'
+    (source / 'workflows').mkdir(parents=True)
+    shutil.copyfile(ROOT / 'deploy/workflows/contract.json', source / 'workflows/contract.json')
+    (source / 'installation-contract.json').write_text(json.dumps({
+        'schemaVersion': 1, 'epoch': 1, 'capabilities': ['git-desired-v1']}))
+    with pytest.raises(ValueError, match='deployment-pool-reservation-capability'):
+        workflow_projection.render_deployment(private_git_configuration(2, reservation=True), HEAD, tmp_path)
+
+
+def test_opt_in_apply_checks_primary_and_installed_capability_before_sudo(installed_runtime):
+    execute, workflow_contract = installed_runtime
+    value = private_git_configuration(2, reservation=True)
+    workflow = yaml.safe_load(workflow_projection.render_deployment(value, HEAD, ROOT)[workflow_projection.PRODUCTION])
+    selected, = workflow['jobs']['lifecycle']['steps']
+    primary, secondary = value['consumer']['executionSlots'][:2]
+    installation = workflow_contract.parent.parent / 'installation-contract.json'
+    for capable in [False, True]:
+        capabilities = ['git-desired-v1'] + (['managed-pool-reservation-v1'] if capable else [])
+        installation.write_text(json.dumps({'schemaVersion': 1, 'capabilities': capabilities}))
+        for member in [primary, secondary]:
+            result = execute(selected, member['runnerName'], member['runnerUser'], GITHUB_RUN_ID='31')
+            if capable and member == primary:
+                assert result.returncode == 0, result.stderr
+                assert len(calls(result)) == 1
+            else:
+                assert result.returncode != 0 and calls(result) == []
+                assert 'RELAY_POOL_RESERVATION_RUNTIME_UNQUALIFIED' in result.stderr
+        for action in ['stop', 'resume']:
+            result = execute(selected, secondary['runnerName'], secondary['runnerUser'], GITHUB_RUN_ID='31',
+                             RELAY_LIFECYCLE_ACTION=action)
+            assert result.returncode == 0 and len(calls(result)) == 1, result.stderr
+
+
+def test_holder_waits_for_terminal_lifecycle_in_the_same_attempt(installed_runtime):
+    execute, _ = installed_runtime
+    value = private_git_configuration(2, reservation=True)
+    workflow = yaml.safe_load(workflow_projection.render_deployment(value, HEAD, ROOT)[workflow_projection.PRODUCTION])
+    selected, = workflow['jobs']['reserve']['steps']
+    member = value['consumer']['executionSlots'][1]
+    assert 'exec /usr/bin/node --input-type=module' in selected['run']
+    assert '/usr/bin/sudo' not in selected['run']
+    fixture = '''
+const delay = async () => {};
+let reads = 0;
+globalThis.fetch = async (url, options) => {
+  if (url !== 'https://api.github.com/repos/example-org/private-config/actions/runs/31/attempts/2/jobs?per_page=100' ||
+      options.headers.authorization !== 'Bearer synthetic-reservation-read-token' || options.redirect !== 'error') {
+    process.exit(3);
+  }
+  reads += 1;
+  console.log('FIXTURE_HOLDER_READ=' + reads);
+  const lifecycle = { name: 'lifecycle', run_id: reads === 2 ? 30 : 31,
+    status: 'completed', conclusion: 'failure' };
+  return { ok: reads !== 1, json: async () => ({ total_count: 1, jobs: [lifecycle] }) };
+};
+'''.strip()
+    selected['run'] = selected['run'].replace("import { setTimeout as delay } from 'node:timers/promises';", fixture)
+    environment = {'GITHUB_JOB': 'reserve', 'GITHUB_REPOSITORY': 'example-org/private-config',
+                   'GITHUB_RUN_ID': '31', 'GITHUB_RUN_ATTEMPT': '2', 'RELAY_HOLDER_SLOT': 'pool-2',
+                   'RELAY_HOLDER_TOKEN': 'synthetic-reservation-read-token',
+                   'GITHUB_WORKFLOW_REF': 'example-org/private-config/' + workflow_projection.PRODUCTION + '@refs/heads/main'}
+    result = execute(selected, member['runnerName'], member['runnerUser'], **environment)
+    assert result.returncode == 0, result.stderr
+    assert 'FIXTURE_HOLDER_READ=3\nRELAY_POOL_RESERVATION=lifecycle-terminal' in result.stdout
+    assert 'synthetic-reservation-read-token' not in result.stdout + result.stderr
+    result = execute(selected, member['runnerName'], member['runnerUser'], **{**environment, 'RELAY_HOLDER_SLOT': 'pool-3'})
+    assert result.returncode != 0 and 'FIXTURE_HOLDER_READ=' not in result.stdout
+    result = execute(selected, member['runnerName'], member['runnerUser'], **{**environment, 'GITHUB_JOB': 'route'})
+    assert result.returncode != 0 and 'RELAY_POOL_RESERVATION_IDENTITY_INVALID' in result.stderr
 
 
 @pytest.mark.parametrize('capacity,members', [(6, [0, 1, 5]), (1, [0])])

@@ -30,13 +30,13 @@ roots = [root]
 recovery_root = '{{ relay_owner_lifecycle_recovery_root | default("") }}'
 if recovery_root and sys.argv[2].startswith('git:recover:'):
     roots.append(Path(recovery_root))
-for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
+for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'timing.py', 'config.py', 'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
     for checked_root in roots:
         path = checked_root / 'deploy' / name
-        # Retained source can predate the child observer. A present observer
-        # always receives the same protection checks before Python imports it.
-        if (name == 'lifecycle_process.py' and not path.exists() and not path.is_symlink()
-                and b'lifecycle_process' not in (checked_root / 'deploy/owner_lifecycle.py').read_bytes()):
+        # Retained source can predate optional observer/timing dependencies.
+        # Present dependencies receive protection checks before Python imports.
+        if (name in {'lifecycle_process.py', 'timing.py'} and not path.exists() and not path.is_symlink()
+                and name[:-3].encode() not in (checked_root / 'deploy/owner_lifecycle.py').read_bytes()):
             continue
         for entry in [path, *path.parents]:
             info = entry.lstat()

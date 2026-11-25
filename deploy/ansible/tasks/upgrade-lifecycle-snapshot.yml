@@ -4,6 +4,51 @@
 - name: Observe original service intent before retaining the managed snapshot
   ansible.builtin.include_tasks: upgrade-lifecycle-observe.yml
 
+- name: Bind first Reviewer socket migration for the retained Apply route
+  when:
+    - relay_reviewer_socket_activation | default(false) | bool
+    - relay_upgrade_lifecycle_observed_activity.reviewer.active | bool
+    - not relay_git_desired_state | default(false) | bool
+    - not relay_admission_recovery_authorized | default(false) | bool
+    - relay_reviewer_legacy_pid is not defined
+  block:
+    - name: Inspect the installed Reviewer maintenance helper before replacement
+      ansible.builtin.stat:
+        path: '{{ relay_install_root }}/relay-reviewer-maintenance'
+        follow: false
+        get_attributes: false
+        get_checksum: false
+        get_mime: false
+      register: relay_upgrade_reviewer_maintenance_helper
+
+    - name: Identify a legacy Reviewer that still owns its listener
+      when: not relay_upgrade_reviewer_maintenance_helper.stat.exists
+      block:
+        - name: Inspect the installed Reviewer socket before replacement
+          ansible.builtin.command:
+            argv:
+              - /bin/systemctl
+              - show
+              - '{{ relay_reviewer_socket_service_name }}'
+              - --property=LoadState
+              - --value
+          register: relay_upgrade_reviewer_socket_state
+          changed_when: false
+          failed_when: false
+
+        - name: Require the Reviewer socket to be absent for first migration
+          ansible.builtin.assert:
+            that:
+              - relay_upgrade_reviewer_socket_state.rc == 0
+              - relay_upgrade_reviewer_socket_state.stdout == 'not-found'
+            fail_msg: RELAY_UPGRADE_REVIEWER_LEGACY_IDENTITY_UNPROVEN
+
+        - name: Keep the validated Reviewer PID for this activation only
+          ansible.builtin.set_fact:
+            relay_reviewer_legacy_pid: >-
+              {{ relay_upgrade_lifecycle_initial_services.results[0].stdout |
+                 regex_findall('(?m)^MainPID=([1-9][0-9]*)$') | first }}
+
 - name: Retain the first activation snapshot in the exact protected admission operation
   ansible.builtin.command:
     argv: '{{ (relay_intent_admission_prefix | default([relay_install_root ~ "/relay-admission"])) + ["snapshot", "--operation", relay_admission_operation_id] }}'

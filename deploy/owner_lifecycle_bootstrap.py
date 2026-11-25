@@ -48,7 +48,9 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
     installed = installed_source.parent.name
     with acquire(str(filesystem_root / 'var/lib' / (install.name + '-deployment.lock'))):
         actual_install, binding, _ = owner.git_anchor(installed, installed_source)
-        owner.require(actual_install == install and config['environment']['localApply'] == {
+        local_apply = config['environment']['localApply']
+        owner.require(actual_install == install
+            and {name: value for name, value in local_apply.items() if name != 'poolReservation'} == {
             'source': 'git', 'repository': binding['repository'], 'configPath': binding['configPath']}
             and config['consumer']['owner'].casefold() == binding['owner'].casefold(),
             'bootstrap-installed-binding')
@@ -99,7 +101,7 @@ def bootstrap(config, revision, *, filesystem_root=Path('/')):
                 # An interrupted bootstrap is observable, never overwritten.
                 # Only an already published exact helper is idempotently reused.
                 owner.require(previous == desired, 'bootstrap-stage-exists-inspect-before-retry')
-                for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py', 'installed_config.py',
+                for name in ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'timing.py', 'config.py', 'installed_config.py',
                              'deployment_lock.py', 'git_intent.py', 'repository_source.py']:
                     raw, _ = read_protected(destination / 'deploy' / name, {0o644, 0o755, 0o600, 0o700}, group=0)
                     owner.require(raw == (selected / 'deploy' / name).read_bytes(), 'bootstrap-controller-drift')

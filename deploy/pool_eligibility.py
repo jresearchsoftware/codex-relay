@@ -155,7 +155,8 @@ def _peer_refs(config, namespace, contract):
         result[anchor].append(anchor + '/' + LIFECYCLE_WORKFLOW + '@refs/heads/' + branch)
     elif isinstance(local_apply, dict) and local_apply.get('source') == 'git':
         deployment = local_apply.get('repository')
-        require(set(local_apply) == {'source', 'repository', 'configPath'}
+        require(set(local_apply) - {'poolReservation'} == {'source', 'repository', 'configPath'}
+                and local_apply.get('poolReservation', 'same-run-v1') == 'same-run-v1'
                 and _repository(deployment)
                 and (deployment not in repositories or LIFECYCLE_WORKFLOW not in workflows)
                 and deployment.split('/')[0] == contract['organization'] and branch == 'main'

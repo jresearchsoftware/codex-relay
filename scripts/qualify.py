@@ -71,6 +71,17 @@ def qualify_binary(executable):
             instance = f'{consumer}-multiple' if multiple else consumer
             path = root / f'{instance}.json'
             path.write_text(json.dumps(config))
+            check_env = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'HOME': str(root),
+                         'REVIEWER_RELAY_DB': str(root / f'{instance}.sqlite3')}
+            check = [str(executable), '--check-config', '--config']
+            checked = subprocess.run([*check, str(path)], env=check_env, capture_output=True, text=True, timeout=5)
+            assert checked.returncode == 0 and checked.stdout.strip() == 'REVIEWER_CONFIG_VALID'
+            assert not (root / f'{instance}.sqlite3').exists()
+            if consumer == 'example' and not multiple:
+                invalid = root / 'invalid-reviewer-config.json'
+                invalid.write_text('{ malformed startup config')
+                refused = subprocess.run([*check, str(invalid)], env=check_env, capture_output=True, text=True, timeout=5)
+                assert refused.returncode != 0 and 'REVIEWER_CONFIG_VALID' not in refused.stdout
             env = {'PATH': os.environ.get('PATH', '/usr/bin:/bin'), 'REVIEWER_RELAY_ENABLED': 'false',
                    'REVIEWER_RELAY_DB': str(root / f'{instance}.sqlite3'), 'REVIEWER_CLIENT_CA_FILE': str(root / 'ca.pem'),
                    'GITHUB_APP_ID': c['reviewerApp']['appId'], 'GITHUB_APP_INSTALLATION_ID': c['reviewerApp']['installationId']}

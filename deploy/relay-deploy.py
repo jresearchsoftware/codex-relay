@@ -29,6 +29,7 @@ from lifecycle import (progress, report_failure, public_log_reference, start_fai
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / 'deploy/ansible'
 from ansible_transport import connection_vars, backend_environment, hold_target, run_target
+from timing import public_ansible_timing
 PHASES = {'check': 'site.yml', 'apply': 'site.yml', 'upgrade': 'site.yml', 'post-check': 'site.yml',
           'inventory': None, 'bootstrap': 'site.yml', 'reinstall': 'site.yml',
           'reinstall-recover': None,
@@ -217,6 +218,17 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
     offset = os.fstat(log.fileno()).st_size
     if '--check' not in argv:
         observe_target_mutation()
+    env = os.environ.copy() if env is None else dict(env)
+    env['ANSIBLE_CALLBACK_PLUGINS'] = str(BACKEND / 'callback_plugins')
+    env['ANSIBLE_CALLBACKS_ENABLED'] = 'relay_timing'
+    # The lifecycle UUID is shared across backend invocations; a standalone
+    # invocation receives one correlation ID without creating lifecycle authority.
+    operation = env.get('RELAY_TIMING_OPERATION', '')
+    if not re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', operation):
+        operation = str(uuid.uuid4())
+    env['RELAY_TIMING_OPERATION'] = operation
+    invocation = str(uuid.uuid4())
+    env['RELAY_TIMING_INVOCATION'] = invocation
     process = subprocess.Popen(argv, cwd=cwd, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     observe_backend_start()
     started = time.monotonic()
@@ -237,14 +249,14 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
         'Require preserved activation intent and healthy previously active components': 'runtime-verification',
     }
     print('RELAY_DEPLOYMENT_PROGRESS=backend;dependency=ansible-playbook;state=started', flush=True)
-    def observe():
+    def observe(remaining=65536):
         nonlocal offset, pending, dependency, next_progress
         log.flush()
         # Read through a separate descriptor: the backend's shared write offset
         # must never move while observing progress. Bound each observation.
         with open(log.name if isinstance(log.name, str) else '/proc/self/fd/' + str(log.fileno()), 'rb') as reader:
             reader.seek(offset)
-            chunk = reader.read(65536)
+            chunk = reader.read(min(65536, remaining))
         offset += len(chunk)
         pending += chunk
         while b'\n' in pending:
@@ -252,6 +264,8 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
             if len(raw) > 4096:
                 continue
             line = raw.decode('utf-8', errors='replace')
+            if public_ansible_timing(line, operation, invocation):
+                print(line, flush=True)
             match = re.fullmatch(r'TASK \[([^\]]+)\] \*+', line)
             if match:
                 name = match[1].split(' : ', 1)[0]
@@ -262,6 +276,7 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
                     next_progress = time.monotonic() + 30
         if len(pending) > 4096:
             pending = b'oversized:'
+        return bool(chunk)
     try:
         while process.poll() is None:
             observe()
@@ -276,8 +291,13 @@ def run_backend(argv, cwd, env, log, guard=None, extra_guard=None):
                 pass
         if any(holder is not None and holder.poll() is not None for holder in [guard, extra_guard]):
             raise RuntimeError('host-operation-guard-lost;inspect-before-retry')
-        observe()
+        # Ansible can finish with a burst larger than one observation chunk.
+        # Drain only the bytes already written at child exit.
+        final_offset = os.fstat(log.fileno()).st_size
+        while offset < final_offset and observe(final_offset - offset):
+            pass
         observe_failure_state(boundary='backend-returned', backend=dependency, backend_exit=process.returncode)
+        print(f'RELAY_ANSIBLE_TIMING=operation={operation};invocation={invocation};kind=backend;wall_ms={int((time.monotonic()-started)*1000)}', flush=True)
         print(f'RELAY_DEPLOYMENT_PROGRESS=backend;dependency={dependency};state={"completed" if process.returncode == 0 else "failed"};exit={process.returncode};elapsed_seconds={int(time.monotonic()-started)}', flush=True)
         return process.returncode
     finally:
@@ -367,6 +387,7 @@ def arguments():
     p.add_argument('--consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--expected-installed-head', help=argparse.SUPPRESS)
     p.add_argument('--git-config-receipt', type=Path, help=argparse.SUPPRESS)
+    p.add_argument('--native-reservation-attempt', type=int, help=argparse.SUPPRESS)
     p.add_argument('--workflow-consumer-revision', help=argparse.SUPPRESS)
     p.add_argument('--authorize-apply-recovery', action='store_true',
                    help='Owner-authorized matching installed-config apply recovery after diagnosis')
@@ -391,7 +412,9 @@ def arguments():
     return p.parse_args()
 
 
-def run(args):
+def run(args, *, reservation_token=None):
+    if not hasattr(args, '_apply_preparation_started'):
+        args._apply_preparation_started = time.monotonic()
     os.umask(0o077)
     if args.phase == 'owner-lifecycle-bootstrap':
         require(args.authorize_owner_lifecycle_bootstrap and args.connection == 'local',
@@ -410,7 +433,19 @@ def run(args):
     require(not getattr(args, 'authorize_owner_lifecycle_bootstrap', False), 'bootstrap-interface-only')
     if args.phase == 'install':
         from intent_install import run as install
-        return install(args, run, ROOT, source_identity(ROOT), guard_factory=apply_guard)
+        attempt = getattr(args, 'native_reservation_attempt', None)
+        if attempt is not None:
+            require(os.geteuid() == 0 and args.connection == 'local'
+                    and getattr(args, 'git_config_receipt', None) is not None
+                    and not args.authorize_install_recovery and 0 < attempt <= 9007199254740991,
+                    'native-runner-reservation-interface-unproven')
+            from git_intent import read_token
+            reservation_token = read_token(sys.stdin.buffer)
+            def run_install_phase(inner):
+                return run(inner, reservation_token=reservation_token)
+        else:
+            run_install_phase = run
+        return install(args, run_install_phase, ROOT, source_identity(ROOT), guard_factory=apply_guard)
     require(not getattr(args, 'continue_install_recovery', False), 'install-continuation-interface-only')
     require(getattr(args, 'retained_runner_maintenance', None) is None or getattr(args, 'intent_install', False),
             'runner-maintenance-install-only')
@@ -684,9 +719,31 @@ def run(args):
             return
     lifecycle_required = (args.phase == 'upgrade' or (intent_install and args.phase == 'apply'
                           and args.intent_expected_installed_revision != 'none'))
+    planned_pool_maintenance = (lifecycle_required and not args.local_lifecycle
+                                and 'generalRunnerPool' in config['consumer']
+                                and not args.authorize_lifecycle_recovery)
+    reserved_pool = (config['environment']['localApply'].get('poolReservation') == 'same-run-v1'
+                     and planned_pool_maintenance)
+    workflow_run = None
+    if reserved_pool:
+        receipt = getattr(args, 'git_intent', None)
+        attempt = getattr(args, 'native_reservation_attempt', None)
+        require(intent_install and args.connection == 'local' and os.geteuid() == 0
+                and reservation_token is not None and type(attempt) is int and attempt > 0
+                and isinstance(receipt, dict) and receipt.get('action') == 'apply',
+                'native-runner-reservation-required')
+        workflow_run = {key: receipt[key] for key in ('config_repository', 'config_sha', 'workflow_run_id')}
+        workflow_run['workflow_run_attempt'] = attempt
     admission_operation_id = (args.lifecycle_operation if args.local_lifecycle else
         (args.lifecycle_recovery_operation or str(uuid.uuid4()) if lifecycle_required or pool_reinstall else ''))
     observe_failure_state(operation_id=admission_operation_id, config=consumer_revision if not git_readonly else None)
+
+    def apply_timing(phase, started):
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        owner_run = (getattr(args, 'git_intent', None) or {}).get('workflow_run_id') if intent_install else None
+        correlation = f';owner_run={owner_run}' if type(owner_run) is int and owner_run > 0 else ''
+        print(f'RELAY_APPLY_TIMING=operation={admission_operation_id};phase={phase};wall_ms={elapsed_ms}{correlation}',
+              flush=True)
     values.update({
         'relay_review_root': str(ROOT), 'relay_source_identity': identity,
         'relay_requested_revision': requested, 'relay_consumer_revision': consumer_revision,
@@ -833,6 +890,7 @@ def run(args):
                 **connection_vars(target, key, local=args.local_reconcile or args.local_lifecycle)}}}}}}
             (work / 'inventory.json').write_text(json.dumps(inventory))
             env = backend_environment()
+            env['RELAY_TIMING_OPERATION'] = admission_operation_id or str(uuid.uuid4())
             playbook = ('relay-production-bootstrap-disposition.yml' if args.stale_apply_shape else PHASES[args.phase])
             argv = ['ansible-playbook', '-i', str(work / 'inventory.json'), str(BACKEND / playbook),
                     '--limit', target['host']]
@@ -884,7 +942,56 @@ def run(args):
                         host_locks.callback(release_pool_guard)
                 try:
                     lifecycle_operation = None
+                    pool_maintenance_started = False
+                    pool_drain_completed = False
+                    reviewer_pause_pending = False
+                    gate_reopened = False
                     preparation = None
+                    qualified_local = args.local_reconcile or args.local_lifecycle
+
+                    def pool_maintenance(action):
+                        if reserved_pool:
+                            from managed_pool_transport import maintain_reserved_pool
+                            result = maintain_reserved_pool(config, admission_operation_id, action, guard,
+                                                            pool_guard, ROOT, workflow_run, reservation_token)
+                        else:
+                            from managed_pool_transport import maintain_pool
+                            result = maintain_pool(target, key, config, admission_operation_id, action, guard,
+                                                   local=qualified_local, extra_guard=pool_guard)
+                        for key_name in ['paused', 'stopped', 'preserved', 'ready', 'busy']:
+                            require(isinstance(result.get(key_name), list)
+                                    and len(result[key_name]) <= 32
+                                    and all(re.fullmatch(r'[a-z][a-z0-9-]{0,31}', member)
+                                            for member in result[key_name]),
+                                    'pool-maintenance-result-unproven')
+                        counts = ';'.join(f'{name}={len(result[name])}'
+                                          for name in ['paused', 'stopped', 'preserved', 'ready', 'busy'])
+                        print(f'RELAY_POOL_MAINTENANCE={action};operation={admission_operation_id};{counts}',
+                              flush=True)
+                        return result
+
+                    def reviewer_maintenance(*arguments):
+                        helper = values['relay_install_root'] + '/relay-reviewer-maintenance'
+                        result = run_target(target, key, [helper, *arguments], timeout=330, local=qualified_local)
+                        if result.returncode:
+                            raise LifecycleCheckError('reviewer-maintenance-unproven') from subprocess.CalledProcessError(
+                                result.returncode, 'reviewer-maintenance', output=result.stdout, stderr=result.stderr)
+                        status = json.loads(result.stdout)
+                        require(isinstance(status, dict) and type(status.get('pid')) is int and status['pid'] > 0,
+                                'reviewer-maintenance-status-unproven')
+                        return status
+
+                    def resume_reviewer(timeout, *, previous_pid=None):
+                        require(guard is not None and guard.poll() is None, 'lifecycle-host-lock-lost')
+                        ready = reviewer_maintenance('ready', '--timeout', str(timeout))
+                        require(ready.get('ready') is True and (previous_pid is None or ready['pid'] == previous_pid),
+                                'reviewer-resume-readiness-unproven')
+                        require('operation' in ready and ready['operation'] in (None, admission_operation_id),
+                                'reviewer-resume-operation-mismatch')
+                        if ready['operation'] is not None or ready.get('writerAccepting') is not True:
+                            ready = reviewer_maintenance('resume', '--operation', admission_operation_id)
+                        require(ready.get('ready') is True and 'operation' in ready and ready['operation'] is None
+                                and ready.get('writerAccepting') is True, 'reviewer-resume-readback-unproven')
                     fast_source = False
                     source_proof = None
                     pool_preflight_proof = None
@@ -1008,7 +1115,10 @@ def run(args):
                                     and gate['phase'] == 'recovery-required', 'bounded-recovery-target-unproven')
                             preparation.release_writer()
                         source_reuse = False
+                        # The native proof requires the same online listeners
+                        # and routing labels before and after promotion.
                         if (args.phase == 'upgrade' and not args.authorize_lifecycle_recovery
+                                and not planned_pool_maintenance
                                 and bounded_binding is None and preparation.initial is not None
                                 and not preparation.initial['consumerChange']
                                 and not preparation.initial['consumerRestoreRequired']
@@ -1058,9 +1168,83 @@ def run(args):
                         inventory['all']['children']['relay']['hosts'][target['host']].update(values)
                         (work / 'inventory.json').write_text(json.dumps(inventory))
                         print('RELAY_INSTALL_PREFLIGHT=prepared;operation=' + stage_operation, flush=True)
+                    reviewer_pid = None
+                    if lifecycle_required and not args.local_lifecycle and args.authorize_lifecycle_recovery:
+                        # An interrupted Apply can leave the component paused while
+                        # the service is down. The normal activation proof comes
+                        # first; then the authenticated control checks marker ownership.
+                        marker = values['relay_config_root'] + '/reviewer-maintenance.json'
+                        probe = run_target(target, key, ['/usr/bin/test', '-e', marker, '-o', '-L', marker],
+                                           timeout=30, local=qualified_local)
+                        require(probe.returncode in (0, 1), 'reviewer-maintenance-record-unproven')
+                        reviewer_pause_pending = probe.returncode == 0
+                    elif lifecycle_required and not args.local_lifecycle:
+                        service = run_target(target, key, ['/usr/bin/systemctl', 'show',
+                            values['relay_reviewer_service_name'], '--property=ActiveState', '--value'],
+                            timeout=30, local=qualified_local)
+                        require(service.returncode == 0 and service.stdout.strip() in {'active', 'inactive'},
+                                'reviewer-service-state-unproven')
+                        reviewer_active = service.stdout.strip() == 'active'
+                        if reviewer_active:
+                            probe = run_target(target, key, ['/usr/bin/test', '-x',
+                                values['relay_install_root'] + '/relay-reviewer-maintenance'],
+                                timeout=30, local=qualified_local)
+                            if probe.returncode == 1:
+                                socket = run_target(target, key, ['/usr/bin/systemctl', 'show',
+                                    values['relay_reviewer_socket_service_name'], '--property=LoadState', '--value'],
+                                    timeout=30, local=qualified_local)
+                                legacy = run_target(target, key, ['/usr/bin/systemctl', 'show',
+                                    values['relay_reviewer_service_name'], '--property=MainPID', '--value'],
+                                    timeout=30, local=qualified_local)
+                                require(socket.returncode == 0 and socket.stdout.strip() == 'not-found'
+                                        and legacy.returncode == 0 and re.fullmatch(r'[1-9][0-9]*', legacy.stdout.strip()),
+                                        'reviewer-legacy-identity-unproven')
+                                values['relay_reviewer_legacy_pid'] = legacy.stdout.strip()
+                                inventory['all']['children']['relay']['hosts'][target['host']].update(values)
+                                (work / 'inventory.json').write_text(json.dumps(inventory))
+                            else:
+                                require(probe.returncode == 0, 'reviewer-maintenance-capability-unproven')
+                                reviewer_status = reviewer_maintenance('status')
+                                require(reviewer_status.get('ready') is True
+                                        and 'operation' in reviewer_status
+                                        and reviewer_status['operation'] in (None, admission_operation_id),
+                                        'reviewer-activity-boundary-unproven')
+                                reviewer_pid = reviewer_status['pid']
+                    # Preparation is read-only with respect to serving execution. A
+                    # Quickstrike that arrives there still admits and publishes normally.
+                    # Withhold native eligibility and finish accepted General jobs before
+                    # closing admission, including jobs that already reached their runner.
+                    if planned_pool_maintenance:
+                        apply_timing('preparation', args._apply_preparation_started)
+                        args._intent_failure_stage = 'general-runner-intake'
+                        pause_started = time.monotonic()
+                        pool_maintenance_started = True
+                        observe_target_mutation()
+                        if intent_install:
+                            args._intent_mutation_started = True
+                        pool_maintenance('pause')
+                        apply_timing('intake-pause', pause_started)
+                        args._intent_failure_stage = 'general-runner-drain'
+                        drain_started = time.monotonic()
+                        drained = pool_maintenance('drain')
+                        if preparation is not None:
+                            preparation.stopped_pool_members = frozenset(drained['stopped'])
+                        pool_drain_completed = True
+                        apply_timing('runner-drain', drain_started)
+                    if reviewer_pid is not None:
+                        args._intent_failure_stage = 'reviewer-writer-drain'
+                        # A failed acknowledgement may follow a durable marker write.
+                        reviewer_pause_pending = True
+                        observe_target_mutation()
+                        if intent_install:
+                            args._intent_mutation_started = True
+                        reviewer_maintenance('pause-writer', '--operation', admission_operation_id)
+                        reviewer_maintenance('wait', '--scope', 'writer', '--timeout', '300')
                     if (intent_install and (lifecycle_required or pool_reinstall)
                             and not args.authorize_lifecycle_recovery):
                         from consumer_drift import prepare as restore_consumer_drift
+                        if reserved_pool:
+                            pool_maintenance('verify')
                         previous_mutation = getattr(args, '_intent_mutation_started', False)
                         observe_target_mutation()
                         args._intent_mutation_started = True
@@ -1116,7 +1300,11 @@ def run(args):
                     completed_pool_reinstall = False
                     retirement_report = None
                     if lifecycle_required and not args.local_lifecycle:
+                        if reserved_pool:
+                            pool_maintenance('verify')
                         lifecycle_operation = admission_operation_id
+                        if not pool_maintenance_started:
+                            apply_timing('preparation', args._apply_preparation_started)
                         if intent_install:
                             args._intent_mutation_started = True
                         if not args.authorize_lifecycle_recovery:
@@ -1377,33 +1565,92 @@ def run(args):
                         if pool_reinstall and not completed_pool_reinstall:
                             remote_action(target, key, config, revision, retirement_report, action='complete',
                                           guard=guard, operation_id=lifecycle_operation)
+                        if pool_maintenance_started:
+                            pool_maintenance('restart')
+                        if reviewer_pause_pending:
+                            resume_reviewer(300)
+                            reviewer_pause_pending = False
                         progress('RESUME', revision)
                         remote_admission(target, key, values['relay_namespace'], 'resume', '--operation', lifecycle_operation)
+                        gate_reopened = True
+                        if pool_maintenance_started:
+                            pool_maintenance('resume')
                         progress('OPEN', revision)
-                except Exception as error:
+                except (Exception, KeyboardInterrupt) as error:
                     report_failure(error, 'installer', private_log=log_name)
                     progress('RECOVERY', revision)
-                    restored_old = False
+                    pool_restored = False
+                    restored_old_gate = False
                     if (preparation is not None and preparation.captured
                             and (not preparation.cutover_started or preparation.predispatch_bridge_attempted)
-                            and lifecycle_operation
+                            and lifecycle_operation and not gate_reopened
                             and (not args.authorize_lifecycle_recovery or preparation.predispatch_bridge_attempted)):
                         try:
                             aborted = preparation.abort()
                             require(aborted['status'] == 'old-open-restored', 'INSTALL_PREFLIGHT_ABORT_UNPROVEN')
+                            restored_old_gate = True
+                            observe_failure_state(boundary='original-open', admission='open', installed=args.intent_expected_installed_revision)
+                            if reviewer_pause_pending:
+                                resume_reviewer(30, previous_pid=reviewer_pid)
+                                reviewer_pause_pending = False
+                            if pool_drain_completed:
+                                pool_maintenance('restart')
+                                pool_maintenance('resume')
+                                pool_restored = True
                             args._intent_mutation_started = False
                             args._intent_old_availability_restored = True
-                            restored_old = True
-                            observe_failure_state(boundary='original-open', admission='open', installed=args.intent_expected_installed_revision)
                             print('RELAY_INSTALL_PREFLIGHT=aborted;old-availability=verified;operation=' + lifecycle_operation,
                                   flush=True)
                         except Exception as recovery_error:
                             report_failure(recovery_error, 'install-preflight-abort', private_log=log_name)
                             print('RELAY_INSTALL_PREFLIGHT_ABORT=unproven;retain-original-operation;inspect-before-recovery',
                                   flush=True)
+                    if (reviewer_pause_pending and lifecycle_operation is None
+                            and not args.authorize_lifecycle_recovery):
+                        try:
+                            resume_reviewer(30, previous_pid=reviewer_pid)
+                            reviewer_pause_pending = False
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'reviewer-resume-old', private_log=log_name)
+                    if (reserved_pool and pool_maintenance_started and not pool_restored
+                            and not reviewer_pause_pending and (lifecycle_operation is None or gate_reopened)):
+                        # Reconcile the exact paused labels while the original
+                        # reservation is still live and the bound gates are open.
+                        try:
+                            pool_maintenance('resume' if gate_reopened else 'rollback')
+                            pool_restored = True
+                            if lifecycle_operation is None:
+                                args._intent_old_availability_restored = True
+                                observe_failure_state(boundary='original-open', admission='open',
+                                                      installed=args.intent_expected_installed_revision)
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'pool-resume-open', private_log=log_name)
+                    if not reserved_pool and pool_drain_completed and lifecycle_operation is None:
+                        # Only the pool was stopped. Its original operation can
+                        # verify runner and admission readiness before restoring labels.
+                        try:
+                            pool_maintenance('restart')
+                            pool_maintenance('resume')
+                            pool_restored = True
+                        except Exception as recovery_error:
+                            report_failure(recovery_error, 'pool-resume-old', private_log=log_name)
+                    if (pool_maintenance_started and not pool_restored
+                            and (lifecycle_operation is None or gate_reopened or restored_old_gate)):
+                        phase = 'before-quiesce'
+                        if restored_old_gate:
+                            phase = 'old-admission-open'
+                        elif gate_reopened:
+                            phase = 'verified-admission-open'
+                        print(f'RELAY_POOL_RECOVERY_REQUIRED=operation={admission_operation_id};phase={phase};'
+                              'next=inspect-original-pool-operation-before-retry', flush=True)
+                    if reviewer_pause_pending:
+                        phase = ('old-admission-open' if restored_old_gate else 'admission-closed-or-unproven'
+                                 if lifecycle_operation or args.authorize_lifecycle_recovery else 'before-quiesce')
+                        print(f'RELAY_REVIEWER_RECOVERY_REQUIRED=operation={admission_operation_id};phase={phase};'
+                              'next=inspect-original-reviewer-operation-before-retry', flush=True)
                     if preparation is not None:
                         preparation.release_writer()
-                    if lifecycle_operation and not restored_old:
+                    if lifecycle_operation and not gate_reopened and not restored_old_gate:
                         try:
                             remote_admission(target, key, values['relay_namespace'], 'phase',
                                 '--operation', lifecycle_operation, '--phase', 'recovery-required')

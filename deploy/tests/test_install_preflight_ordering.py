@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import signal
 import sys
 from types import SimpleNamespace
 
@@ -53,7 +54,8 @@ def invocation(tmp_path, monkeypatch):
     args._intent_host_guard, args._intent_pool_guard = guard, guard
     events, records = [], [{'runId': 7, 'terminal': True}]
     gate = {'phase': 'open', 'operation': None}
-    state = {'failure': None, 'stage_calls': 0, 'preparation': None, 'consumer_change': False, 'installed': OLD}
+    state = {'failure': None, 'stage_calls': 0, 'preparation': None, 'consumer_change': False, 'installed': OLD,
+             'reviewer_active': False, 'reviewer_marker': None}
     identity = {'revision': TARGET, 'tree': 'f' * 40}
     monkeypatch.setattr(backend, 'source_identity', lambda _: identity)
     monkeypatch.setattr(backend, 'clean_git', lambda _: CONSUMER)
@@ -62,6 +64,8 @@ def invocation(tmp_path, monkeypatch):
         events.append('pool-preflight')
         if state['failure'] == 'pool-preflight':
             raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_POOL_PREFLIGHT')
+        if state['failure'] == 'pool-preflight-changed' and events.count('pool-preflight') == 2:
+            return 'MANAGED_POOL_PREFLIGHT=CHANGED'
         return 'MANAGED_POOL_PREFLIGHT=PASS'
     monkeypatch.setattr(managed_pool_transport, 'preflight_pool', pool_preflight)
     monkeypatch.setattr(managed_pool_transport, 'reconcile_pool',
@@ -80,8 +84,56 @@ def invocation(tmp_path, monkeypatch):
 
     def injected(name):
         events.append(name)
+        if state.get('interrupt') == name:
+            signal.raise_signal(signal.SIGINT)
         if state['failure'] == name:
             raise RuntimeError('INSTALL_PREFLIGHT_INJECTED_' + name.upper().replace('-', '_'))
+
+    def target_call(_target, _key, argv, **_options):
+        if argv[0] == '/usr/bin/systemctl':
+            assert argv[1] == 'show' and argv[-1] == '--value'
+            if argv[-2] == '--property=LoadState':
+                assert argv[2].endswith('.socket')
+                injected('reviewer-socket')
+                return SimpleNamespace(returncode=0, stdout=state.get('reviewer_socket', 'not-found'))
+            if argv[-2] == '--property=MainPID':
+                injected('reviewer-legacy-pid')
+                return SimpleNamespace(returncode=0, stdout='10\n')
+            assert argv[-2] == '--property=ActiveState'
+            injected('reviewer-state')
+            return SimpleNamespace(returncode=0, stdout='active\n' if state['reviewer_active'] else 'inactive\n')
+        if argv[0] == '/usr/bin/test':
+            if argv[1] == '-x':
+                assert argv[-1].endswith('/relay-reviewer-maintenance')
+                return SimpleNamespace(returncode=1 if state.get('reviewer_legacy') else 0)
+            assert argv[1:3] == ['-e', '/etc/codex-relay/reviewer-maintenance.json']
+            assert argv[3:] == ['-o', '-L', argv[2]]
+            injected('reviewer-marker-probe')
+            return SimpleNamespace(returncode=0 if state['reviewer_marker'] else 1)
+        assert argv[0].endswith('/relay-reviewer-maintenance')
+        action = argv[1]
+        if action in ['pause-writer', 'resume']:
+            assert argv[2:] == ['--operation', state['preparation'].operation]
+        if action == 'pause-writer':
+            state['reviewer_marker'] = argv[3]
+        if action == 'wait':
+            assert state['reviewer_marker'] == state['preparation'].operation
+        injected('reviewer-' + action)
+        if action == 'resume':
+            assert state['reviewer_marker'] == argv[3]
+            state['reviewer_marker'] = None
+        pid = state.get('reviewer_ready_pid', 10) if action == 'ready' else 10
+        status = {'pid': pid, 'ready': True, 'operation': state['reviewer_marker'],
+                  'writerAccepting': state['reviewer_marker'] is None}
+        return SimpleNamespace(returncode=0, stdout=json.dumps(status))
+
+    def maintain_pool(_target, _key, _config, operation, action, _guard, **_options):
+        assert operation == state['preparation'].operation
+        injected('pool-' + action)
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    monkeypatch.setattr(backend, 'run_target', target_call)
+    monkeypatch.setattr(managed_pool_transport, 'maintain_pool', maintain_pool)
 
     class Preparation:
         def __init__(self, _target, _key, _values, _identity, operation, **_options):
@@ -108,8 +160,8 @@ def invocation(tmp_path, monkeypatch):
         def desired(self): injected('desired')
         def prepare_source_reuse(self, *_args):
             injected('source-reuse')
-            self.source_reuse = state.get('source_reuse', False)
-            return self.source_reuse
+            self.source_reuse = True
+            return True
         def promote_source_reuse(self, *_args):
             injected('source-promote')
             assert self.cutover_started and self.captured and self.holder is not None
@@ -196,6 +248,8 @@ def invocation(tmp_path, monkeypatch):
                 assert not any(key.startswith('relay_intent_stage') or key == 'relay_intent_writer_lock_lease'
                                for key in installed_values)
             if '--check' not in argv:
+                if state.get('reviewer_legacy'):
+                    assert installed_values['relay_reviewer_legacy_pid'] == '10'
                 injected('backend')
                 assert state['preparation'].holder is not None or args.intent_expected_installed_revision == 'none'
                 assert state['preparation'].cutover_started
@@ -227,7 +281,8 @@ def test_known_prerequisite_failure_keeps_old_entrypoint_open(invocation, failur
     assert records == [{'runId': 7, 'terminal': True}]
 
 
-@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain', 'drain-check', 'drain-changed'])
+@pytest.mark.parametrize('failure', ['final', 'config-drift', 'manual-during-drain', 'drain', 'drain-check',
+                                     'drain-changed', 'pool-preflight-changed'])
 def test_late_change_aborts_before_active_install_and_preserves_records(invocation, failure):
     args, events, gate, state, records = invocation
     state['failure'] = failure
@@ -252,6 +307,31 @@ def test_post_mutation_failure_retains_same_operation_and_forward_recovery(invoc
     assert 'abort' not in events and 'resume' not in events
     assert events.index('writer-release') < events.index('phase:recovery-required')
     assert records == [{'runId': 7, 'terminal': True}]
+
+
+@pytest.mark.parametrize('interrupt_at', ['final', 'backend'])
+def test_sigint_after_quiesce_recovers_according_to_the_cutover_boundary(invocation, interrupt_at):
+    args, events, gate, state, records = invocation
+    state.update(interrupt=interrupt_at, reviewer_active=True)
+    previous = signal.signal(signal.SIGINT, signal.default_int_handler)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            backend.run(args)
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+    assert events.index('quiesce') < events.index(interrupt_at)
+    assert records == [{'runId': 7, 'terminal': True}]
+    if interrupt_at == 'final':
+        assert gate == {'phase': 'open', 'operation': None}
+        assert state['installed'] == OLD and state['reviewer_marker'] is None
+        assert events.index('abort') < events.index('reviewer-resume') < events.index('pool-resume')
+        assert 'backend' not in events and 'phase:recovery-required' not in events
+    else:
+        assert gate['phase'] == 'recovery-required'
+        assert gate['operation'] == state['reviewer_marker'] == state['preparation'].operation
+        assert events.index('writer-release') < events.index('phase:recovery-required')
+        assert 'abort' not in events and 'resume' not in events and 'pool-resume' not in events
 
 
 def test_success_keeps_writer_mutex_through_first_active_effect(invocation):
@@ -289,39 +369,6 @@ def test_native_source_submission_failure_keeps_old_open_without_play_fallback(i
         backend.run(args)
     assert gate == {'phase': 'open', 'operation': None}
     assert not {'source-stage', 'build-stage', 'quiesce', 'backend'}.intersection(events)
-
-
-def test_source_reuse_promotes_under_existing_lifecycle_without_install_traversal(invocation):
-    args, events, gate, state, records = invocation
-    state['source_reuse'] = True
-    backend.run(args)
-    assert gate == {'phase': 'open', 'operation': None}
-    assert events.index('source-stage') < events.index('source-reuse') < events.index('capture') < events.index('quiesce')
-    assert events.index('drain-check') < events.index('final') < events.index('source-promote')
-    assert events.index('source-promote') < events.index('writer-release') < events.index('phase:verified') < events.index('resume')
-    assert not {'compatibility', 'apt-preflight', 'build-stage', 'backend', 'prepare-target', 'abort'}.intersection(events)
-    assert records == [{'runId': 7, 'terminal': True}]
-
-
-def test_source_promotion_failure_retains_original_uuid_and_does_not_reinstall(invocation):
-    args, events, gate, state, records = invocation
-    state.update(source_reuse=True, failure='source-promote')
-    with pytest.raises(RuntimeError, match='SOURCE_PROMOTE'):
-        backend.run(args)
-    assert gate['phase'] == 'recovery-required'
-    assert gate['operation'] == state['preparation'].operation
-    assert not {'backend', 'build-stage', 'abort', 'resume'}.intersection(events)
-    assert records == [{'runId': 7, 'terminal': True}]
-
-
-def test_source_reuse_final_failure_restores_old_gate_before_any_live_effect(invocation):
-    args, events, gate, state, _records = invocation
-    state.update(source_reuse=True, failure='final')
-    with pytest.raises(RuntimeError, match='FINAL'):
-        backend.run(args)
-    assert gate == {'phase': 'open', 'operation': None}
-    assert 'abort' in events
-    assert not {'source-promote', 'backend', 'phase:recovery-required'}.intersection(events)
 
 
 def test_fresh_bootstrap_allows_only_its_prepared_stage_until_cutover(invocation, monkeypatch, tmp_path):
@@ -403,7 +450,7 @@ def test_staged_drain_uses_sealed_candidate_and_original_consumer():
         preparation.drain_staged()
 
 
-@pytest.mark.parametrize('failure', [None, 'compatibility', 'final', 'backend-return', 'receipt-finalize'])
+@pytest.mark.parametrize('failure', [None, 'compatibility', 'final', 'backend-return', 'receipt-finalize', 'reviewer-resume'])
 def test_bounded_recovery_uses_current_controller_and_final_pair_before_resume(invocation, monkeypatch, failure):
     """Exercise the public primitive's composition; host adapters remain synthetic here."""
     import bounded_recovery
@@ -416,6 +463,7 @@ def test_bounded_recovery_uses_current_controller_and_final_pair_before_resume(i
     args.authorize_lifecycle_recovery, args.lifecycle_recovery_operation = True, operation
     args._intent_bounded_recovery, args._intent_bounded_recovery_proof = binding, original_proof
     state['failure'] = failure
+    state['reviewer_marker'] = operation
     gate.update(phase='recovery-required', operation=operation, operationId=operation,
                 target=OLD, active=[], unknown=[])
     monkeypatch.setattr(bounded_recovery, 'remote_probe', lambda *_args: original_proof)
@@ -449,6 +497,7 @@ def test_bounded_recovery_uses_current_controller_and_final_pair_before_resume(i
         with pytest.raises((ValueError, RuntimeError)):
             backend.run(args)
         assert gate['phase'] == 'recovery-required' and 'resume' not in events
+        assert state['reviewer_marker'] == operation
     else:
         backend.run(args)
         assert gate['phase'] == 'open'
@@ -456,7 +505,10 @@ def test_bounded_recovery_uses_current_controller_and_final_pair_before_resume(i
         assert events.index('receipt:revalidate') < events.index('controller:phase') < events.index('backend')
         assert events.index('backend') < events.index('final-git-pair-readback') < events.index('phase:verified')
         assert events.index('phase:verified') < events.index('receipt:finalize') < events.index('resume')
+        assert events.index('receipt:finalize') < events.index('reviewer-ready') < events.index('reviewer-resume') < events.index('resume')
+        assert state['reviewer_marker'] is None
     assert 'quiesce' not in events and 'abort' not in events
+    assert 'reviewer-pause-writer' not in events
     assert state['preparation'].operation == operation and records == [{'runId': 7, 'terminal': True}]
 
 
@@ -506,21 +558,67 @@ def test_same_consumer_replacement_releases_retirement_lock_and_checks_installed
     assert events.index('decommission') < events.index('after-retirement') < events.index('backend')
 
 
-def test_native_source_reuse_uses_its_complete_pool_proofs_without_duplicate_frontend_calls(invocation):
-    args, events, _gate, state, _records = invocation
-    state['source_reuse'] = True
+@pytest.mark.parametrize('consumer_change', [False, True])
+def test_planned_pool_maintenance_stages_full_apply_before_pausing_intake(invocation, consumer_change):
+    args, events, gate, state, records = invocation
+    state['consumer_change'] = consumer_change
     backend.run(args)
-    assert events.count('pool-preflight') == 0
-    assert events.index('source-reuse') < events.index('quiesce') < events.index('final') < events.index('source-promote')
-
-
-def test_full_source_fallback_keeps_both_pool_checks_before_their_owning_frontiers(invocation):
-    args, events, _gate, _state, _records = invocation
-    backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert records == [{'runId': 7, 'terminal': True}]
+    assert {'source-reuse', 'source-promote'}.isdisjoint(events)
     checks = [index for index, name in enumerate(events) if name == 'pool-preflight']
     assert len(checks) == 2
-    assert events.index('source-reuse') < checks[0] < events.index('compatibility') < events.index('host')
+    assert events.index('history') < checks[0] < events.index('compatibility') < events.index('host')
+    assert events.index('host') < events.index('build-stage') < events.index('seal') < events.index('reviewer-state')
     assert events.index('drain-check') < checks[1] < events.index('final') < events.index('backend')
+    assert events.index('reviewer-state') < events.index('pool-pause') < events.index('pool-drain') < events.index('quiesce')
+    assert events.index('phase:verified') < events.index('pool-restart') < events.index('resume') < events.index('pool-resume')
+
+
+@pytest.mark.parametrize(('failure', 'phase'), [('pool-pause', 'before-quiesce'),
+                                                ('pool-resume', 'verified-admission-open')])
+def test_pool_failure_reports_original_operation_and_preserves_verified_gate(invocation, capsys, failure, phase):
+    args, events, gate, state, _records = invocation
+    state['failure'] = failure
+    with pytest.raises(RuntimeError, match='INSTALL_PREFLIGHT_INJECTED_POOL_'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert 'phase:recovery-required' not in events
+    assert ('quiesce' in events) is (failure == 'pool-resume')
+    output = capsys.readouterr().out
+    operation = state['preparation'].operation
+    assert f'RELAY_POOL_RECOVERY_REQUIRED=operation={operation};phase={phase};' in output
+
+
+@pytest.mark.parametrize('failure', ['reviewer-pause-writer', 'reviewer-wait'])
+def test_failed_reviewer_pause_restores_submissions_before_quiesce(invocation, capsys, failure):
+    args, events, gate, state, _records = invocation
+    state.update(reviewer_active=True, failure=failure)
+    with pytest.raises(RuntimeError, match='INSTALL_PREFLIGHT_INJECTED_REVIEWER_'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    assert state['reviewer_marker'] is None
+    assert events.index(failure) < events.index('reviewer-ready') < events.index('reviewer-resume')
+    assert 'quiesce' not in events
+    assert events.index('reviewer-resume') < events.index('pool-restart') < events.index('pool-resume')
+    output = capsys.readouterr().out
+    assert 'RELAY_REVIEWER_RECOVERY_REQUIRED=' not in output
+    assert 'RELAY_POOL_RECOVERY_REQUIRED=' not in output
+
+
+@pytest.mark.parametrize(('failure', 'phase'), [('reviewer-wait', 'before-quiesce'),
+                                                ('final', 'old-admission-open')])
+def test_reviewer_cleanup_retains_pause_if_old_process_changed(invocation, capsys, failure, phase):
+    args, events, gate, state, _records = invocation
+    state.update(reviewer_active=True, reviewer_ready_pid=11, failure=failure)
+    with pytest.raises(RuntimeError, match='INJECTED'):
+        backend.run(args)
+    assert gate == {'phase': 'open', 'operation': None}
+    operation = state['preparation'].operation
+    assert state['reviewer_marker'] == operation
+    assert {'reviewer-resume', 'phase:recovery-required'}.isdisjoint(events)
+    assert ('abort' in events) is (failure == 'final')
+    assert f'RELAY_REVIEWER_RECOVERY_REQUIRED=operation={operation};phase={phase};' in capsys.readouterr().out
 
 
 def test_deferred_pool_failure_stops_fallback_before_host_staging_or_quiesce(invocation):
@@ -530,23 +628,92 @@ def test_deferred_pool_failure_stops_fallback_before_host_staging_or_quiesce(inv
         backend.run(args)
     assert events.count('pool-preflight') == 1
     assert gate == {'phase': 'open', 'operation': None}
-    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
+    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'pool-pause',
+                'pool-drain', 'quiesce', 'backend'}.intersection(events)
 
 
-def test_source_proof_failure_cannot_fall_through_to_pool_or_full_install(invocation):
-    args, events, gate, state, _records = invocation
-    state['failure'] = 'source-reuse'
-    with pytest.raises(RuntimeError, match='SOURCE_REUSE'):
-        backend.run(args)
-    assert events.count('pool-preflight') == 0
-    assert gate == {'phase': 'open', 'operation': None}
-    assert not {'compatibility', 'host', 'apt-preflight', 'build-stage', 'quiesce', 'backend'}.intersection(events)
-
-
-def test_changed_consumer_cannot_nominate_native_and_keeps_both_pool_checks(invocation):
+def test_legacy_reviewer_admits_first_socket_migration_without_writer_pause(invocation):
     args, events, _gate, state, _records = invocation
-    state.update(consumer_change=True, source_reuse=True)
+    state.update(reviewer_active=True, reviewer_legacy=True)
     backend.run(args)
-    assert 'source-reuse' not in events
-    assert events.count('pool-preflight') == 2
-    assert events.index('history') < events.index('pool-preflight') < events.index('compatibility')
+    assert events.index('reviewer-legacy-pid') < events.index('pool-pause') < events.index('backend')
+    assert 'reviewer-pause-writer' not in events
+
+
+def test_installed_socket_with_missing_control_is_not_legacy(invocation):
+    args, events, _gate, state, _records = invocation
+    state.update(reviewer_active=True, reviewer_legacy=True, reviewer_socket='loaded')
+    with pytest.raises(ValueError, match='reviewer-legacy-identity-unproven'):
+        backend.run(args)
+    assert 'pool-pause' not in events
+
+
+@pytest.mark.parametrize(('phase', 'recovery'), [('pause', 'rollback'), ('drain', 'rollback'), ('resume', 'resume')])
+def test_reserved_pool_recovers_uncertain_labels_only_on_original_open_boundary(
+        invocation, monkeypatch, capsys, phase, recovery):
+    args, events, gate, state, _records = invocation
+    config = json.loads(args.config.read_text())
+    config['environment']['localApply']['poolReservation'] = 'same-run-v1'
+    args.config.write_text(json.dumps(config))
+    args.git_intent['config_sha256'] = hashlib.sha256(args.config.read_bytes()).hexdigest()
+    args.native_reservation_attempt = 1
+    monkeypatch.setattr(backend.os, 'geteuid', lambda: 0)
+
+    def maintain_reserved_pool(_config, operation, action, _guard, _pool_guard, _source, workflow, token):
+        assert operation == state['preparation'].operation and workflow['workflow_run_id'] == 7
+        assert token == 'synthetic-native-token'
+        event = 'pool-' + action
+        events.append(event)
+        if action == phase and events.count(event) == 1:
+            raise RuntimeError('INJECTED_ORIGINAL_LABEL_ERROR')
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    import managed_pool_transport
+    monkeypatch.setattr(managed_pool_transport, 'maintain_reserved_pool', maintain_reserved_pool)
+    with pytest.raises(RuntimeError, match='INJECTED_ORIGINAL_LABEL_ERROR'):
+        backend.run(args, reservation_token='synthetic-native-token')
+    assert gate == {'phase': 'open', 'operation': None}
+    failed = events.index('pool-' + phase)
+    assert 'pool-' + recovery in events[failed + 1:]
+    assert ('quiesce' in events) is (phase == 'resume')
+    assert 'RELAY_POOL_RECOVERY_REQUIRED=' not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('failed_handback', ['restart', 'resume'])
+def test_closed_gate_abort_reports_retained_native_pool_after_handback_failure(
+        invocation, monkeypatch, capsys, failed_handback):
+    import managed_pool_transport
+    import owner_lifecycle
+
+    args, events, gate, state, _records = invocation
+    config = json.loads(args.config.read_text())
+    config['environment']['localApply']['poolReservation'] = 'same-run-v1'
+    args.config.write_text(json.dumps(config))
+    args.git_intent['config_sha256'] = hashlib.sha256(args.config.read_bytes()).hexdigest()
+    args.native_reservation_attempt = 1
+    state.update(failure='final', reviewer_active=True)
+    monkeypatch.setattr(backend.os, 'geteuid', lambda: 0)
+
+    def maintain_reserved_pool(_config, operation, action, _guard, _pool_guard, _source, _workflow, _token):
+        assert operation == state['preparation'].operation
+        events.append('pool-' + action)
+        if action == failed_handback:
+            assert gate['phase'] == 'open' and state['reviewer_marker'] is None
+            raise RuntimeError('ORIGINAL_RESERVATION_UNPROVEN')
+        return dict.fromkeys(['paused', 'stopped', 'preserved', 'ready', 'busy'], [])
+
+    monkeypatch.setattr(managed_pool_transport, 'maintain_reserved_pool', maintain_reserved_pool)
+    with pytest.raises(RuntimeError, match='INJECTED'):
+        backend.run(args, reservation_token='synthetic-native-token')
+
+    assert gate == {'phase': 'open', 'operation': None}
+    assert events.index('quiesce') < events.index('abort') < events.index('reviewer-resume')
+    assert events.index('reviewer-resume') < events.index('pool-' + failed_handback)
+    assert 'phase:recovery-required' not in events
+    output = capsys.readouterr().out.splitlines()
+    operation = state['preparation'].operation
+    diagnostic = (f'RELAY_POOL_RECOVERY_REQUIRED=operation={operation};phase=old-admission-open;'
+                  'next=inspect-original-pool-operation-before-retry')
+    assert diagnostic in output
+    owner_lifecycle.child_progress(diagnostic)
+    assert capsys.readouterr().out.strip() == diagnostic

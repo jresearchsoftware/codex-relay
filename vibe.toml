@@ -11,7 +11,7 @@ spec_format = "mixed"
 "org.jresearch.ai/landscape-subagents" = { version = "=1.1.0", git = "https://github.com/jrs-vibevm/org.jresearch.ai.landscape-subagents.git", rev = "b3e9da5a10af2b258699e7d1667dc925d247ae8d", auth = "none" }
 
 [requires.packages."flow:org.jresearch.ai/codex-relay"]
-version = "=10.0.0"
+version = "=11.0.0"
 link = "dynamic"
 
 [[registry]]

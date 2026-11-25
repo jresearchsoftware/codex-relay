@@ -45,8 +45,9 @@ python3 scripts/test-environment-lock.py claim \
 Preserve the returned holder's `token`, Task, execution, host, PID and timestamp
 with the execution evidence. The PID identifies the claiming command, not a
 persistent worker: its exit alone does not prove the Task stopped using TEST.
-`BLOCKED` (exit 2) includes the holder; report that Task and do not access TEST.
-Even another execution of the same Task is a competitor.
+`BLOCKED` (exit 2) includes the holder and denies use of this shared contour.
+Even another execution of the same Task is a competitor. Continue independent
+work, arrange authorized independent TEST capacity or wait as appropriate.
 
 Keep ownership across the entire TEST use, including related fixes and cleanup.
 After completion or a handled failure, restore/verify usable TEST, then:

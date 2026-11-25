@@ -14,7 +14,7 @@ import stat
 import subprocess
 import urllib.request
 
-VERSION = '0.171.0'
+VERSION = '0.172.0'
 INSTALLER_URL = 'https://chatgpt.com/codex/install.sh'
 REFERENCE = 'codex-proof-reference'
 # This installer writes the current symlink's host-specific dev/inode/ctime
@@ -22,7 +22,7 @@ REFERENCE = 'codex-proof-reference'
 # Relay's ordinary relocation recreates that link. Never rewrite the history
 # or infer that pruning is safe from its equivalence to another installation.
 # Owner: openai/codex scripts/install/install.sh at
-# rust-v0.171.0 (reader 843, writer 1446).
+# rust-v0.172.0 (reader 843, writer 1446).
 SELECTION_HISTORY_INSTALLER_SHA256 = 'b698d8eb50c0fbe0214ea57b5bf2af439054108404c6d2b872989db02f4bd574'
 
 

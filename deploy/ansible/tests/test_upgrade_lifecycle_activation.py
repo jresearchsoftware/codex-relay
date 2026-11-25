@@ -59,13 +59,18 @@ class UpgradeActivationTests(unittest.TestCase):
         systemctl.write_text(
             '#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\n'
             f'states=json.loads(Path({str(state)!r}).read_text())\n'
-            'print(states[sys.argv[2]])\n'
+            'value=states[sys.argv[2]]\n'
+            'if "--value" in sys.argv:\n'
+            ' property_name=sys.argv[3].removeprefix("--property=") + "="\n'
+            ' value=next(line.removeprefix(property_name) for line in value.splitlines() if line.startswith(property_name))\n'
+            'print(value)\n'
         )
         systemctl.chmod(0o755)
         restart = root / 'restart'
         restart.write_text(
-            '#!/usr/bin/python3\nfrom pathlib import Path\n'
+            '#!/usr/bin/python3\nimport json,sys\nfrom pathlib import Path\n'
             f'Path({str(trace)!r}).write_text("restart\\n")\n'
+            'Path(__file__).with_suffix(".argv").write_text(json.dumps(sys.argv[1:]))\n'
             f'Path({str(state)!r}).write_text({json.dumps(final)!r})\n'
         )
         restart.chmod(0o755)
@@ -349,6 +354,34 @@ class UpgradeActivationTests(unittest.TestCase):
             self.assertEqual(set(saved), {'reviewer', 'production', 'general'})
             self.assertEqual(trace.read_text(), 'restart\n')
             self.assertIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=' + HEAD, result.stdout)
+
+    def test_retained_apply_binds_first_reviewer_socket_migration_before_install(self):
+        for socket_installed, helper_installed in ((False, False), (True, False), (True, True)):
+            with (self.subTest(socket_installed=socket_installed, helper_installed=helper_installed),
+                  tempfile.TemporaryDirectory() as temporary):
+                root = Path(temporary)
+                initial = {'reviewer.service': service(41, active=True, enabled='enabled'),
+                           'production.service': service(), 'general.service': service(),
+                           'reviewer.socket': socket_state(loaded=socket_installed)}
+                final = {**initial, 'reviewer.service': service(51, active=True, enabled='enabled'),
+                         'reviewer.socket': socket_state(active=True)}
+                tasks, values, trace = self.fixture(root, initial, final)
+                values.update(relay_reviewer_socket_activation=True, relay_reviewer_socket_service_name='reviewer.socket')
+                if helper_installed:
+                    helper = root / 'relay-reviewer-maintenance'
+                    helper.write_text('#!/bin/sh\nexit 1\n')
+                    helper.chmod(0o750)
+                result = self.run_play(root, tasks, values)
+                if socket_installed and not helper_installed:
+                    self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('RELAY_UPGRADE_REVIEWER_LEGACY_IDENTITY_UNPROVEN', result.stdout)
+                    self.assertFalse((root / 'gate/admission-v1.json').exists())
+                    self.assertFalse(trace.exists())
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    expected = [] if helper_installed else ['--migrate-legacy', '41']
+                    self.assertEqual(json.loads((root / 'restart.argv').read_text()), expected)
+                    self.assertIn('RELAY_UPGRADE_ACTIVATION_VALIDATED=' + HEAD, result.stdout)
 
     def test_old_helper_never_drops_present_socket_activity_or_enablement(self):
         for active, enabled in ((True, 'enabled-runtime'), (False, 'enabled'), (False, 'disabled')):

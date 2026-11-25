@@ -97,7 +97,10 @@ def installation(tmp_path, request):
     for name in reinstall.unit_names(config):
         content = ('Unit=' + name.removesuffix('.timer') + '.service' if name.endswith('.timer')
                    else 'ExecStart=/opt/codex-relay/current/bin/synthetic')
-        if name.endswith('.socket'):
+        if name == reinstall.unit_names(config)[2].removesuffix('.service') + '.socket':
+            content = ('# managed-by: codex-relay-reviewer-socket\n# relay-install-root=/opt/codex-relay\n'
+                       'Service=' + reinstall.unit_names(config)[2] + '\nAccept=no\nListenStream=127.0.0.1:8787')
+        elif name.endswith('.socket'):
             content = ('ListenStream=/run/codex-relay-manual-outcome.sock\nAccept=yes\nSocketUser=root\n'
                        'SocketGroup=' + config['environment']['reviewerUser'] + '\nSocketMode=0660')
         elif name.endswith('-relay-manual-outcome@.service'):
@@ -352,7 +355,7 @@ def add_execution_slot(value):
     value.config['environment']['instance'] = topology['environment']['instance']
     value.config['consumer']['executionSlots'] = topology['consumer']['executionSlots']
     new_names = reinstall.unit_names(value.config)
-    for old, new in zip(old_names[:7] + old_names[-2:], new_names[:7] + new_names[-2:]):
+    for old, new in zip(old_names[:7] + old_names[-3:], new_names[:7] + new_names[-3:]):
         if old != new:
             (value.root / 'etc/systemd/system' / old).rename(value.root / 'etc/systemd/system' / new)
             value.systemd.units[new] = value.systemd.units.pop(old)
@@ -439,6 +442,16 @@ def test_manual_outcome_socket_is_stopped_and_disabled_before_runtime_retirement
     template = reinstall.unit_names(value.config)[-1]
     assert not any(name == template for _, name in value.systemd.calls)
     assert template not in json.loads(value.paths['journal'].read_text())['units']
+
+
+def test_private_reviewer_socket_stops_before_service_and_cannot_reactivate_during_retirement(installation):
+    value = installation
+    reviewer = reinstall.unit_names(value.config)[2]
+    socket = reviewer.removesuffix('.service') + '.socket'
+    value.systemd.units[socket] = 'active'
+    assert run(value)['state'] == 'DECOMMISSIONED'
+    assert value.systemd.calls.index(('stop', socket)) < value.systemd.calls.index(('stop', reviewer))
+    assert ('disable', socket) in value.systemd.calls
 
 
 @pytest.mark.parametrize('canonical', [True, False])

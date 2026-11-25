@@ -82,7 +82,9 @@ def target(tmp_path):
                  'UnitFileState': 'enabled' if external else '', 'MainPID': '17' if external else '0',
                  'User': '', 'Group': '', 'FragmentPath': '', 'DropInPaths': ''}
         state.update(services.get(unit, {}))
-        return subprocess.CompletedProcess(argv, 0, '\n'.join(key + '=' + value for key, value in state.items()).encode(), b'')
+        properties = argv[-2].removeprefix('--property=').split(',')
+        return subprocess.CompletedProcess(argv, 0, '\n'.join(
+            key + '=' + value for key, value in state.items() if key in properties).encode(), b'')
     def app_qualifier(source, settings, *, execute):
         observed.append(copy.deepcopy(settings))
     def tls_qualifier(*arguments, **keywords):
@@ -408,6 +410,36 @@ def test_unknown_or_unavailable_external_service_is_an_actionable_precutover_fai
     with pytest.raises(host.HostPreflightError, match='HOST_EXTERNAL_SERVICE_UNAVAILABLE'): f['inspect']()
     f['services'][unit] = {'ActiveState': 'activating'}
     with pytest.raises(host.HostPreflightError, match='HOST_SERVICE_STATE_AMBIGUOUS'): f['inspect']()
+
+
+def test_reviewer_recovery_oneshot_settles_before_fingerprinting(target, monkeypatch):
+    f = target
+    unit = f['values']['relay_reviewer_recovery_service_name']
+    f['services'][unit] = {'LoadState': 'loaded', 'Type': 'oneshot'}
+    baseline = f['inspect']()['observedSha256']
+    f['services'][unit].update(ActiveState='activating', MainPID='17', SubState='start')
+    waits = []
+
+    def settle(seconds):
+        waits.append(seconds)
+        f['services'][unit].update(ActiveState='inactive', MainPID='0', SubState='dead')
+
+    monkeypatch.setattr(host.time, 'sleep', settle)
+    assert f['inspect']()['observedSha256'] == baseline
+    assert waits == [0.25]
+
+
+@pytest.mark.parametrize('service_type,wait_count', [('oneshot', 4), ('simple', 0)])
+def test_unsettled_reviewer_recovery_still_fails_closed(target, monkeypatch, service_type, wait_count):
+    f = target
+    unit = f['values']['relay_reviewer_recovery_service_name']
+    f['services'][unit] = {'LoadState': 'loaded', 'Type': service_type, 'ActiveState': 'activating'}
+    waits = []
+    monkeypatch.setattr(host.time, 'sleep', waits.append)
+    with pytest.raises(host.HostPreflightError, match='HOST_SERVICE_STATE_AMBIGUOUS') as error:
+        f['inspect']()
+    assert error.value.resource == 'recovery'
+    assert waits == [0.25] * wait_count
 
 
 def test_existing_upgrade_missing_tls_does_not_claim_fresh_issuance_proof(target):

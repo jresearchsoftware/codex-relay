@@ -261,6 +261,13 @@ def _file_blob(api, prefix, config_sha, path, token):
         tree_sha = entry['sha']
 
 
+def verify_workflow_blob(receipt, token, expected_blob):
+    """Bind the running native workflow to its reviewed projected bytes."""
+    repository, config_sha = receipt['config_repository'], receipt['config_sha']
+    observed = _file_blob(github_api, '/repos/' + repository, config_sha, WORKFLOW, _token(token))
+    require(observed == expected_blob, 'GIT_INTENT_WORKFLOW_PROJECTION_MISMATCH')
+
+
 def _product_selection(raw, product, binding, api):
     require(len(raw) <= 64 * 1024, 'GIT_INTENT_CONFIG_TOO_LARGE')
     try:
@@ -395,7 +402,7 @@ def resolve_pair(binding, dispatch, token, *, api=None):
         'GIT_INTENT_SECRET_CONTENT')
     product_repo = _repository(api, product, None, False)
     product_sha, source_policy = _product_selection(raw, product, binding, api)
-    return {'config_bytes': raw, 'receipt': {
+    return {'config_bytes': raw, 'workflow_run_attempt': run['run_attempt'], 'receipt': {
         'config_repository': repository, 'config_repository_id': config_repo['id'],
         'config_path': path, 'config_sha': config_sha, 'config_blob_sha': blob,
         'config_sha256': hashlib.sha256(raw).hexdigest(),

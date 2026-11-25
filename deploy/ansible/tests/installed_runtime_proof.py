@@ -73,7 +73,7 @@ def owner_lifecycle_trust_proof(temp, values, env, deploy_umask, source):
     normalization = {'Protect owner lifecycle code substitution parents',
                      'Protect the fixed owner lifecycle Python dependency closure',
                      'Remove non-owner write permissions from the complete installed source'}
-    names = ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'config.py',
+    names = ['owner_lifecycle.py', 'lifecycle.py', 'lifecycle_process.py', 'timing.py', 'config.py',
              'installed_config.py', 'deployment_lock.py', 'git_intent.py', 'repository_source.py']
     fixture = Path(values['relay_install_root']).with_name('owner-lifecycle-trust-fixture')
     fixture.mkdir()

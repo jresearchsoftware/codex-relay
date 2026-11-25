@@ -154,6 +154,7 @@ async fn client(
         store: store.clone(),
         github: github::Github::mock_api(format!("http://{github_address}")),
         trusted_client_ca: Arc::new(Vec::new()),
+        maintenance: maintenance::Maintenance::default(),
         observed_arguments: Default::default(),
     });
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

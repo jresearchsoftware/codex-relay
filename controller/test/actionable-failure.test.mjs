@@ -36,6 +36,25 @@ test('fresh admission reports the retained slot conflict without exposing privat
   assert.doesNotMatch(output, new RegExp(canary));
 });
 
+test('a bounded run-status read cannot spend the general GitHub retry budget', async () => {
+  let elapsed = 0;
+  let attempts = 0;
+  const api = createGithubApi({
+    runToken: canary,
+    monotonic: () => elapsed,
+    wait: async delay => { elapsed += delay; },
+    random: () => 0,
+    fetchImpl: async () => {
+      attempts += 1;
+      elapsed += 50;
+      return new Response(null, { status: 503 });
+    }
+  });
+  await assert.rejects(api.getRun(123, { deadlineMs: 25 }), error =>
+    error.code === 'GITHUB_REQUEST_FAILED' && error.details.githubFailure.stopped === 'deadline');
+  assert.equal(attempts, 1);
+});
+
 // Use the real API client and Writer wire serializer in another process. The
 // GitHub dependency and installed sudo entrypoint are synthetic in this test.
 function preflightProcess(mode, healthyReceipt, tokenResponse) {

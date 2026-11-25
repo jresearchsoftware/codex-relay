@@ -19,7 +19,9 @@ use unicode_normalization::UnicodeNormalization;
 mod diagnostics;
 mod executable_cr;
 mod github;
+mod listener;
 mod loaded_inputs;
+mod maintenance;
 mod manual_outcome;
 mod mtls_identity;
 mod publication;
@@ -32,6 +34,9 @@ mod task_authority;
 struct Args {
     #[arg(long, env = "REVIEWER_MCP_CONFIG")]
     config: String,
+    /// Validate the rendered runtime configuration before starting the service.
+    #[arg(long)]
+    check_config: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,6 +59,7 @@ struct App {
     store: Arc<Mutex<store::Store>>,
     github: github::Github,
     trusted_client_ca: Arc<Vec<u8>>,
+    maintenance: maintenance::Maintenance,
     #[cfg(test)]
     observed_arguments: tests::ObservedArguments,
 }
@@ -721,6 +727,18 @@ async fn mcp(
                     return (StatusCode::OK, Json(json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text":code}],"isError":true}}))).into_response();
                 }
             };
+            let _mutation = if matches!(
+                name,
+                "submit_manual_outcome" | "publish_task_authority" | "submit_pr_review"
+            ) {
+                let Some(accepted) = app.maintenance.mutation(name == "submit_manual_outcome")
+                else {
+                    return maintenance::unavailable();
+                };
+                Some(accepted)
+            } else {
+                None
+            };
             if name == "submit_manual_outcome" {
                 manual_outcome::submit(&app, arguments).await
             } else if name == "publish_task_authority" {
@@ -1193,6 +1211,10 @@ fn router(app: App) -> Router {
         .route("/mcp", post(mcp).get(sse_not_supported))
         .layer(DefaultBodyLimit::max(62_000))
         .route_layer(middleware::from_fn_with_state(
+            app.maintenance.clone(),
+            maintenance::track,
+        ))
+        .route_layer(middleware::from_fn_with_state(
             app.trusted_client_ca.clone(),
             mtls_identity::require_identity_with_trust,
         ))
@@ -1385,6 +1407,10 @@ async fn main() {
     if configured_mount != "/mcp" {
         panic!("REVIEWER_MCP_MOUNT_PATH must remain the canonical /mcp route")
     }
+    if a.check_config {
+        println!("REVIEWER_CONFIG_VALID");
+        return;
+    }
     assert_eq!(
         std::env::var("GITHUB_APP_ID").ok().as_deref(),
         Some(policy.app_id.as_str()),
@@ -1421,6 +1447,8 @@ async fn main() {
             }
         }
     }
+    let maintenance =
+        maintenance::Maintenance::from_environment().expect("maintenance state invalid");
     let app = router(App {
         policy,
         repositories,
@@ -1436,14 +1464,28 @@ async fn main() {
         )),
         github: github::Github::new(),
         trusted_client_ca: Arc::new(trusted_client_ca),
+        maintenance: maintenance.clone(),
     });
     let addr: SocketAddr = format!("{}:{}", configured_host, configured_port)
         .parse()
         .expect("invalid host/port");
-    let listener = tokio::net::TcpListener::bind(addr)
+    let listener = listener::bind(addr).await.expect("bind failed");
+    maintenance.ready();
+    #[cfg(unix)]
+    if let Ok(path) = std::env::var("REVIEWER_MAINTENANCE_SOCKET") {
+        let control = maintenance.clone();
+        tokio::spawn(async move {
+            if let Err(error) =
+                maintenance::serve(&path, control, loaded_config["artifact"].clone()).await
+            {
+                diagnostics::failure("MAINTENANCE_CONTROL_UNAVAILABLE", error);
+            }
+        });
+    }
+    axum::serve(listener, app)
+        .with_graceful_shutdown(maintenance::shutdown(maintenance))
         .await
-        .expect("bind failed");
-    axum::serve(listener, app).await.expect("server failed");
+        .expect("server failed");
 }
 #[cfg(test)]
 mod tests {
@@ -1511,6 +1553,7 @@ mod tests {
             store: Arc::new(Mutex::new(store)),
             github: github::Github::new(),
             trusted_client_ca: Arc::new(Vec::new()),
+            maintenance: maintenance::Maintenance::default(),
         };
         let args = base_args("APPROVE");
         let target = app.target(&args).unwrap();
@@ -2476,6 +2519,7 @@ mod tests {
             store,
             github,
             trusted_client_ca: Arc::new(Vec::new()),
+            maintenance: maintenance::Maintenance::default(),
         });
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
@@ -2694,6 +2738,7 @@ mod tests {
         fs::write(&path, &rendered).expect("write rendered managed config");
         let runtime_args = Args {
             config: path.to_str().unwrap().to_string(),
+            check_config: false,
         };
         let loaded = effective_runtime_config(&runtime_args);
         validate_effective_runtime_config(&loaded);

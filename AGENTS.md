@@ -284,7 +284,7 @@ and preserve useful progress in substantive commits. Publish safe, authorized
 unpushed task commits to the existing task branch; automatic workers hand them
 to Writer. Leave unrelated changes untouched. Remove only confirmed disposable
 residue; use ignores for repeatable generated artifacts without hiding work.
-State wholly inside an explicitly isolated disposable TEST sandbox follows
+State wholly inside owned disposable TEST follows
 [TEST Environment Authority](docs/execution-policy.md#test-environment-authority);
 cleanup there does not require individual-file ownership proof or preservation
 of disposable state. Preserve useful product-source work and ordinary
@@ -344,13 +344,13 @@ covering implementation, tests, fixes and disposable or explicitly authorized
 qualification before one independent exact-head review. Preserve distinct owner,
 source-acceptance, installation, credential and original-attempt native
 authorization boundaries. Route selection never expands Task/CR authority or
-overrides the progress-bounded execution stops above. Any manual or automatic
-execution owning an explicitly isolated disposable TEST environment has full
-operational control inside its sandbox under the standing
-[TEST Environment Authority](docs/execution-policy.md#test-environment-authority)
-without per-operation approvals or production recovery procedures. PROD,
-shared/foreign resources and external permissions or credentials outside
-established authority remain excluded.
+overrides the progress-bounded execution stops above. An
+execution that owns disposable TEST has full operational control over its TEST
+effects under the standing
+[TEST Environment Authority](docs/execution-policy.md#test-environment-authority).
+This can include TEST-specific configuration of shared services when the
+execution preserves PROD and other non-TEST users and operates within its
+established administrative authority.
 
 For ordinary owner-admitted Relay/Codex work, the default model is
 `gpt-6.1-sol`, the default reasoning effort is `xhigh` and the default Subagents

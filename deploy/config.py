@@ -248,11 +248,13 @@ def validate(c, product_root):
         require(repository == deployment_repository(c) and c['consumer']['baseBranch'] == 'main'
                 and c['source'].get('revision', 'main') == 'main', 'localApply.installed-self-consumer')
     elif local_apply.get('source') == 'git':
-        require(object_keys(local_apply, ['source', 'repository', 'configPath'])
+        require(object_keys(local_apply, ['source', 'repository', 'configPath'], ['poolReservation'])
                 and text(local_apply['repository'], r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+')
                 and relative(local_apply['configPath'])
                 and local_apply['configPath'].endswith('.json')
                 and c['consumer']['baseBranch'] == 'main', 'localApply.git')
+        require('poolReservation' not in local_apply or local_apply['poolReservation'] == 'same-run-v1',
+                'localApply.poolReservation')
     else:
         require(object_keys(local_apply, ['configPath']) and relative(local_apply['configPath']), 'localApply')
     require(type(e['codexTokenRequired']) is bool, 'codexTokenRequired')
@@ -439,6 +441,7 @@ def compile_inputs(c):
     })
     instance = e.get('instance')
     result['relay_reviewer_bind_port'] = instance['reviewerPort'] if instance else 8787
+    result['relay_reviewer_socket_service_name'] = ns + '-reviewer.socket' if instance else 'reviewer-mcp.socket'
     result['relay_reviewer_relay_enabled'] = instance['publicationEnabled'] if instance else True
     if instance:
         # Legacy consumers retain their installed unit identities. Opting in

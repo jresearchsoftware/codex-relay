@@ -39,6 +39,9 @@ def test_actual_owned_templates_expand_all_fixed_routes(catalogue):
     owners = catalogue['coverage']['owners']
     assert any('Create root-owned slot namespace parents' in owner for owner in owners)
     assert any('Reconcile only fixed repository work ancestor metadata' in owner for owner in owners)
+    assert any('Install the retained private Reviewer listener' in owner for owner in owners)
+    maintenance = next(entry for entry in catalogue['entries'] if entry['path'].endswith('/relay-reviewer-maintenance'))
+    assert (maintenance['owner'], maintenance['group'], maintenance['mode']) == ('root', 'root', 0o750)
     assert all(probe['argv'][0:2] == ['/usr/sbin/runuser', '-u'] and '/usr/bin/bwrap' in probe['argv']
                for probe in catalogue['probes'])
 

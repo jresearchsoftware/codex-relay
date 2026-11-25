@@ -71,12 +71,13 @@ function retryDelay(headers, rateLimited, now) {
 export function createGithubApi({ token, runToken, fetchImpl = fetch, signal,
   monotonic = () => performance.now(), wallTime = Date.now, wait = sleep, random = Math.random } = {}) {
   async function request(path, method = 'GET', body, credential = token, {
-    absolute = false, operation = 'github-request', code = 'GITHUB_REQUEST_FAILED', graphql = false
+    absolute = false, operation = 'github-request', code = 'GITHUB_REQUEST_FAILED', graphql = false, deadlineMs
   } = {}) {
     const read = method === 'GET';
     const timeout = read ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS;
-    const deadline = monotonic() + (read ? READ_DEADLINE_MS : WRITE_TIMEOUT_MS);
-    const overall = AbortSignal.timeout(read ? READ_DEADLINE_MS : WRITE_TIMEOUT_MS);
+    const budget = Math.min(deadlineMs ?? Infinity, read ? READ_DEADLINE_MS : WRITE_TIMEOUT_MS);
+    const deadline = monotonic() + budget;
+    const overall = AbortSignal.timeout(budget);
     const cancellation = signal ? AbortSignal.any([signal, overall]) : overall;
     const url = `https://api.github.com${absolute ? '' : `/repos/${REPOSITORY}`}${path}`;
     const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -182,7 +183,10 @@ export function createGithubApi({ token, runToken, fetchImpl = fetch, signal,
     get: path => request(path), post: (path, body) => request(path, 'POST', body),
     patch: (path, body) => request(path, 'PATCH', body),
     delete: path => request(path, 'DELETE'),
-    getRun: id => { if (!runToken) fail('WORKFLOW_READ_TOKEN_REQUIRED'); return request(`/actions/runs/${id}`, 'GET', undefined, runToken); },
+    getRun(id, { deadlineMs } = {}) {
+      if (!runToken) fail('WORKFLOW_READ_TOKEN_REQUIRED');
+      return request(`/actions/runs/${id}`, 'GET', undefined, runToken, { deadlineMs });
+    },
     async list(path) {
       const result = [];
       for (let page = 1; page <= 100; page++) {

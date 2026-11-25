@@ -48,9 +48,11 @@ class DockerNginxInstanceGuardExecutionTests(unittest.TestCase):
             'relay_github_repository': 'fixture/public-relay',
             'relay_release_commit': 'a' * 40, 'relay_release_sha256': 'b' * 64,
             'relay_reviewer_user': self.root.name, 'relay_reviewer_group': 'root',
+            'relay_namespace': self.root.name,
         }
         for name, suffix in {
             'relay_reviewer_service_name': 'reviewer.service',
+            'relay_reviewer_socket_service_name': 'reviewer.socket',
             'relay_reviewer_recovery_service_name': 'recovery.service',
             'relay_reviewer_recovery_timer_name': 'recovery.timer',
             'relay_production_runner_service_name': 'runner.service',

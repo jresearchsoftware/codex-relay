@@ -111,12 +111,36 @@
   changed_when: false
   failed_when: relay_intent_import_closure.rc != 0 or relay_intent_import_closure.stdout != 'INTENT_STAGE_IMPORTS_READY'
 
-- name: Execute the staged Reviewer argument parser and native loader without activation
+- name: Prove the target gateway before rendering the desired Reviewer configuration
+  ansible.builtin.include_role:
+    name: relay_docker_network_gateway
+  when: relay_deployment_profile == 'production' and relay_reviewer_bind_mode == 'nexus_gateway'
+
+- name: Render the desired Reviewer configuration inside the private stage
+  ansible.builtin.template:
+    src: '{{ playbook_dir }}/roles/relay_runtime/templates/reviewer-mcp.json.j2'
+    dest: '{{ relay_intent_stage_root }}/reviewer-config.json'
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+
+- name: Validate the rendered configuration with the staged Reviewer before activation
   ansible.builtin.command:
-    argv: ['/usr/bin/env', '-i', 'PATH=/usr/bin:/bin', 'LANG=C', 'HOME={{ relay_intent_stage_root }}', '{{ relay_intent_stage_root }}/release/bin/reviewer-mcp-http', --help]
+    argv:
+      - /usr/bin/env
+      - -i
+      - PATH=/usr/bin:/bin
+      - LANG=C
+      - HOME={{ relay_intent_stage_root }}
+      - '{{ relay_intent_stage_root }}/release/bin/reviewer-mcp-http'
+      - --check-config
+      - --config
+      - '{{ relay_intent_stage_root }}/reviewer-config.json'
   register: relay_intent_reviewer_loader
   changed_when: false
-  failed_when: relay_intent_reviewer_loader.rc != 0 or 'Usage:' not in relay_intent_reviewer_loader.stdout
+  failed_when: relay_intent_reviewer_loader.rc != 0 or relay_intent_reviewer_loader.stdout != 'REVIEWER_CONFIG_VALID'
 
 - name: Retain bounded artifact provenance for the final candidate seal
   ansible.builtin.set_fact:

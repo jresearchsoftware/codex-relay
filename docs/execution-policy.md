@@ -132,125 +132,54 @@ shared [execution-policy module](../runtime/src/execution-policy.mjs). The
 
 ## TEST Environment Authority
 
-Any manual or automatic Codex execution that owns an explicitly isolated
-disposable TEST environment has full operational control inside that sandbox.
-Its established owner authority identifies the concrete environment,
-repositories, configuration and resources that form the boundary. This is a
-general standing policy, not an exception for an individual Task. No new
-per-operation approval, Task, Step or Relay attempt is required for operations
-inside that boundary.
+A manual or automatic Codex execution that owns disposable TEST has full
+operational control over TEST effects within the owner's established
+administrative authority. It may create, expand, reconfigure, replace, remove,
+reset and rebuild TEST resources, including supporting services, repositories,
+workflows and runners. The initial inventory is a starting point. Choose
+suitable tools, shells, validation and recovery for the operation without
+another Task, Step or per-operation owner approval.
 
-Routine reproduction, related fixes, checks, representative deployment and
-original-operation qualification remain the same bounded repair in that owned
-sandbox. Do not split these iterations into extra Tasks, Steps or owner prompts.
-Use the supported interface when qualifying that interface and report actual
-installed source/consumer identities and operation results. A realistic TEST
-success must identify material differences from PROD; it does not qualify an
-untested deployment or erase an external prerequisite. Fresh real Relay
-executions still require genuine native admission and preserve original events.
+The boundary is the effect of the operation. TEST-specific configuration of
+shared infrastructure is within scope when the operation preserves PROD and
+other non-TEST users, configuration, data, credentials and external effects.
+For example, a TEST route or upstream may be changed through an authorized
+shared nginx reload when the affected configuration and service behavior can be
+confined appropriately. A separate instance, namespace or host is an option.
+Keep other Tasks' resources and independently governed systems protected.
+Use proportionate evidence for the target, authority and effects. Actual
+provider constraints and established privileges apply, including App and
+runner administration. A repository's name supplies no authority. Keep
+credentials out of checkouts, workers, public records and logs.
 
-A shared disposable TEST installation has at most one owner Task at a time.
-Before use, atomically claim the [shared TEST marker](test-environment-lock.md).
-The claim is sufficient allocation within existing TEST authority; no separate
-owner assignment is required. Return TEST to usable state and release the exact
-execution's claim on completion or handled failure. A competitor reports BLOCKED
-with the holder and does not access TEST; no queue or silent takeover.
-The owner Task may recreate its dedicated sandbox without preserving its
-preexisting disposable state or requesting permission for each operation;
-preserve evidence required by the qualification being performed. Interrupted
-ownership remains visible until its holder is confirmed stopped and TEST is
-usable; age alone never authorizes recovery.
+For disposable TEST setup, fixtures and supporting repositories, choose direct
+updates or PRs, merge methods, checks, review, publication and cleanup as
+appropriate. Relay adds no blanket independent approval, squash, exact-head
+merge guard, Draft/Ready, signing, Issue closure or Writer/Reviewer ceremony for
+those operations. Synthetic and resettable records are valid fixture tools.
+Genuine Relay qualification still uses its actual control: use native admission
+to test real execution, trusted Writer or Reviewer and genuine independence to
+test those publication or review guarantees, and the original-operation recovery
+path to substantiate replay and uncertain external effects. Report exactly
+which installed revisions, identities, interfaces and outcomes were exercised.
 
-Within the sandbox, Codex may choose suitable tools and shells, manage services,
-edit or remove filesystem state, delete and recreate resources, rebuild,
-install, reinstall, upgrade, reset failed TEST state and run qualification.
-Standing owner authority for the explicitly selected dedicated TEST repositories
-also covers these GitHub operations within the verified boundary:
+An execution may install or exercise its authorized product candidate in TEST
+before product acceptance. Product-source acceptance still requires independent
+exact-head review and the normal source checks. TEST authority supplies no
+product merge, release, Task closure, PROD operation or new external privilege.
+Preserve real admission, replay, trusted publication and credential boundaries,
+and reconcile genuine uncertain effects before dependent operations. Retain
+evidence needed for the claims being made. Suitable direct cleanup or rebuilding
+may replace production recovery procedures for disposable TEST state.
 
-- Create, update and close TEST-only Issues under their current closure policy;
-  manage TEST branches and fixtures, and publish trusted Decisions and CRs.
-- Manage TEST workflows and runs; create and review TEST PRs, including negative
-  or positive independent native TEST reviews.
-- Squash-merge TEST-only PRs after genuine independent exact-head approval and
-  required checks, with the expected-head guard and native merge readback; clean
-  or reset disposable TEST resources.
-
-No separate per-action owner confirmation is required. Established standing TEST
-authority supplies publication agreement for an in-scope independent
-`REQUEST_CHANGES`; it does not supply the substantive finding or independent
-verdict. An owner-required negative-review preview for a product PR remains
-binding for that product review and does not add a permission prompt to already
-authorized TEST fixtures. A prohibition on product-source merge does not prohibit
-qualified TEST repository integration.
-
-Verify the actual target and authenticated actor's existing permissions. Preserve
-current claim ownership, genuine native admission for Relay executions,
-worker/Writer/Reviewer separation and independence, required signatures and
-trusted native records, exact head/checks,
-readiness and applicable holds, closure policy and truthful evidence claims.
-Reconcile an uncertain external effect through its original operation and native
-readback; standing authority permits no duplicate launch/publication or invented
-completion. A repository name containing `test` alone proves no TEST boundary.
-This clarification creates no runtime approval stage and expands no credential,
-App or runner-ACL authority.
-
-Established standing owner authority may also include dedicated TEST GitHub App
-installations, selected TEST repository grants and TEST-only permissions, TEST
-runner registration/removal, and TEST runner-group membership and access policy.
-For each operation, verify the authenticated App/installation and actual API
-permission, exact dedicated target names/IDs, selected TEST repository allowlist,
-trusted workflow/ref restrictions and isolation from shared or production
-resources. Keep runner groups restricted to the authorized TEST repositories
-and trusted workflows; labels alone do not establish that boundary. Once these
-facts and the operation's owner authority are established, no additional
-per-operation approval is required. Do not assume that source policy creates an
-unavailable credential or administrative capability.
-
-An owner-authorized local manual Codex session may authenticate directly with
-the dedicated TEST Admin App: keep its PEM in the owner's private local storage
-outside Git checkouts, generate a short-lived JWT and installation access token
-on demand, verify read-only API access, then perform the authorized TEST
-operations. Organization runner administration can grant organization-wide
-technical access. When the owner explicitly accepts that scope, TEST-only
-enforcement rests on the verified targets and governance instructions, not an
-assertion that the token excludes production. This path requires no separate
-admin helper, broker or server. Keep credentials out of repositories, workers,
-GitHub publications and logs; ambiguous targets or shared-host effects remain
-stop conditions.
-
-Production-safe public lifecycle interfaces are optional for disposable TEST
-cleanup and rebuilding. Codex may clean or reconstruct sandbox state directly;
-it need not preserve that state for forensics, prove ownership of individual
-files or use production recovery procedures. Existing global worktree,
-deployment and recovery preservation rules do not impose those requirements
-on disposable TEST state. Evidence needed to support a qualification claim must
-remain truthful and sufficient for that claim; rebuilding alone does not prove
-the discarded state or the supported product lifecycle.
-
-The hard boundary is the sandbox. This authority excludes PROD, shared
-infrastructure, foreign resources, product repositories outside the sandbox,
-and external App permissions, installations or credentials outside established
-authority. It does not grant new credentials, privileges or tools that an
-execution does not physically possess. If a target or effect cannot be confined
-to the established sandbox, stop at that boundary. Do not turn an unavailable
-capability into an invented approval requirement for otherwise authorized TEST
-operations.
-
-An exact Task-authorized development candidate may be installed or exercised
-inside the sandbox before independent product acceptance. TEST operations do
-not grant product-source merge, PROD deployment, release, product Task closure or
-product acceptance. Normal source checks and independent exact-head review
-remain binding. Writer retains responsibility for actual product and ordinary
-Relay publication; original admission, replay suppression, trusted Git import
-and protected credential boundaries remain intact. Resetting disposable TEST
-state does not authorize re-executing an admitted Relay attempt or rewriting its
-native GitHub authority/publication history. Disposable local TEST journals and
-state may still be removed. TEST proof establishes only the behavior actually tested;
-it does not establish PROD installation or acceptance.
-
-Consumer runbooks may identify concrete sandboxes and operational facts;
-other procedures reference this section rather than adding TEST-only approval,
-preservation or recovery requirements.
+Before using the shared TEST contour, atomically claim its
+[host-local marker](test-environment-lock.md). Keep the claim through use,
+verification and cleanup. Return usable TEST and release only the execution's
+own claim after completion or handled failure. A competing claim prevents use
+of that shared contour. Continue useful independent work, arrange authorized
+independent TEST capacity or wait as appropriate. Interrupted ownership requires
+confirmation that the holder has stopped and TEST is usable before recovering
+the exact claim. Age alone grants no takeover.
 
 ## Proportional controls and operator usability
 

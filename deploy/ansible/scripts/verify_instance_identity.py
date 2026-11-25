@@ -88,6 +88,12 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
             owned = pool_unit_owned(content, pool)
         elif name.endswith('.timer'):
             owned = 'Unit=' + name.removesuffix('.timer') + '.service' in content.splitlines()
+        elif name.endswith('.socket') and not name.endswith('-relay-manual-outcome.socket'):
+            service = name.removesuffix('.socket') + '.service'
+            owned = ('# managed-by: codex-relay-reviewer-socket' in content.splitlines()
+                     and '# relay-install-root=' + install_root in content.splitlines()
+                     and service in units and 'Service=' + service in content.splitlines()
+                     and 'Accept=no' in content.splitlines())
         elif name.endswith('-relay-manual-outcome.socket'):
             namespace = Path(install_root).name
             owned = ('ListenStream=/run/' + namespace + '-manual-outcome.sock' in content.splitlines()
@@ -113,7 +119,9 @@ def verify(install_root, config_root, repositories, units, systemd_root=Path('/e
     for path in systemd_root.glob('*.socket'):
         if path.name in units or path.is_symlink() or not path.is_file():
             continue
-        if 'ListenStream=/run/' + Path(install_root).name + '-manual-outcome.sock' in path.read_text().splitlines():
+        lines = path.read_text().splitlines()
+        if ('ListenStream=/run/' + Path(install_root).name + '-manual-outcome.sock' in lines
+                or '# relay-install-root=' + install_root in lines):
             raise ValueError('RELAY_INSTANCE_UNIT_COLLISION')
 
 

@@ -296,24 +296,77 @@ class Host:
         state = self.service(member)
         return state.get('ActiveState') == 'active' and re.fullmatch('[1-9][0-9]*', state.get('MainPID', '')) is not None
 
-    def start(self, member):
+    def check_readiness(self):
         protected(self.contract['readiness'])
         self.command([self.contract['readiness']])
-        self.command(['/usr/bin/systemctl', 'enable', '--now', member['service']])
+
+    def start(self, member, *, enable=True):
+        self.check_readiness()
+        self.command(['/usr/bin/systemctl', *(['enable', '--now'] if enable else ['start']), member['service']])
+
+    def owner_transport(self, member, pid):
+        """Bind only this invocation or an ancestor to its actual service cgroup.
+
+        A RUNNER_NAME environment value or an arbitrary supplied PID cannot
+        exempt a service. The protected lifecycle caller remains responsible
+        for authenticating the owner operation itself.
+        """
+        require(type(pid) is int and pid > 0, 'MAINTENANCE_OWNER_PID_INVALID')
+
+        def identity(process):
+            raw = Path('/proc/' + str(process) + '/stat').read_text()
+            fields = raw[raw.rfind(')') + 2:].split()
+            return int(fields[1]), fields[19]
+
+        process = os.getpid()
+        ancestors = set()
+        while process > 0 and process not in ancestors:
+            ancestors.add(process)
+            if process == pid:
+                break
+            process, _ = identity(process)
+        require(pid in ancestors, 'MAINTENANCE_OWNER_NOT_ANCESTOR')
+        _, started = identity(pid)
+        groups = Path('/proc/' + str(pid) + '/cgroup').read_text().splitlines()
+        expected = '/system.slice/' + member['service']
+        if not any(row.startswith('0::') and (row[3:] == expected or row[3:].startswith(expected + '/'))
+                   for row in groups):
+            return None
+        service = self.service(member)
+        require(service.get('ActiveState') == 'active' and service.get('ControlGroup') == expected,
+                'MAINTENANCE_OWNER_SERVICE_UNPROVEN')
+        require(identity(pid)[1] == started, 'MAINTENANCE_OWNER_PROCESS_CHANGED')
+        return {'pid': pid, 'started': started, 'cgroup': expected}
+
+    def admission_statuses(self, consumers):
+        endpoints = set()
+        for consumer in consumers.values():
+            namespace = consumer['namespace']
+            admission = consumer['admission']
+            require(isinstance(namespace, str) and namespace != 'root'
+                    and re.fullmatch(r'[a-z][a-z0-9-]{0,30}', namespace)
+                    and admission == f'/opt/{namespace}/relay-admission',
+                    'MAINTENANCE_ADMISSION_BINDING_UNPROVEN')
+            endpoints.add(admission)
+        for admission in sorted(endpoints):
+            protected(admission)
+            yield json.loads(self.command([admission, 'status'], text=True, timeout=60))
 
     def attempts_idle(self, consumers):
-        for consumer in consumers.values():
-            protected(consumer['admission'])
-            result = json.loads(self.command([consumer['admission'], 'status'], text=True))
-            if result.get('active') != [] or result.get('unknown') != []:
-                return False
-        return True
+        return all(status.get('active') == [] and status.get('unknown') == []
+                   for status in self.admission_statuses(consumers))
 
-    def stop_idle(self, member, remote_idle, *, now=time.monotonic, wait=time.sleep, timeout=5):
-        """Freeze before inspecting local workers; no signal can hit an active job.
+    def admission_open(self, consumers):
+        return all(status.get('phase') == 'open' for status in self.admission_statuses(consumers))
 
-        Labels have already been removed. A final remote read detects a job
-        assigned before that mutation. Unknown descendants preserve the member.
+    def stop_idle(self, member, remote_idle, *, now=time.monotonic, wait=time.sleep, timeout=5,
+                  disable=True):
+        """Freeze before inspecting local workers and recheck GitHub eligibility.
+
+        Labels have already been removed. Unknown descendants or remote busy
+        state preserve the member. This does not make GitHub's remote label,
+        assignment and busy projections an atomic pause API; the real broker
+        acceptance race requires installed GitHub qualification.
         """
         state = self.service(member)
         if state.get('ActiveState') in ['inactive', 'failed']:
@@ -348,10 +401,11 @@ class Host:
                     return False
             if not remote_idle():
                 return False
-            # Queue SIGTERM to the proven idle cgroup while frozen. This closes
-            # the read/signal race without force-killing any worker process.
+            # Keep local descendants fixed between inspection and signal.
+            # SIGTERM is cancellation, not a graceful active-job drain signal.
             self.command(['/usr/bin/systemctl', 'kill', '--kill-whom=all', '--signal=SIGTERM', member['service']])
-            self.command(['/usr/bin/systemctl', 'disable', member['service']])
+            if disable:
+                self.command(['/usr/bin/systemctl', 'disable', member['service']])
             self.command(['/usr/bin/systemctl', 'stop', '--no-block', member['service']])
             stop_deadline = now() + timeout
         finally:
@@ -395,6 +449,361 @@ def wait_ready(member, runner_id, observe, host, *, now=time.monotonic, wait=tim
         wait(min(0.5, max(0, deadline - now())))
 
 
+def maintenance(contract, state_store, github, host, *, operation, action, owner_pid=None,
+                now=time.monotonic, wait=time.sleep, timeout=1800,
+                progress=None, reservation=None, check_released=None):
+    """Maintain existing registrations under the caller's existing pool lock.
+
+    Pause happens before closing admission: an assignment already in flight
+    must still be allowed to run normally. Drain uses live runner/process state,
+    never historical Task completion. All bound Controller/Writer endpoints
+    must be idle before stopping runners and open before restoring eligibility.
+    No phase changes capacity or runner identity.
+    """
+    require(isinstance(operation, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:-]{0,127}', operation),
+            'MAINTENANCE_OPERATION_INVALID')
+    require(action in ['pause', 'drain', 'restart', 'resume']
+            or action in ['verify', 'rollback'] and reservation is not None
+            or action == 'recover-reservation' and check_released is not None and reservation is None,
+            'MAINTENANCE_ACTION_INVALID')
+    recovering = action == 'recover-reservation'
+    require(type(timeout) in [int, float] and 0 <= timeout <= 86400, 'MAINTENANCE_TIMEOUT_INVALID')
+    require(type(contract['desiredCapacity']) is int and 1 <= contract['desiredCapacity'] <= CAPACITY,
+            'CAPACITY_INVALID')
+    state = state_store.read()
+    require(isinstance(state, dict) and state.get('version') == 1
+            and state.get('binding') == binding(contract), 'MAINTENANCE_BINDING_UNPROVEN')
+    require(state.get('desiredCapacity') == contract['desiredCapacity'], 'MAINTENANCE_CAPACITY_CHANGED')
+    members = {member['id']: member for member in contract['members']}
+    records = state.get('members')
+    require(isinstance(records, dict) and set(records) <= set(members), 'MAINTENANCE_MEMBERS_UNPROVEN')
+    require(all(isinstance(record, dict) and record.get('phase') in ['registered', 'starting', 'ready', 'draining']
+                and type(record.get('runnerId')) is int and record['runnerId'] > 0 for record in records.values()),
+            'MAINTENANCE_REGISTRATION_UNSETTLED')
+    consumers = state.get('consumers')
+    consumer_binding = {'namespace': contract['namespace'], 'admission': contract['admission']}
+    require(isinstance(consumers, dict)
+            and consumers.get(contract['repository']) == consumer_binding,
+            'MAINTENANCE_CONSUMERS_UNPROVEN')
+    group_id = github.qualify(contract)
+
+    def observe(member):
+        matches = [runner for runner in github.runners() if runner.get('name') == member['name']
+                   or runner.get('id') == records[member['id']]['runnerId']]
+        require(len(matches) == 1 and matches[0].get('name') == member['name']
+                and matches[0].get('id') == records[member['id']]['runnerId']
+                and host.registration(member) == matches[0]['id']
+                and github.in_group(group_id, matches[0]['id']), 'MAINTENANCE_RUNNER_BINDING_CHANGED')
+        return matches[0]
+
+    def labels(remote):
+        values = remote.get('labels')
+        require(isinstance(values, list) and all(isinstance(value, dict)
+                and isinstance(value.get('name'), str) and 0 < len(value['name']) <= 256
+                and value.get('type') in ['custom', 'read-only'] for value in values),
+                'MAINTENANCE_LABELS_UNPROVEN')
+        custom = sorted(value['name'] for value in values if value['type'] == 'custom')
+        require(len(custom) <= 100 and len(custom) == len(set(custom)), 'MAINTENANCE_LABELS_UNPROVEN')
+        return custom
+
+    report = {'operation': operation, 'action': action, 'paused': [], 'stopped': [],
+              'preserved': [], 'ready': [], 'busy': []}
+    intent = state.get('maintenance')
+    if intent is None:
+        # Pause writes its original labels before making any native change.
+        if action == 'rollback':
+            require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
+            host.check_readiness()
+            return report
+        require(action == 'pause', 'MAINTENANCE_PAUSE_REQUIRED')
+        snapshots = {}
+        remote_runners = github.runners()
+        for identity, member in members.items():
+            if identity not in records:
+                require(not host.registration_metadata_present(member)
+                        and not any(remote.get('name') == member['name'] for remote in remote_runners)
+                        and host.removal_stopped(member), 'MAINTENANCE_UNOWNED_MEMBER')
+        # Validate every local/remote binding before the first mutation.
+        for identity in records:
+            member = members[identity]
+            remote = observe(member)
+            service = host.service(member)
+            require(service.get('ActiveState') in ['active', 'inactive', 'failed'],
+                    'MAINTENANCE_SERVICE_UNPROVEN')
+            active = service['ActiveState'] == 'active'
+            require(active or host.removal_stopped(member), 'MAINTENANCE_SERVICE_UNPROVEN')
+            transport = host.owner_transport(member, owner_pid) if owner_pid is not None else None
+            snapshots[identity] = {'runnerId': remote['id'], 'labels': labels(remote),
+                                   'active': active, 'phase': 'pending', 'ownerTransport': transport}
+        intent = {'version': 1, 'operation': operation, 'phase': 'pausing', 'members': snapshots}
+        if reservation is not None:
+            deadline = now() + timeout
+            while True:
+                proof = reservation(members, snapshots, group_id)
+                if proof is not None:
+                    intent['nativeReservation'] = proof
+                    break
+                require(now() < deadline, 'MAINTENANCE_NATIVE_RESERVATION_TIMEOUT')
+                wait(min(3, max(0, deadline - now())))
+        state['maintenance'] = intent
+        state_store.write(state)  # reservation precedes label withdrawal
+    require(isinstance(intent, dict) and intent.get('version') == 1
+            and intent.get('operation') == operation, 'MAINTENANCE_OPERATION_CONFLICT')
+    require(isinstance(intent.get('members'), dict) and set(intent['members']) == set(records)
+            and all(value.get('runnerId') == records[identity]['runnerId']
+                    and type(value.get('active')) is bool and isinstance(value.get('labels'), list)
+                    for identity, value in intent['members'].items()), 'MAINTENANCE_INTENT_CHANGED')
+
+    require(('nativeReservation' in intent) == (reservation is not None or recovering),
+            'MAINTENANCE_NATIVE_RESERVATION_MODE_CHANGED')
+
+    def verify_reservation():
+        if reservation is not None:
+            proof = reservation(members, intent['members'], group_id)
+            require(proof is not None and proof == intent['nativeReservation'],
+                    'MAINTENANCE_NATIVE_RESERVATION_CHANGED')
+
+    def save(phase):
+        intent['phase'] = phase
+        state_store.write(state)
+
+    def snapshot(identity):
+        member, saved = members[identity], intent['members'][identity]
+        remote = observe(member)
+        require(labels(remote) in [[], saved['labels']], 'MAINTENANCE_LABEL_CONFLICT')
+        return member, saved, remote
+
+    if action == 'verify':
+        require(intent['phase'] == 'drained', 'MAINTENANCE_DRAIN_REQUIRED')
+        verify_reservation()
+        require(host.attempts_idle(consumers), 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+        for identity in records:
+            member, _, remote = snapshot(identity)
+            require(labels(remote) == [] and host.ready(member) and remote.get('status') == 'online',
+                    'MAINTENANCE_NATIVE_RESERVATION_LISTENER_CHANGED')
+            report['preserved'].append(identity)
+        return report
+
+    if action == 'pause':
+        verify_reservation()
+        intent.pop('connectAfterRestore', None)
+        intent.pop('connectStartReserved', None)
+        save('pausing')
+        for identity in records:
+            member, saved, remote = snapshot(identity)
+            if labels(remote):
+                github.labels(saved['runnerId'], [])
+            require(labels(observe(member)) == [], 'MAINTENANCE_PAUSE_UNPROVEN')
+            saved['phase'] = 'paused'
+            state_store.write(state)
+            report['paused'].append(identity)
+        save('paused')
+        return report
+
+    if action == 'drain':
+        require(intent['phase'] in ['paused', 'draining', 'drained'], 'MAINTENANCE_PAUSE_REQUIRED')
+        save('draining')
+        deadline = now() + timeout
+        while True:
+            report.update(stopped=[], preserved=[], busy=[])
+            if not host.attempts_idle(consumers):
+                if progress is not None:
+                    progress(report)
+                require(now() < deadline, 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+                wait(min(0.5, max(0, deadline - now())))
+                continue
+            verify_reservation()
+            for identity in records:
+                member, saved, remote = snapshot(identity)
+                require(labels(remote) == [], 'MAINTENANCE_INTAKE_REOPENED')
+                if reservation is not None:
+                    require(saved['active'] and host.ready(member) and remote.get('status') == 'online',
+                            'MAINTENANCE_NATIVE_RESERVATION_LISTENER_CHANGED')
+                    saved['phase'] = 'preserved'
+                    report['preserved'].append(identity)
+                    continue
+                transport = saved.get('ownerTransport')
+                if transport is not None:
+                    observed = host.owner_transport(member, transport['pid'])
+                    require(observed == transport and host.ready(member), 'MAINTENANCE_OWNER_TRANSPORT_CHANGED')
+                    saved['phase'] = 'preserved'
+                    report['preserved'].append(identity)
+                elif host.removal_stopped(member):
+                    saved['phase'] = 'stopped'
+                    report['stopped'].append(identity)
+                elif remote.get('busy') is False:
+                    def remote_idle():
+                        current = observe(member)
+                        return labels(current) == [] and current.get('busy') is False
+                    if host.stop_idle(member, remote_idle, disable=False):
+                        saved['phase'] = 'stopped'
+                        report['stopped'].append(identity)
+                    else:
+                        report['busy'].append(identity)
+                else:
+                    report['busy'].append(identity)
+                state_store.write(state)
+            if progress is not None:
+                progress(report)
+            if not report['busy'] and host.attempts_idle(consumers):
+                save('drained')
+                return report
+            require(now() < deadline, 'MAINTENANCE_DRAIN_TIMEOUT', observation=report)
+            wait(min(0.5, max(0, deadline - now())))
+
+    if action == 'restart':
+        require(intent['phase'] in ['drained', 'restarting', 'ready'], 'MAINTENANCE_DRAIN_REQUIRED')
+        verify_reservation()
+        # A persistent session connected with no routing labels can leave jobs
+        # queued after an online label PUT. Keep one drained runner offline
+        # until labels are restored so GitHub observes a matching connection.
+        if 'connectAfterRestore' not in intent:
+            intent['connectAfterRestore'] = next((identity for identity, saved in intent['members'].items()
+                if saved['active'] and saved['phase'] == 'stopped' and saved['labels']), None)
+        connect_after_restore = intent['connectAfterRestore']
+        save('restarting')
+        host.check_readiness()
+        for identity in records:
+            member, saved, remote = snapshot(identity)
+            require(labels(remote) == [], 'MAINTENANCE_INTAKE_REOPENED')
+            if identity == connect_after_restore:
+                require(host.removal_stopped(member), 'MAINTENANCE_CONNECTION_NOT_WITHHELD')
+                report['stopped'].append(identity)
+            elif saved['active']:
+                if saved['phase'] != 'preserved' and not host.ready(member):
+                    host.start(member, enable=False)
+                wait_ready(member, saved['runnerId'], observe, host, now=now, wait=wait,
+                           timeout=min(timeout, 30))
+                saved['phase'] = 'ready'
+                report['ready'].append(identity)
+            else:
+                require(host.removal_stopped(member), 'MAINTENANCE_INACTIVE_SERVICE_STARTED')
+            state_store.write(state)
+        save('ready')
+        return report
+
+    if recovering:
+        desired = {member['id'] for member in contract['members'][:contract['desiredCapacity']]}
+        require(set(records) == desired and all(saved['active'] for saved in intent['members'].values()),
+                'MAINTENANCE_NATIVE_RESERVATION_CAPACITY_UNPROVEN')
+        check_released(members, intent['members'], intent['nativeReservation'])
+        require(intent['phase'] in ['pausing', 'paused', 'draining', 'drained', 'restarting', 'ready',
+                                    'recovering-reservation', 'restoring', 'restore-unverified'],
+                'MAINTENANCE_RESERVATION_RECOVERY_UNPROVEN')
+        require(intent.get('connectAfterRestore') is None
+                or intent['phase'] in ['recovering-reservation', 'restoring', 'restore-unverified'],
+                'MAINTENANCE_INTENT_CHANGED')
+    elif action == 'rollback':
+        require(intent['phase'] in ['pausing', 'paused', 'draining', 'drained', 'restoring', 'restore-unverified']
+                and intent.get('connectAfterRestore') is None, 'MAINTENANCE_ROLLBACK_UNPROVEN')
+    else:
+        require(intent['phase'] in ['ready', 'restoring', 'restore-unverified'], 'MAINTENANCE_RESTART_REQUIRED')
+    require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
+    verify_reservation()
+    if action == 'rollback':
+        host.check_readiness()
+    connect_after_restore = intent.get('connectAfterRestore')
+    require(connect_after_restore is None or connect_after_restore in records
+            and intent['members'][connect_after_restore]['active']
+            and intent['members'][connect_after_restore]['labels'], 'MAINTENANCE_INTENT_CHANGED')
+
+    if recovering and (connect_after_restore is None or intent['phase'] == 'recovering-reservation'):
+        require(host.attempts_idle(consumers), 'MAINTENANCE_ADMISSION_DRAIN_TIMEOUT')
+        observations = {identity: snapshot(identity) for identity in records}
+        if connect_after_restore is None:
+            connect_after_restore = next((identity for identity in reversed(members)
+                if identity in observations and observations[identity][1]['labels']
+                and not labels(observations[identity][2])), None)
+        require(connect_after_restore is not None, 'MAINTENANCE_NO_FENCED_CONNECTION')
+        for identity, (member, _, remote) in observations.items():
+            require(remote.get('busy') is False, 'MAINTENANCE_RECOVERY_RUNNER_BUSY')
+            if identity != connect_after_restore or not host.removal_stopped(member):
+                require(host.ready(member) and remote.get('status') == 'online',
+                        'MAINTENANCE_RESTART_UNPROVEN')
+        member, _, remote = observations[connect_after_restore]
+        require(not labels(remote), 'MAINTENANCE_INTAKE_REOPENED')
+        host.check_readiness()
+        intent['connectAfterRestore'] = connect_after_restore
+        save('recovering-reservation')
+
+        def remote_idle():
+            _, _, current = snapshot(connect_after_restore)
+            return not labels(current) and current.get('busy') is False
+
+        require(host.removal_stopped(member) or host.stop_idle(member, remote_idle, disable=False),
+                'MAINTENANCE_RECOVERY_STOP_UNPROVEN')
+        report['stopped'].append(connect_after_restore)
+        require(host.admission_open(consumers), 'MAINTENANCE_ADMISSION_NOT_OPEN')
+
+    def offline(remote):
+        return remote.get('status') == 'offline' and remote.get('busy') is False
+
+    def require_reserved_connection(saved, remote):
+        require(intent.get('connectStartReserved') is True and saved.get('phase') == 'restored'
+                and labels(remote) == saved['labels'], 'MAINTENANCE_CONNECTION_START_UNPROVEN')
+
+    # Preflight the whole pool before the first label restoration, including
+    # exact effects left by an interrupted restoration of this operation.
+    for identity in records:
+        member, saved, remote = snapshot(identity)
+        if identity == connect_after_restore:
+            if not host.removal_stopped(member):
+                require_reserved_connection(saved, remote)
+                continue
+            host.check_readiness()
+            deadline = now() + min(timeout, 30)
+            while not offline(remote):
+                require(now() < deadline, 'MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN')
+                wait(min(0.5, max(0, deadline - now())))
+                _, _, remote = snapshot(identity)
+                require(host.removal_stopped(member), 'MAINTENANCE_CONNECTION_NOT_WITHHELD')
+        else:
+            require(not saved['active'] or host.ready(member) and remote.get('status') == 'online',
+                    'MAINTENANCE_RESTART_UNPROVEN')
+        require(saved['active'] or host.removal_stopped(member), 'MAINTENANCE_INACTIVE_SERVICE_STARTED')
+    save('restoring')
+    try:
+        for identity in records:
+            member, saved, remote = snapshot(identity)
+            if labels(remote) != saved['labels']:
+                github.labels(saved['runnerId'], saved['labels'])
+            require(labels(observe(member)) == saved['labels'], 'MAINTENANCE_RESUME_UNPROVEN')
+            saved['phase'] = 'restored'
+            state_store.write(state)
+            if saved['active'] and identity != connect_after_restore:
+                report['ready'].append(identity)
+        if connect_after_restore is not None:
+            member, saved, remote = snapshot(connect_after_restore)
+            if host.removal_stopped(member):
+                # Require an offline observation even after the label PUT so
+                # an old online status cannot satisfy the new start's readback.
+                require(offline(remote), 'MAINTENANCE_CONNECTION_OFFLINE_UNPROVEN')
+                require(labels(remote) == saved['labels'], 'MAINTENANCE_RESUME_UNPROVEN')
+                intent['connectStartReserved'] = True
+                state_store.write(state)
+                host.start(member, enable=False)
+            else:
+                require_reserved_connection(saved, remote)
+
+            def observe_restored(member):
+                current = observe(member)
+                require(labels(current) == saved['labels'], 'MAINTENANCE_RESUME_UNPROVEN')
+                return current
+
+            wait_ready(member, saved['runnerId'], observe_restored, host, now=now, wait=wait,
+                       timeout=min(timeout, 30))
+            report['ready'].append(connect_after_restore)
+    except Exception:
+        # Never clear intent after an unknown PUT. A subsequent pause can
+        # withdraw exact observed restored labels before another drain; a
+        # subsequent resume can reconcile the original restoration unchanged.
+        save('restore-unverified')
+        raise
+    del state['maintenance']
+    state_store.write(state)
+    return report
+
+
 def reconcile(contract, state_store, github, host):
     """Idempotent bounded pass. Busy members remain drained for a later Apply."""
     require(type(contract['desiredCapacity']) is int and 1 <= contract['desiredCapacity'] <= CAPACITY,
@@ -406,6 +815,12 @@ def reconcile(contract, state_store, github, host):
     require(state.get('binding') == binding(contract), 'BINDING_CONFLICT')
     require(state['ownerRepository'] == contract['repository']
             or state['desiredCapacity'] == contract['desiredCapacity'], 'DESIRED_CAPACITY_CONFLICT')
+    if state.get('maintenance') is not None:
+        require(state['desiredCapacity'] == contract['desiredCapacity'], 'MAINTENANCE_CAPACITY_CHANGED')
+        # Installation may reconcile files, but it must not silently restore
+        # labels, activate capacity or retire registrations behind maintenance.
+        return {'capacity': contract['desiredCapacity'], 'ready': [],
+                'draining': list(state['maintenance']['members']), 'retired': []}
     group_id = github.qualify(contract)
     consumer_binding = {'namespace': contract['namespace'], 'admission': contract['admission']}
     for repository in contract.get('repositories', [contract['repository']]):
@@ -536,6 +951,42 @@ def installed_main(revision):
         print('MANAGED_POOL_RESULT=' + json.dumps(report, sort_keys=True))
     finally:
         os.close(descriptor)
+
+
+def installed_recover_reservation(revision, operation):
+    require(os.geteuid() == 0 and re.fullmatch('[0-9a-f]{40}', revision), 'ROOT_EXACT_REVISION_REQUIRED')
+    from installed_config import verify
+
+    source = Path(__file__).resolve().parents[1]
+    config, digest, _ = verify(source, revision, require_local_apply=False)
+    from deployment_lock import acquire
+    from pool_authorization import installation_authorization
+    from runner_reservation import RunnerReservationError, verify_released_reservation
+    from source_upgrade_proof import protected_read, require_unchanged_pool_plan
+
+    contract = pool_contract(config)
+    root = Path('/var/lib/codex-relay-pools') / contract['name']
+    with (acquire('/var/lib/' + contract['namespace'] + '-deployment.lock'),
+          acquire('/var/lib/codex-relay-pool-' + contract['name'] + '-deployment.lock'),
+          acquire(root / 'pool.lock')):
+        _, current_digest, _ = verify(source, revision, require_local_apply=False)
+        require(current_digest == digest, 'TARGET_CONFIG_BINDING_UNPROVEN')
+        host = Host(contract)
+        require(all(host.owner_transport(member, os.getpid()) is None
+                    for member in contract['members'][:contract['desiredCapacity']]),
+                'MAINTENANCE_RECOVERY_INSIDE_RUNNER')
+        template = source / 'deploy/ansible/roles/relay_runner/templates/relay-managed-pool.service.j2'
+        require_unchanged_pool_plan(installation_plan(contract, protected_read(template, boundary=source)[0].decode()))
+        authorization = installation_authorization(config)
+        require(all(authorization[key] == contract[key] for key in ['appId', 'installationId', 'organization']),
+                'TOKEN_BINDING_INVALID')
+        github = GitHub(authorization['installationToken'], contract['organization'])
+        try:
+            report = maintenance(contract, State(root), github, host, operation=operation,
+                                 action='recover-reservation', check_released=verify_released_reservation)
+        except RunnerReservationError as error:
+            raise PoolError(str(error)) from None
+        print('MANAGED_POOL_RESULT=' + json.dumps(report, sort_keys=True))
 
 
 def installation_plan(contract, unit_template, *, root=Path('/'), owner_uid=0,
@@ -723,6 +1174,8 @@ if __name__ == '__main__':
     try:
         if sys.argv[1:] == ['--preflight']:
             preflight(json.loads(sys.stdin.read(1048577)))
+        elif len(sys.argv) == 5 and sys.argv[1] == '--installed-revision' and sys.argv[3] == '--recover-reservation':
+            installed_recover_reservation(sys.argv[2], sys.argv[4])
         else:
             require(len(sys.argv) == 3 and sys.argv[1] == '--installed-revision', 'ARGUMENTS')
             installed_main(sys.argv[2])

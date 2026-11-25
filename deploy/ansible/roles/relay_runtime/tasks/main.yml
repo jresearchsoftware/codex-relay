@@ -431,6 +431,26 @@
     - Daemon reload
     - Try-restart Reviewer after configuration transition
 
+- name: Install the retained private Reviewer listener
+  ansible.builtin.template:
+    src: reviewer-mcp.socket.j2
+    dest: '/etc/systemd/system/{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
+    owner: root
+    group: root
+    mode: '0644'
+  when: relay_reviewer_socket_activation | default(false) | bool
+  notify:
+    - Daemon reload
+    - Try-restart Reviewer after configuration transition
+
+- name: Install bounded root-only Reviewer maintenance control
+  ansible.builtin.template:
+    src: relay-reviewer-maintenance.j2
+    dest: '{{ relay_install_root }}/relay-reviewer-maintenance'
+    owner: root
+    group: root
+    mode: '0750'
+
 - name: Inspect superseded dedicated mTLS proxy unit
   ansible.builtin.stat:
     path: '/etc/systemd/system/{{ relay_superseded_proxy_service_name }}'
@@ -470,6 +490,17 @@
   when:
     - ansible_check_mode | bool
     - not relay_runtime_unit.stat.exists | default(false)
+
+- name: Stop retained Reviewer listener when explicit service state is disabled
+  ansible.builtin.systemd:
+    name: '{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
+    state: stopped
+    daemon_reload: true
+  when:
+    - relay_reviewer_socket_activation | default(false) | bool
+    - not relay_service_effective_enabled | bool
+    - (relay_service_state_management | default('enforce') | lower) == 'enforce'
+    - not ansible_check_mode | bool
 
 - name: Enforce relay service state when all units exist or apply creates them
   ansible.builtin.systemd:

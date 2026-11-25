@@ -2,6 +2,10 @@
 Description=Docs evolution Reviewer MCP
 After=network-online.target
 Wants=network-online.target
+{% if relay_reviewer_socket_activation | default(false) %}
+Requires={{ relay_reviewer_socket_service_name | default('reviewer-mcp.socket') }}
+After={{ relay_reviewer_socket_service_name | default('reviewer-mcp.socket') }}
+{% endif %}
 ConditionPathExists={{ relay_install_root }}/current
 {% if relay_deployment_profile == 'production' %}
 StartLimitIntervalSec=300
@@ -10,6 +14,14 @@ StartLimitBurst=30
 
 [Service]
 Type=simple
+{% if relay_reviewer_socket_activation | default(false) %}
+Sockets={{ relay_reviewer_socket_service_name | default('reviewer-mcp.socket') }}
+# Accepted publication calls own their effects until completion. Lifecycle
+# callers bound their wait and report a blocker instead of killing the process.
+TimeoutStopSec=infinity
+KillMode=mixed
+SendSIGKILL=no
+{% endif %}
 User={{ relay_reviewer_user }}
 Group={{ relay_reviewer_proxy_group }}
 SupplementaryGroups={{ relay_reviewer_group }}

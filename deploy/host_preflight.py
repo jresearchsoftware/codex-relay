@@ -16,6 +16,7 @@ import socket
 import stat
 import subprocess
 import sys
+import time
 
 sys.dont_write_bytecode = True
 
@@ -254,7 +255,7 @@ def destination_specs(v):
     helpers = ('relay-reviewer-credential-check', 'relay-production-operation-state', 'relay-reviewer-start-guard',
         'relay-reviewer-activation-start', 'relay-runner-enable-start', 'relay-reviewer-operation-restart',
         'relay-app-qualification.py', 'relay-reviewer-app-qualification', 'relay-credential-provision',
-        'relay-reviewer-recovery', 'relay-reviewer-stop-runner', 'relay-reviewer-readiness',
+        'relay-reviewer-recovery', 'relay-reviewer-stop-runner', 'relay-reviewer-readiness', 'relay-reviewer-maintenance',
         'relay-diagnostics-control', 'relay-qualification-diagnostic-snapshot', 'relay-writer-credential-check',
         'relay-qualification-codex-probe', 'relay-writer-app-qualification', 'relay-writer-controller',
         'relay-manual-outcome', 'relay-manual-outcome-writer', 'relay-admission', 'relay-production-local-apply',
@@ -590,15 +591,35 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
                 ('recovery-timer', v['relay_reviewer_recovery_timer_name']), ('controller', v['relay_controller_service_name']),
                 ('manual-outcome', v['relay_namespace'] + '-relay-manual-outcome.socket')]
     services += [(r['label'], r['service']) for r in runners]
+    managed = v.get('relay_general_runner_pool') or {}
+    pool_members = managed.get('members', [])[:managed.get('desiredCapacity', 0)]
+    pool_slots = {member['service']: member['id'] for member in pool_members}
+    services += [(slot, unit) for unit, slot in pool_slots.items()
+                 if not any(existing == unit for _, existing in services)]
     services += old_services + [(r['label'], r['service']) for r in old_runners]
     services += [('ingress', v['relay_docker_nginx_service_name'])]
     if v['relay_reviewer_bind_mode'] == 'nexus_gateway': services.append(('docker', 'docker.service'))
     observed_services = []
+    # A verified drain may intentionally stop specific pool listeners. Keep
+    # their activity separate while binding their unit and enablement as usual.
+    stable_services = []
+    pool_activity = {}
     for label, unit in dict.fromkeys(services):
         require(re.fullmatch(r'[A-Za-z0-9_.@-]{1,160}', unit), 'HOST_SERVICE_INPUT_INVALID', label)
-        result = execute(['systemctl', 'show', '--no-pager', '--property=LoadState,ActiveState,SubState,UnitFileState,MainPID,User,Group,FragmentPath,DropInPaths', unit])
-        require_probe(result, result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
-        state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+        properties = 'LoadState,ActiveState,SubState,UnitFileState,MainPID,User,Group,FragmentPath,DropInPaths'
+        if label == 'recovery':
+            properties += ',Type'
+        for observation in range(5):
+            result = execute(['systemctl', 'show', '--no-pager', '--property=' + properties, unit])
+            require_probe(result, result.returncode == 0, 'HOST_SERVICE_OBSERVATION_UNAVAILABLE', label)
+            state = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+            service_type = state.pop('Type', None)
+            # The scheduled Reviewer health check normally exits immediately.
+            # Reobserve it before fingerprinting the settled service state.
+            if not (label == 'recovery' and service_type == 'oneshot' and state.get('LoadState') == 'loaded'
+                    and state.get('ActiveState') in ('activating', 'deactivating') and observation < 4):
+                break
+            time.sleep(0.25)
         require(state.get('LoadState') in ('loaded', 'not-found') and state.get('ActiveState') in ('active', 'inactive', 'failed'),
                 'HOST_SERVICE_STATE_AMBIGUOUS', label)
         require(state.get('UnitFileState', '') in ('', 'enabled', 'enabled-runtime', 'disabled', 'static', 'indirect', 'generated'),
@@ -621,6 +642,14 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
             if path: probe.inspect_loaded_unit(label + '-loaded-unit', path)
         probe.inspect(label + '-unit-destination', '/etc/systemd/system/' + unit, protected=True)
         observed_services.append([label, state, start])
+        if unit in pool_slots:
+            activity_fields = ('ActiveState', 'SubState', 'MainPID')
+            pool_activity[pool_slots[unit]] = {**{field: state.get(field) for field in activity_fields},
+                                              'start': start}
+            stable_services.append([label, {field: value for field, value in state.items()
+                                            if field not in activity_fields}, None])
+        else:
+            stable_services.append([label, state, start])
         runner = next((r for r in runners + old_runners if r['label'] == label), None)
         desired_runner = next((r for r in runners if runner and r['user'] == runner['user']), None)
         if desired_runner and desired_runner['label'] != 'production' and state['ActiveState'] == 'active':
@@ -733,8 +762,11 @@ def inspect_inputs(values, source_root, *, root=Path('/'), owner_uid=0, users=No
         else: probe.inspect(label, path, protected=True, required=True)
     snapshot = {'metadata': sorted(probe.observed, key=lambda row: row[0]), 'services': observed_services,
                 'users': user_cache, 'groups': group_cache}
-    observed = hashlib.sha256(json.dumps(snapshot, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
-    return {'version': 1, 'status': 'PASS', 'observedSha256': observed, 'pendingProductMaterial': pending,
+    def fingerprint(value):
+        return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+    return {'version': 1, 'status': 'PASS', 'observedSha256': fingerprint(snapshot),
+            'poolStableSha256': fingerprint({**snapshot, 'services': stable_services}),
+            'poolActivity': pool_activity, 'pendingProductMaterial': pending,
             'checks': {'destinations': len(probe.observed), 'identities': len(user_cache),
                        'appRepositories': len(credentials), 'services': len(observed_services)}, 'identityPlan': plans}
 

@@ -1,0 +1,198 @@
+#!/usr/bin/python3 -I
+"""Bounded local Reviewer activity boundary. Never reads credentials or SQLite."""
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import pwd
+import socket
+import stat
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+CONTROL = '{{ relay_runtime_root }}/reviewer-proof/maintenance.sock'
+MARKER = Path('{{ relay_config_root }}/reviewer-maintenance.json')
+SERVICE = '{{ relay_reviewer_service_name }}'
+SOCKET_UNIT = '{{ relay_reviewer_socket_service_name | default("reviewer-mcp.socket") }}'
+USER = '{{ relay_reviewer_user }}'
+GROUP = '{{ relay_reviewer_group }}'
+
+
+def marker_read():
+    try:
+        meta = MARKER.lstat()
+    except FileNotFoundError:
+        return None
+    if not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0 or meta.st_nlink != 1 or stat.S_IMODE(meta.st_mode) != 0o640:
+        raise RuntimeError('REVIEWER_MAINTENANCE_RECORD_UNSAFE')
+    record = json.loads(MARKER.read_bytes())
+    if (set(record) != {'schemaVersion', 'operation', 'command'} or record['schemaVersion'] != 1
+            or str(uuid.UUID(record['operation'])) != record['operation']
+            or record['command'] not in ('pause', 'pause-writer', 'resume')):
+        raise RuntimeError('REVIEWER_MAINTENANCE_RECORD_INVALID')
+    return record
+
+
+def sync_marker_parent():
+    directory = os.open(MARKER.parent, os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def write_marker(operation, command):
+    import grp
+    fd, temporary = tempfile.mkstemp(prefix='.reviewer-maintenance-', dir=MARKER.parent)
+    try:
+        os.fchmod(fd, 0o640)
+        os.fchown(fd, 0, grp.getgrnam(GROUP).gr_gid)
+        with os.fdopen(fd, 'w') as stream:
+            json.dump({'schemaVersion': 1, 'operation': operation, 'command': command}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, MARKER)
+        sync_marker_parent()
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def request(command):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(3)
+        client.connect(CONTROL)
+        peer_pid, peer_uid, _ = struct.unpack('3i', client.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        process = subprocess.run(['/bin/systemctl', 'show', SERVICE, '--property=MainPID', '--value'],
+                                 capture_output=True, text=True, timeout=5, check=True)
+        if peer_uid != pwd.getpwnam(USER).pw_uid or str(peer_pid) != process.stdout.strip():
+            raise RuntimeError('REVIEWER_MAINTENANCE_PROCESS_UNPROVEN')
+        client.sendall(command.encode('ascii') + b'\n')
+        result = bytearray()
+        while True:
+            chunk = client.recv(4096)
+            if not chunk:
+                break
+            result.extend(chunk)
+            if len(result) > 8192:
+                raise RuntimeError('REVIEWER_MAINTENANCE_STATUS_OVERSIZED')
+    value = json.loads(result)
+    if value.get('schemaVersion') != 1 or value.get('pid') != peer_pid:
+        raise RuntimeError('REVIEWER_MAINTENANCE_STATUS_INVALID')
+    return value
+
+
+def startup_limit_reached():
+    # A listening socket and an auto-restarting process are normal during
+    # replacement. Stop waiting only once systemd has exhausted this start
+    # policy, closed the socket and has no replacement job pending.
+    try:
+        result = subprocess.run(['/bin/systemctl', 'show', SERVICE, SOCKET_UNIT,
+                                 '--property=Id,LoadState,ActiveState,MainPID,Result,Job'],
+                                capture_output=True, text=True, timeout=2, check=True)
+        units = {}
+        for block in result.stdout.strip().split('\n\n'):
+            fields = dict(line.split('=', 1) for line in block.splitlines())
+            units[fields['Id']] = fields
+        service, listener = units[SERVICE], units[SOCKET_UNIT]
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError):
+        return False
+    return (all(unit.get('LoadState') == 'loaded' and unit.get('ActiveState') == 'failed'
+                and unit.get('Job') == '' for unit in (service, listener))
+            and service.get('MainPID') == '0' and listener.get('Result') == 'service-start-limit-hit')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('action', choices=['status', 'pause', 'pause-writer', 'resume', 'wait', 'ready'])
+    parser.add_argument('--operation')
+    parser.add_argument('--scope', choices=['writer', 'all'])
+    parser.add_argument('--timeout', type=int, default=300)
+    parser.add_argument('--expected-commit')
+    parser.add_argument('--previous-pid', type=int)
+    args = parser.parse_args()
+    if os.geteuid() != 0:
+        raise RuntimeError('REVIEWER_MAINTENANCE_ROOT_REQUIRED')
+    if not 1 <= args.timeout <= 3600:
+        raise RuntimeError('REVIEWER_MAINTENANCE_TIMEOUT_INVALID')
+    if args.action in ('pause', 'pause-writer', 'resume'):
+        if args.operation is None or str(uuid.UUID(args.operation)) != args.operation:
+            raise RuntimeError('REVIEWER_MAINTENANCE_OPERATION_REQUIRED')
+    lock_fd = os.open(str(MARKER) + '.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lock_fd, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        record = marker_read()
+        if args.action in ('pause', 'pause-writer', 'resume'):
+            if record and record['operation'] != args.operation:
+                raise RuntimeError('REVIEWER_MAINTENANCE_OTHER_OPERATION')
+            if args.action == 'resume':
+                if record:
+                    status = request('status')
+                    if status.get('resumeMarkerSupported') is not True:
+                        raise RuntimeError('REVIEWER_MAINTENANCE_DURABLE_RESUME_UNSUPPORTED')
+                    if status.get('ready') is not True:
+                        raise RuntimeError('REVIEWER_MAINTENANCE_BUSY_OR_NOT_READY')
+                    # Persist the same operation's intent before acknowledging it
+                    # in memory. A new process can start open, and a missing
+                    # acknowledgement leaves the original operation recoverable.
+                    if record['command'] != 'resume':
+                        write_marker(args.operation, 'resume')
+                value = request('resume')
+                if (value.get('ready') is not True or value.get('writerAccepting') is not True
+                        or record and value.get('resumeMarkerSupported') is not True):
+                    raise RuntimeError('REVIEWER_MAINTENANCE_RESUME_UNPROVEN')
+                if record:
+                    MARKER.unlink()
+                    sync_marker_parent()
+            else:
+                # Never weaken a full pause through the Writer-only operation.
+                command = 'pause' if record and record['command'] == 'pause' else args.action
+                write_marker(args.operation, command)
+                value = request(command)
+        else:
+            deadline = time.monotonic() + args.timeout
+            next_startup_check = 0
+            while True:
+                try:
+                    value = request('status')
+                except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as error:
+                    now = time.monotonic()
+                    if args.action != 'ready' or now >= deadline:
+                        raise
+                    if args.expected_commit is not None and now >= next_startup_check:
+                        next_startup_check = now + 1
+                        if startup_limit_reached():
+                            raise RuntimeError('REVIEWER_MAINTENANCE_START_LIMIT_HIT') from error
+                    time.sleep(0.2)
+                    continue
+                if args.action == 'wait':
+                    scope = args.scope or ('all' if value['paused'] else 'writer')
+                    if not (value['paused'] if scope == 'all' else value['paused'] or value['writerPaused']):
+                        raise RuntimeError('REVIEWER_MAINTENANCE_PAUSE_REQUIRED')
+                    if value['activeRequests' if scope == 'all' else 'activeWriter'] == 0:
+                        break
+                elif args.action == 'ready':
+                    if (value['ready'] and (args.expected_commit is None or value['artifact']['commit'] == args.expected_commit)
+                            and (args.previous_pid is None or value['pid'] != args.previous_pid)):
+                        break
+                else:
+                    break
+                if time.monotonic() >= deadline:
+                    print(json.dumps(value, separators=(',', ':')))
+                    raise RuntimeError('REVIEWER_MAINTENANCE_BUSY_OR_NOT_READY')
+                time.sleep(0.2)
+        value['operation'] = (marker_read() or {}).get('operation')
+        print(json.dumps(value, separators=(',', ':')))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as error:
+        print('REVIEWER_MAINTENANCE_FAILED: ' + str(error), file=sys.stderr)
+        sys.exit(1)

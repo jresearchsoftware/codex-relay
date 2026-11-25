@@ -23,7 +23,7 @@ VERSION = "12.5.0"
 STANDALONE_SHARED_VERSION = "12.1.0"
 SLOT = Path("vibevm/vibedeps/org.jresearch.ai.development-governance") / VERSION
 SELF_COORDINATE = "org.jresearch.ai/codex-relay"
-SELF_VERSION = "10.0.0"
+SELF_VERSION = "11.0.0"
 SELF_SOURCE = Path("vibevm/vibepacks") / SELF_COORDINATE / ("v" + SELF_VERSION)
 PREVIOUS_SELF_SOURCE = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v5.0.0")
 PREVIOUS_SELF_HASH = "sha256:e86a715fceac2364f154085c13a835541a9ba15f8bee8c35d34677abd212b55d"
@@ -60,7 +60,7 @@ SOURCE_REVISION = "f51fd0ab22ff61fab48bd1e5af96918d77af1ec6"
 PAYLOAD_HASH = "4c0738f63d3169ea6ae460e0af0bc24e83218172d69e6e7cd54df92db121f854"
 RECEIPT_HASH = "86e75cb5e43e86c9528fca02cc75e4659eb2adaf0f864199b5927eb34b45270f"
 TREE_HASH = "sha256:57792a91e04ccf0e40e22e8778e10304d93a408f23376ae5627b23df2bfd9258"
-# Relay 10.0.0's published surface has its own immutable selection.
+# The Relay package's published surface has its own immutable selection.
 STANDALONE_DISTRIBUTION_REVISION = "8dfe533015339e560ba923bb58961595b9e544f3"
 STANDALONE_SOURCE_REVISION = "e4b5b738ae0918014dd06b5616fe37a5dcb93290"
 STANDALONE_PAYLOAD_HASH = "0029a6c5ade93aa8243354ad19d3191fcd444870043e021f00fd329acf27b9c4"
@@ -455,12 +455,16 @@ def check_first_party_registry(root, expected):
     prior_release_files = files_in(root / prior_release)
     require(tree_hash(prior_release_files) == "sha256:5fdf664ae919fa60f0861ba531cd41e56def80af36977724e692118884515531",
             "Frozen accepted Relay 9.0.0 registry changed")
+    last_release = Path("vibevm/vibepacks/org.jresearch.ai/codex-relay/v10.0.0")
+    last_release_files = files_in(root / last_release)
+    require(tree_hash(last_release_files) == "sha256:9c40e518ae18b6b186415da683dc3ab4447c02c439b9a76e76f099165d0cd716",
+            "Frozen accepted Relay 10.0.0 registry changed")
     previous_self_files = files_in(root / PREVIOUS_SELF_SOURCE)
     require(tree_hash(previous_self_files) == PREVIOUS_SELF_HASH,
             "Frozen accepted Relay 5.0.0 registry changed")
     require(files_in(root / "vibevm/vibepacks") == {
         (package.relative_to("vibevm/vibepacks") / name).as_posix(): data
-        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (closure, closure_files), (progress, progress_files), (prior_release, prior_release_files), (SELF_SOURCE, expected))
+        for package, files in ((HISTORICAL_SELF_SOURCE, historical), (previous, previous_files), (released, released_files), (prior, prior_files), (manual, manual_files), (frozen, frozen_files), (installation, installation_files), (remediation, remediation_files), (PREVIOUS_SELF_SOURCE, previous_self_files), (manual_wait, manual_wait_files), (autonomy, autonomy_files), (closure, closure_files), (progress, progress_files), (prior_release, prior_release_files), (last_release, last_release_files), (SELF_SOURCE, expected))
         for name, data in files.items()},
         "Unexpected first-party registry package or file")
 

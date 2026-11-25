@@ -1,0 +1,15 @@
+# managed-by: codex-relay-reviewer-socket
+# relay-install-root={{ relay_install_root }}
+[Unit]
+Description=Relay Reviewer private TCP listener retained during graceful replacement
+
+[Socket]
+ListenStream={{ relay_reviewer_bind_address }}:{{ relay_reviewer_bind_port }}
+Service={{ relay_reviewer_service_name }}
+Accept=no
+Backlog=4096
+FlushPending=no
+NoDelay=true
+
+# The service's existing authorization guard remains the only activation path.
+# This socket is started as its dependency, never independently enabled at boot.

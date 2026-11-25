@@ -59,6 +59,80 @@ it never establishes readiness or publication authority by itself. The proof
 schema must be revised if future runtime fields give artifact metadata effective
 behavior.
 
+### Planned Apply and accepted HTTP calls
+
+Managed Linux installations retain the same private TCP ingress in
+`reviewer-mcp.socket`. The Reviewer validates the single systemd-inherited
+listener against its configured address and port. nginx continues to enforce
+the same client-certificate authentication and forwarded identity; the service
+does not gain a public bind or another HTTP/MCP administration endpoint.
+
+The first migration from an active Reviewer that owns its listening port
+and has neither a maintenance helper nor a socket unit is a bounded restart.
+Relay verifies the original process, stops it to release the port, and starts
+the socket-activated replacement. Accepted legacy requests may be interrupted.
+Managed nginx returns HTTP 503 with Retry-After during the restart gap.
+Publication with an uncertain response retains the original operation identity.
+
+During a compatible planned replacement, keep the old service running while
+staging the candidate, then perform one ordered service restart. SIGTERM closes
+the old accept loop gracefully and lets its accepted calls finish, including
+native publication and manual Writer submissions. The socket retains pending
+connections until the new process can serve them. There is one serving process
+at a time, so this change introduces no old/new overlap over SQLite or external
+effects. SQLite reservations, frozen bodies, original identities and uncertain
+POST recovery remain unchanged; historical unresolved rows alone do not describe
+live process activity or prevent replacing an idle service.
+
+This is bounded connection waiting, not an immediate response guarantee: the
+socket backlog, nginx's existing request deadline and the caller's own deadline
+still apply. nginx never retries an upstream mutation and translates upstream
+connection failure/deadline errors to HTTP 503 with `Retry-After: 5`. An explicit
+Reviewer pause returns the same controlled status. No automatic ChatGPT retry
+is promised. If startup fails repeatedly, callers can time out while systemd
+still retains the listener for another attempt. When systemd exhausts the
+start limit and closes the listener, the owner Apply readiness check reports
+that terminal failure once it verifies no replacement is pending. After any
+uncertain result, recover using the exact original operation payload and its
+existing native readback rules. Keep the same Review or Decision identity.
+
+`relay-reviewer-maintenance` uses a service-private Unix socket and kernel peer
+credentials to check the exact non-root systemd MainPID. `status` reports only
+readiness, process/source identity and counts of accepted requests, mutations
+and Writer operations. `pause-writer --operation UUID` atomically blocks fresh
+manual Writer submissions; `wait --scope writer --timeout 300` waits for accepted
+submissions before Writer replacement. Other Reviewer work remains available.
+`pause` plus `wait --scope all` provides the controlled interruption boundary
+when continuity is unsafe. Both pauses persist in one root-owned, operation-bound
+configuration record and survive process replacement. Only the same operation
+may `resume`, after the lifecycle caller verifies dependencies. The helper
+records that intent before clearing the pause in memory, and removes the record
+after the authenticated process acknowledges Writer readiness. A replacement
+starts open if it reads that resume intent. If acknowledgement is uncertain,
+the record retains the operation for recovery. The helper keeps the original
+pause when the serving binary cannot read a durable resume intent. No SQLite
+row, native reservation or publication receipt is cleared to satisfy drain.
+
+The restart wrapper bounds its readiness wait and verifies a different MainPID
+and expected configured source identity; the existing executable/process proof
+still verifies actual installed bytes. A retained socket alone proves no service
+readiness. Timeout leaves the draining process and pending connections intact;
+inspect the exact process/activity and native uncertain operation before recovery.
+The service never force-kills an accepted call to satisfy a maintenance deadline.
+Stopping the service separately while its socket remains active can reactivate
+it: retain the old serving process until the final ordered restart, or explicitly
+close ingress and stop the socket for a separately controlled interruption.
+
+The first migration from an older Reviewer without this activity/control and
+graceful-shutdown boundary is not seamless. The guarded restart refuses an active
+unsupported process with `REVIEWER_LEGACY_DRAIN_UNPROVEN`. A separately qualified
+authenticated ingress pause and proof that old accepted connections have drained
+must precede that migration; a TCP listening socket or apparent idle service is
+insufficient. Preserve the old installation until that boundary is established.
+Deterministic socket/transport tests do not prove real ChatGPT retry behavior or
+the installed nginx/systemd handover; record those isolated-TEST observations
+and any residual interruption separately.
+
 `publish_task_authority` implements the opted-in
 [`github-native-v1` authority contract](../contracts/README.md#github-native-task-authority). Its input is
 `repository` and one structured `record`: Task Decision, independent exact-head
@@ -304,7 +378,7 @@ not independent Tasks, PRs or repositories.
 The staged synthetic installation check is:
 
 ```sh
-python3 scripts/qualify-reviewer-publication.py
+python3 scripts/qualify-reviewer-publication.py --handover
 ```
 
 It builds the actual service main with the explicit `synthetic-github` feature,

@@ -49,6 +49,12 @@ def test_current_instance_units_and_publication_controls_are_namespaced():
     assert 'Unit=codex-relay-reviewer-recovery.service' in isolated_recovery
     assert 'REVIEWER_RELAY_ENABLED=true' in render(legacy, template + 'relay.env.j2')
     assert 'REVIEWER_RELAY_ENABLED=false' in render(isolated, template + 'relay.env.j2')
+    compiled = config.compile_inputs(isolated)
+    assert compiled['relay_reviewer_socket_service_name'] == compiled['relay_reviewer_service_name'].removesuffix('.service') + '.socket'
+    socket = render(isolated, template + 'reviewer-mcp.socket.j2')
+    assert 'Service=' + compiled['relay_reviewer_service_name'] in socket
+    assert '# relay-install-root=' + compiled['relay_install_root'] in socket
+    assert 'ListenStream=127.0.0.1:18787' in socket
     reviewer = json.loads(render(isolated, template + 'reviewer-mcp.json.j2'))
     assert reviewer['service']['bind_port'] == 18787
     assert reviewer['repository'] == isolated['consumer']['repository']
@@ -91,6 +97,24 @@ def test_existing_foreign_unit_is_rejected_without_changing_it(tmp_path):
     assert unit.read_text() == content
     guard.verify('/opt/first', str(tmp_path / 'first'), 'example/first', [unit.name], units)
     guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second', ['second-reviewer.service'], units)
+
+
+def test_private_reviewer_socket_cannot_be_adopted_from_another_namespace(tmp_path):
+    units = tmp_path / 'units'
+    units.mkdir()
+    socket = units / 'second-reviewer.socket'
+    socket.write_text('# managed-by: codex-relay-reviewer-socket\n# relay-install-root=/opt/first\n'
+                      'Service=second-reviewer.service\nAccept=no\nListenStream=127.0.0.1:18787\n')
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second',
+                     ['second-reviewer.socket', 'second-reviewer.service'], units)
+    socket.write_text(socket.read_text().replace('/opt/first', '/opt/second'))
+    guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second',
+                 ['second-reviewer.socket', 'second-reviewer.service'], units)
+    socket.rename(units / 'unlisted.socket')
+    with pytest.raises(ValueError, match='UNIT_COLLISION'):
+        guard.verify('/opt/second', str(tmp_path / 'second'), 'example/second',
+                     ['second-reviewer.socket', 'second-reviewer.service'], units)
 
 
 def shared_pool_fixture(tmp_path):
@@ -253,6 +277,7 @@ def test_actual_first_preflight_task_binds_the_installed_repository(tmp_path, in
     values = {**yaml.safe_load((BACKEND / 'group_vars/all.yml').read_text()),
               **config.compile_inputs(public), 'relay_github_repository': 'example/first',
               'relay_reviewer_repositories': ['example/first'],
+              'relay_namespace': fixture,
               'relay_config_root': str(config_root), 'relay_install_root': str(tmp_path / 'install'),
               'relay_reviewer_user': fixture}
     for key in list(values):
@@ -287,7 +312,7 @@ def test_readiness_cannot_accept_another_instances_similar_socket(tmp_path, list
     binaries = tmp_path / 'bin'
     binaries.mkdir()
     for name, output in [('ss', f'LISTEN 0 128 {listener} 0.0.0.0:*'),
-                         ('stat', 'root 600'), ('systemctl', 'active')]:
+                         ('stat', 'root 600'), ('systemctl', 'active'), ('maintenance', 'ready')]:
         executable = binaries / name
         executable.write_text('#!/bin/sh\nprintf \'%s\\n\' \'' + output + '\'\n')
         executable.chmod(0o755)
@@ -295,6 +320,7 @@ def test_readiness_cannot_accept_another_instances_similar_socket(tmp_path, list
     rendered = Templar(loader=DataLoader(), variables=values).template(source, convert_data=False)
     rendered = rendered.replace('/bin/systemctl', str(binaries / 'systemctl'))
     rendered = rendered.replace('/usr/bin/stat', str(binaries / 'stat'))
+    rendered = rendered.replace('/opt/codex-relay/relay-reviewer-maintenance', str(binaries / 'maintenance'))
     script = tmp_path / 'readiness'
     script.write_text(rendered)
     result = subprocess.run(['bash', str(script)], capture_output=True, text=True,

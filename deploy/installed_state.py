@@ -41,10 +41,8 @@ def recipe_digest(source_root):
 
 
 # Frozen against the reviewed recipe surface, not an observed installation.
-# Task 289 suppresses Python bytecode writes in the Reviewer restart helper
-# and the consumer publication failure reporter. The owned task, module,
-# path, mode and identity catalogue is unchanged.
-RECIPE_SHA256 = '885fd46806001e136c15a700ebb6686dd6fd11e131b5ad718539aada15e7373e'
+# Includes the Reviewer listener and maintenance control owned below.
+RECIPE_SHA256 = '4d8266d0197284659d720e2cf6e305db608c6119fda9d29aa668d799b4118a7e'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",
@@ -73,6 +71,8 @@ OWNERS = {
         "Install secret-free relay environment contract",
         "Install reviewer configuration contract",
         "Install Reviewer MCP service unit",
+        "Install the retained private Reviewer listener",
+        "Install bounded root-only Reviewer maintenance control",
         "Remove superseded dedicated mTLS proxy unit after it is stopped",
         "Record retention and health contract"
     ],
@@ -274,6 +274,7 @@ def build_catalogue(source_root, values):
             'INSTALLED_PROFILE_NOT_SUPPORTED')
     require(not render('{{ relay_nginx_manage | bool }}', v)
             and not render('{{ relay_docker_nginx_manage | bool }}', v)
+            and render('{{ relay_reviewer_socket_activation | bool }}', v)
             and not v.get('relay_additional_runtime_users')
             and all(not slot.get('relay_additional_runtime_users') for slot in v['relay_additional_execution_slots']),
             'INSTALLED_PROFILE_NOT_SUPPORTED')
