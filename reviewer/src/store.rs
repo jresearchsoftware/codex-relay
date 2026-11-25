@@ -174,8 +174,7 @@ impl Store {
     pub fn reserve_check_send(&self, id: &str) -> rusqlite::Result<Option<CheckSendReservation>> {
         let transaction =
             rusqlite::Transaction::new_unchecked(&self.db, TransactionBehavior::Immediate)?;
-        let previous: Option<Option<i64>> = self
-            .db
+        let previous: Option<Option<i64>> = transaction
             .query_row(
                 "SELECT check_intent FROM operations WHERE operation_id=?1",
                 [id],
@@ -190,9 +189,10 @@ impl Store {
             Some(1) | None => 2,
             _ => return Ok(None),
         };
+        // BEGIN IMMEDIATE excludes other writers between this read and update.
         let reserved = transaction.execute(
-            "UPDATE operations SET check_intent=?3 WHERE operation_id=?1 AND check_intent IS ?2",
-            (id, previous, next),
+            "UPDATE operations SET check_intent=?2 WHERE operation_id=?1",
+            (id, next),
         )? == 1;
         transaction.commit()?;
         Ok(reserved.then_some(CheckSendReservation { previous, next }))

@@ -759,7 +759,7 @@ reads back the same open PR/head and native state, retaining an idempotent pendi
 intent when mutation/readback fails. Mergeability, checks, base movement and
 independent acceptance remain separate evidence and never control Draft/Ready.
 
-GitHub App endpoints (`GET /app` and installation-token creation) use the short-lived App JWT. Repository endpoints use only the installation access token.
+GitHub App endpoints (`GET /app` and installation-token creation) use the short-lived App JWT. Repository endpoints use only the installation access token. The Reviewer obtains a token for immediate use in a request or a bounded evidence session. GitHub enforces expiration, and the Reviewer reports authentication failures from the relevant request.
 
 A consumer must expose only its trusted TLS terminator's exact `/mcp` location.
 The consumer owns its reverse-proxy configuration. It must verify the OpenAI client certificate

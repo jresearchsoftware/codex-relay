@@ -61,10 +61,7 @@ async fn handler(
         if mock.mode == "authdenied" {
             return StatusCode::FORBIDDEN.into_response();
         }
-        return Json(
-            json!({"token": "synthetic-evidence-token", "expires_at": "2030-01-01T00:00:00Z"}),
-        )
-        .into_response();
+        return Json(json!({"token": "synthetic-evidence-token"})).into_response();
     }
     assert_eq!(method, Method::GET, "repository evidence must be GET-only");
     assert_eq!(

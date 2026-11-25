@@ -721,18 +721,6 @@ impl Github {
                 ))
             })?
             .to_owned();
-        if payload
-            .get("expires_at")
-            .and_then(Value::as_str)
-            .is_none_or(str::is_empty)
-        {
-            crate::diagnostics::record(
-                "GITHUB_TOKEN_LIFETIME_UNAVAILABLE",
-                "evidence-token-response",
-                "Successful evidence installation token response lacks expires_at",
-            );
-            return Err(Failure::unavailable("GITHUB_TOKEN_LIFETIME_UNAVAILABLE"));
-        }
         Ok(ReadSession {
             client,
             api: &self.api,

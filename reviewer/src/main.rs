@@ -2339,7 +2339,7 @@ mod tests {
                 if payload["repositories"] != json!([name]) {
                     return StatusCode::FORBIDDEN.into_response();
                 }
-                json!({"token":"mock-installation-token", "expires_at":"2099-01-01T00:00:00Z"})
+                json!({"token":"mock-installation-token"})
             }
             (Method::GET, "pulls/25") => state
                 .pr
