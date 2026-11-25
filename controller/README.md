@@ -191,10 +191,11 @@ The Issue template asks for an explicit closure decision. Missing or malformed
 closure selects `keep-open` with an operator-visible warning.
 
 For new schema `4.0` Issue work, independent advancement of the configured base
-does not replace the immutable admitted starting commit. Admission and preflight
-verify exact GitHub commit ancestry; trusted checkout and publication verify it
-again against fetched base objects. A fresh task branch starts at the original
-commit, excluding unrelated later main content. A diverged/replaced base,
+preserves the immutable admitted starting commit. For work starting from
+the published base, admission and worker preflight resolve accepted ancestry.
+Checkout fetches the selected ref directly. Writer uses the fetched base objects
+for its ancestry check before a new push. A fresh task branch starts at the
+admitted commit, excluding unrelated later main content. A diverged/replaced base,
 unavailable commit or moved task ref still blocks. Issue continuation keeps its
 exact task head; PR remediation keeps its exact admitted integration-base gate.
 Retained schema `3.0` and legacy attempts keep their historical checks.
@@ -295,10 +296,17 @@ when no new trusted starting pin replaces it; caller JSON or arbitrary PR
 movement cannot supply that provenance. See the
 [authority contract](../contracts/README.md#github-native-task-authority).
 
-Admission requires the live task-branch ref to match the resolved starting SHA.
-It counts open PRs for that branch across all bases before checking compatibility:
-a current PR must be unique and match the configured repository/base, canonical
-Issue linkage and exact head. Step labels and bounded Task title must be compatible
+For a fresh Issue Step, an absent task ref starts from the authorized base. A
+precreated ref at that same commit can be used directly. Writer records its
+observed head for the ordinary non-force publication. When the preceding PR
+merged the retained result into the configured base, deleting its branch or
+recreating it at the new authorized base permits a new Step on the same name.
+The prior admission and result keep their original identities. A different
+live tip, unresolved prior publication, or loss of unmerged retained work
+requires reconciliation. An explicit continuation must still match its selected
+head and PR. Writer checks existing branch PRs across bases before using the
+branch. The selected PR must be unique and match the configured repository/base,
+canonical Issue linkage and exact head. Step labels and bounded Task title must be compatible
 with the admitted projection; conflicting future-Step or foreign-Task metadata
 stops admission. Writer pins the existing PR number in the attempt record and
 projects its newly admitted Step/title. Closure, disappearance or replacement
@@ -660,8 +668,12 @@ a prior DELETE. An already finalized predecessor receipt is reused only for its
 exact successor envelope digest. Automatic replay revalidates the
 open admission gate and original slot before changing the ready command, then
 allows only the first journal reservation for that exact unconsumed run. Once
-the command is consumed, the marked attempt cannot replay admission or launch
-again.
+the command is consumed, a marked attempt can return for publication only
+when its original journal proves a contained execution and the exact collected
+candidate recorded in Writer’s pending push intent or verified publication.
+Writer reconciles that candidate against the retained checkout and task ref.
+A changed candidate or ref stops replay and preserves the publication evidence.
+This path reuses the original admission without another worker launch or push.
 
 A missing, edited or ambiguous Outcome still cannot retire the predecessor.
 A projection failure before a DELETE intent has no such
@@ -1069,8 +1081,10 @@ an absent journal/process/checkout into a completed-containment receipt. Preserv
 the original Step/event and obtain original-operation reconciliation through the
 authorized deployment operator before a potentially duplicating owner launch.
 
-Ordinary `publish-progress` replay still observes an existing publication intent
-and refuses another push when the remote is not the candidate. Recovery is a
+Ordinary `publish-progress` replay reconciles the exact task ref against
+Writer’s reserved candidate or prior publication. An intervening change to
+main does not invalidate an observed push. A different task ref leaves a
+pending push uncertain and preserves its intent. Recovery is a
 separate owner operation. It never prepares a checkout or launches Codex.
 
 ## Operator procedure

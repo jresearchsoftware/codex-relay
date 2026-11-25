@@ -128,7 +128,9 @@ implementation continuation from an existing task branch at one exact head,
 binding its current PR when one exists under the
 [controller contract](../controller/README.md#issue-authorized-implementation-continuation).
 Writer can retain its proven prior published head when the same current branch
-continues and no new trusted starting pin replaces it. Admission checks the live
+continues and no new trusted starting pin replaces it. After its PR merges,
+a new Step can reuse the branch name at the authorized base whether the ref is
+absent or already points there. Admission checks the live
 ref and unique open PR, including repository, base, Task, exact head and compatible
 metadata, then pins the PR number and projects the new admitted Step/title. This
 remains Issue implementation with Writer identity, needs no Reviewer CR and grants

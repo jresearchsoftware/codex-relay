@@ -25,6 +25,13 @@ Implementers use the [authority](../contracts/README.md#github-native-task-autho
 contracts. The [Issue template](../.github/ISSUE_TEMPLATE/codex-task.md) remains
 the repository authoring baseline.
 
+For another Issue Step after the preceding result PR merges, apply the usual
+ready command to the Issue. Writer can start at the authorized base with the
+task branch absent or already pointing to that commit. An existing continuation
+can instead use the exact head authorized by the Task or retained by Writer.
+A different branch tip or conflicting open PR needs reconciliation. See the
+[Writer branch contract](../controller/README.md#issue-authorized-implementation-continuation).
+
 ## Relay development model recommendations
 
 For this repository's Task budget recommendations and their evidence, follow
