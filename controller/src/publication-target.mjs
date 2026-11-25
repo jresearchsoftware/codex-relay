@@ -6,9 +6,10 @@ import { assertPr, linkedIssue, verifyPublishedBase } from './live-authority.mjs
 // Count current candidates before checking compatibility; never select one by
 // silently discarding another open PR with conflicting authority.
 export async function findCurrentIssuePullRequest(api, envelope, expectedNumber = null, publishedTransition = null) {
-  // Continuation must also see wrong-base candidates rather than treating an
-  // existing PR as absent and manufacturing a replacement.
-  const base = envelope.continuation ? '' : `&base=${encodeURIComponent(CONSUMER.baseBranch)}`;
+  // A push to a branch changes every open PR that uses it. Observe those
+  // targets before checking which one the current Task actually authorizes.
+  const base = envelope.continuation || envelope.request?.kind === 'admission'
+    ? '' : `&base=${encodeURIComponent(CONSUMER.baseBranch)}`;
   const matches = await api.list(`/pulls?state=open&head=${CONSUMER.repository.split('/')[0]}:${encodeURIComponent(envelope.branch)}${base}`);
   if (matches.length > 1) fail('PR_AMBIGUOUS');
   if (matches.length === 0) {

@@ -113,6 +113,16 @@ export async function git(cwd, args, { token, allowFailure = false, allowedExitC
     throw failure;
   }
 }
+export async function observeBranchHead(cwd, branch, { remote = REMOTE, token } = {}) {
+  const ref = `refs/heads/${branch}`;
+  // ls-remote also matches a pattern against a slash-delimited ref suffix.
+  // Only the full advertised ref name identifies the selected branch.
+  const matches = (await git(cwd, ['ls-remote', '--heads', remote, ref], { token }))
+    .trim().split(/\r?\n/).map(row => row.split('\t')).filter(([, name]) => name === ref);
+  if (matches.length > 1 || matches.some(([sha, , extra]) => extra !== undefined || !exactSha(sha)))
+    fail('REMOTE_REF_OBSERVATION_INVALID');
+  return matches[0]?.[0] ?? null;
+}
 export async function temporaryRepo(fn, { root = tmpdir(), remote = REMOTE, token } = {}) {
   const dir = await acquire('snapshot-write', () => mkdtemp(join(root, 'relay-git-')));
   try {
@@ -554,8 +564,8 @@ export function createGitPublisher({ remote = REMOTE, token, root = tmpdir() } =
     async inspect(e, encoded, fn) {
       if (typeof encoded !== 'string' || encoded.length > 140 * 1024 * 1024 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) fail('BUNDLE_INVALID');
       return temporaryRepo(async dir => {
-        const remoteOutput = await git(dir, ['ls-remote', remote, `refs/heads/${e.branch}`], { token });
-        const remoteHead = remoteOutput.trim().split(/\s+/)[0] || null;
+        const observe = () => observeBranchHead(dir, e.branch, { remote, token });
+        const remoteHead = await observe();
         if (remoteHead) await git(dir, ['fetch', '--no-tags', remote, `refs/heads/${e.branch}:refs/remotes/task`], { token });
         const bundle = join(dir, 'input.bundle'); await writeFile(bundle, Buffer.from(encoded, 'base64'));
         await git(dir, ['bundle', 'verify', bundle]);
@@ -564,8 +574,7 @@ export function createGitPublisher({ remote = REMOTE, token, root = tmpdir() } =
         await git(dir, ['fetch', '--no-tags', bundle, 'refs/heads/progress:refs/heads/progress']);
         const head = (await git(dir, ['rev-parse', 'refs/heads/progress'])).trim();
         const { commits, integrationBase } = await validateCommits(dir, e, head);
-        const ancestor = async (a, b) => await git(dir, ['merge-base', '--is-ancestor', a, b], { allowFailure: true }) !== null;
-        const observe = async () => (await git(dir, ['ls-remote', remote, `refs/heads/${e.branch}`], { token })).trim().split(/\s+/)[0] || null;
+        const ancestor = async (a, b) => await git(dir, ['merge-base', '--is-ancestor', a, b], { allowedExitCodes: [1] }) !== null;
         return fn({ head, remoteHead, commits, integrationBase, ancestor, observe,
           push: () => git(dir, ['push', remote, `refs/heads/progress:refs/heads/${e.branch}`], { token }) });
       }, { root, remote, token });

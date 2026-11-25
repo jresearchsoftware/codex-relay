@@ -10,30 +10,26 @@ export async function establishCanonicalCheckout(cwd, { branch, startHead, fresh
   branchName(branch);
   if (!exactSha(startHead)) fail('STARTING_STATE_MISMATCH');
   if ((await git(cwd, ['status', '--porcelain=v1', '--untracked-files=all'])).trim()) fail('CHECKOUT_DIRTY');
-  const initial = (await git(cwd, ['rev-parse', '--verify', 'HEAD'], { allowFailure: true }))?.trim();
+  const initial = (await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD'], { allowedExitCodes: [1] }))?.trim();
   const remoteBranch = freshIssue ? CONSUMER.baseBranch : branch;
-  const observed = (await git(cwd, ['ls-remote', '--heads', remote, `refs/heads/${remoteBranch}`], { token })).trim().split(/\s+/);
-  if (observed.length !== 2 || !exactSha(observed[0]) || observed[1] !== `refs/heads/${remoteBranch}`) fail('CANONICAL_BRANCH_MISSING');
   await git(cwd, ['fetch', '--no-tags', remote, `refs/heads/${remoteBranch}`], { token });
   const refreshed = (await git(cwd, ['rev-parse', 'FETCH_HEAD'])).trim();
   // Independent fresh Tasks keep their admitted commit as main advances. The
   // fetched branch must still contain it; a force replacement cannot qualify.
   const pinnedBase = freshIssue && allowBaseAdvance;
-  if (pinnedBase && await git(cwd, ['merge-base', '--is-ancestor', startHead, refreshed], { allowFailure: true }) === null) fail('STARTING_STATE_MISMATCH');
+  if (pinnedBase && await git(cwd, ['merge-base', '--is-ancestor', startHead, refreshed], { allowedExitCodes: [1] }) === null) fail('STARTING_STATE_MISMATCH');
   const canonicalHead = pinnedBase ? startHead : refreshed;
   if (initial) {
     // Refresh the initial branch's publication evidence too. An unrelated
     // published branch is safe to leave; uncommitted/unpublished work is kept.
     const currentBranch = (await git(cwd, ['branch', '--show-current'])).trim();
     if (currentBranch && currentBranch !== remoteBranch) {
-      const refs = (await git(cwd, ['ls-remote', '--heads', remote, `refs/heads/${currentBranch}`], { token })).trim();
-      if (!refs) fail('CHECKOUT_UNPUBLISHED');
       await git(cwd, ['fetch', '--no-tags', remote, `refs/heads/${currentBranch}`], { token });
-      if (await git(cwd, ['merge-base', '--is-ancestor', initial, 'FETCH_HEAD'], { allowFailure: true }) === null) fail('CHECKOUT_UNPUBLISHED');
-    } else if (await git(cwd, ['merge-base', '--is-ancestor', initial, refreshed], { allowFailure: true }) === null) fail('CHECKOUT_UNPUBLISHED');
+      if (await git(cwd, ['merge-base', '--is-ancestor', initial, 'FETCH_HEAD'], { allowedExitCodes: [1] }) === null) fail('CHECKOUT_UNPUBLISHED');
+    } else if (await git(cwd, ['merge-base', '--is-ancestor', initial, refreshed], { allowedExitCodes: [1] }) === null) fail('CHECKOUT_UNPUBLISHED');
   }
-  const local = (await git(cwd, ['rev-parse', '--verify', `refs/heads/${branch}`], { allowFailure: true }))?.trim();
-  if (local && local !== canonicalHead && await git(cwd, ['merge-base', '--is-ancestor', local, canonicalHead], { allowFailure: true }) === null) fail('CHECKOUT_UNPUBLISHED');
+  const local = (await git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`], { allowedExitCodes: [1] }))?.trim();
+  if (local && local !== canonicalHead && await git(cwd, ['merge-base', '--is-ancestor', local, canonicalHead], { allowedExitCodes: [1] }) === null) fail('CHECKOUT_UNPUBLISHED');
   if (local) await git(cwd, ['switch', branch]);
   else await git(cwd, ['switch', '--create', branch, canonicalHead]);
   // Gate only the canonical branch after normalization, including its freshly
