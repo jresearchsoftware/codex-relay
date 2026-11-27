@@ -67,11 +67,14 @@ explains the current human path.
 | Lifecycle admission | Durable automatic admission gate and full controller drain under the Writer lock | Task authority, new executions, deployment acceptance or implicit resume |
 | Codex runtime/worker | Isolated task checkout, local commits, semantic result and validation claims | GitHub credentials, publication or review acceptance |
 | Trusted Writer | Current authority resolution/revalidation, immutable admission snapshot/Step, imported Git objects, publication intents, PR execution Draft/Ready lifecycle and canonical Outcome | Worker execution lifecycle or Reviewer verdicts |
-| External ChatGPT review/caller | Reads the diff/result, authors substantive verdict/findings and supplies structured authority records | Writer implementation identity or automatic launch authority |
+| External ChatGPT review/caller | Reads the diff/result, authors substantive verdict/findings and supplies structured authority records | Writer implementation identity or independent launch authority |
 | Rust Reviewer publication service | Bounded exact-head GitHub evidence reads, trusted Decision/native review/check publication and duplicate recovery; narrow enabled manual-result transport to Writer | Substantive review authorship, implementation, Step allocation, launch commands, Writer credentials, merge or closure |
 
-The owner applies `codex-ready-auto` or `codex-ready-manual` to a canonical
-Issue or remediation PR. The trusted workflow uses the configured base branch,
+The owner or an explicitly owner-authorized orchestration client submits
+`codex-ready-auto` or `codex-ready-manual` on the canonical Issue or
+remediation PR through GitHub as the configured owner. See the
+[admission workflow](../packages/codex-relay/skill/references/workflow.md#author-and-admit-current-work).
+The trusted workflow uses the configured base branch,
 not PR-controlled code. For fresh execution, Writer checks native owner/event/run
 identity, current v4 charter/Decision authority with any applicable v4 CR,
 selected route/profile and exact branch/PR/head/base. The native ready command

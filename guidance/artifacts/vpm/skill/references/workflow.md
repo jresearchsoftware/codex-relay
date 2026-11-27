@@ -118,8 +118,10 @@ ambiguous chains or wrong native identities cannot become effective authority.
 Ordinary comments are evidence. A PR-scoped Decision applies only to its exact
 Task artifact; neither it nor a CR enlarges Task scope or changes Task closure.
 
-The owner authorizes direction and native launch commands. A worker executes
-within its admission and reports claims. Trusted Writer reserves admission,
+The owner authorizes direction and native launch commands. The orchestration
+assistant can send an authorized command through its supported owner-authenticated
+GitHub connection. Only Writer can admit the execution. A worker executes
+within that admission and reports claims. Trusted Writer reserves admission,
 imports bounded automatic-worker Git objects into a fresh trusted repository,
 checks paths/modes and every introduced blob, publishes without force and
 publishes Outcomes. Independent Reviewer publishes an external evaluator's
@@ -152,13 +154,33 @@ when durable semantics need amendment. A new complete public Task Request is
 unnecessary. Before a substantive Decision, reassess concrete remaining work
 and effective closure disposition within that authoring action.
 
-The owner applies `codex-ready-auto` or `codex-ready-manual` on the canonical
-Issue, or on the bound PR for current native CR remediation. These are native
-commands; a displayed label alone grants no authority. Trusted routing verifies
-the owner event and current authority. Writer consumes the event once and
-durably creates the sole immutable admission snapshot, including sources,
-profile, scope, boundaries, validation, exact starting state, route, attempt/run
-and Step. Rejected routing does not allocate Step.
+When the owner explicitly instructs the orchestration assistant to start agreed
+work in the bound project, apply the ready label through the available supported
+owner-authenticated GitHub connection. Use `codex-ready-auto` or
+`codex-ready-manual` for the agreed route on the canonical Issue, or on the
+bound PR for current native CR remediation. That instruction suffices for
+dispatch without another confirmation, a personal label action by the owner or
+a Decision certifying the unchanged start. The owner can also apply the label
+directly. On a fresh launch, send the command before expecting an admission,
+Step or manual handoff.
+
+Trusted routing verifies the native event against the configured owner identity
+and current authority. Writer consumes the event once and durably creates the
+sole immutable admission snapshot, including sources, profile, scope,
+boundaries, validation, exact starting state, route, attempt/run and Step.
+Rejected routing does not allocate Step.
+
+Follow the original ready event, routing run and applicable trusted Writer
+publication until the requested boundary is verified. For automatic launch,
+use evidence of worker execution bound to that attempt, such as a reported
+start of the inner Codex process. For manual launch, return the complete
+Writer handoff described below. If routing stops first, report
+the verified terminal diagnostic for that attempt. A visible label, a queued
+run or a green routing wrapper alone proves neither boundary. If a previous
+launch is uncertain or an admitted attempt has missing or conflicting metadata,
+reconcile the original event, run and Writer evidence. Never send a duplicate
+ready command to resolve uncertainty. If the client loses access to the
+necessary evidence, report the last observed state and that limitation.
 
 At a genuinely new routed admission, Writer reads the canonical Issue's single
 valid `step-N` position under its existing serialization lock and compares it
@@ -186,23 +208,17 @@ pointers and full copyable prompt. A new manual execution after BLOCKED uses a
 fresh manual thread where the route requires it. Thread navigation is not Step
 authority. Consumer client instructions govern rename tools/readback; report
 their actual result without inventing a new Step or blocking on naming alone.
-After an owner-launched `codex-ready-manual` command, keep monitoring its original
-routing run and canonical target until trusted Writer publishes
-`MANUAL_CODEX_HANDOFF_READY` with the full copyable prompt and admitted identity
-and snapshot, or a verified terminal error establishes why that original routing
-attempt stopped. A successful label operation or scheduled/pending routing does
-not establish a terminal result or a ready manual handoff. If the original event
-or handoff publication is ambiguous, reconcile it by reading back the original
-ready event, routing run and trusted Writer publication on the canonical target;
-do not issue a duplicate ready command to resolve that ambiguity. Return the
-complete, unmodified Writer prompt, or the concrete terminal diagnostic. If
-the client cannot keep waiting, report only the observed label, event, run
-and Writer state together with that client boundary; do not report success
-without Writer publication evidence. An inferred Step or pending run is not
-a terminal handoff. Reconcile any ambiguity through the original ready
-event and run.
-The handoff retains `MANUAL_CODEX_HANDOFF_READY`. Copy the full prompt from the
-open text fence. The collapsed Manual Outcome binding carries the canonical
+
+For a manual launch, verify Writer's `MANUAL_CODEX_HANDOFF_READY` publication
+on the canonical target for the original run, with its admitted identity and
+snapshot. Return the complete, unmodified Writer prompt, or the concrete terminal
+diagnostic if routing failed. If the client cannot keep waiting, report only
+the observed label, event, run and Writer state together with that client
+boundary; do not report success without Writer publication evidence. An inferred
+Step or pending run is not a terminal handoff. Reconcile any ambiguity through
+the original ready event and run.
+
+Copy the full prompt from the open text fence. The collapsed Manual Outcome binding carries the canonical
 JSON for later submission through `submit_manual_outcome`. Preserve both blocks
 verbatim when transporting them. Older comments keep their original presentation.
 Actions run names can show bounded Task/PR/route information but do not
@@ -343,9 +359,10 @@ CR ID and actionable findings with bounded overrides. It has no Step and needs
 no successor public Task Request. Task-level `task-review` findings are evidence
 for future owner direction, not an executable PR CR.
 
-For native Relay-admitted automatic remediation, the owner applies
-`codex-ready-auto` to the existing PR. The qualified routing path sends that
-command through Writer, which derives the bounded `begin-remediation` action
+For native Relay-admitted automatic remediation, send the owner-authorized
+`codex-ready-auto` command on the existing PR as described under
+[Author and admit current work](#author-and-admit-current-work). The qualified
+routing path sends that command through Writer, which derives the bounded `begin-remediation` action
 from the verified current native CR, executes it and verifies Draft for the exact
 CR/head before admitting or reserving worker execution. No second manual Draft
 operation or direct Writer bypass is required. Reviewer publication returns
