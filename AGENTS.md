@@ -207,9 +207,13 @@ Use these complete titles, with a concise purpose:
 
 Preserve an exact title supplied by live task/CR authority, including an
 explicit phase qualifier. Step is a positive, explicitly resolved value.
-For a new schema-v4 execution, the owner applies the native
-`codex-ready-auto` or `codex-ready-manual` command on the canonical target;
-Writer verifies and consumes that event and allocates Step in protected
+For a new schema-v4 execution, an explicit owner instruction to start an agreed
+local Task authorizes the orchestration assistant to apply `codex-ready-auto`
+or `codex-ready-manual` on the canonical target through its supported
+owner-authenticated GitHub connection. Send the agreed command without a second
+owner action or a start-certifying Decision. A fresh launch has no admission,
+Step or handoff for that execution yet. Writer verifies the native event against
+the configured owner identity, consumes it once and allocates Step in protected
 admission state. Charter creation, Decisions, CR publication and labels do not
 allocate Step. At a genuinely new routed admission, Writer reads the canonical Issue's single
 valid `step-N` position under its existing serialization lock and compares it
@@ -228,8 +232,13 @@ repair changes no Step; approval does not increment it. New work uses current
 v4 admission, without a successor Request or owner new-phase CLI. Read the
 protected snapshot for current admitted identity; do not infer it from prose,
 commits or the largest historical Step.
-Missing or conflicting admission metadata needs reconciliation. Step labels
-alone do not launch work or grant authority. The
+Follow the original ready event, run and applicable Writer publication to
+verified automatic execution start, the complete manual handoff or a concrete
+terminal diagnostic. Label presence and wrapper success alone establish none
+of these. Reconcile missing or conflicting metadata for an already-admitted
+attempt, or uncertainty about a previous launch, against the original evidence
+before further dispatch. Never repeat the ready command to resolve uncertainty.
+Step labels alone do not launch work or grant authority. The
 [Issue template](.github/ISSUE_TEMPLATE/codex-task.md) supplies
 the authoring baseline; its creation is not admission or dispatch.
 

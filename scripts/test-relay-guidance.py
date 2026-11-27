@@ -353,7 +353,7 @@ class GeneratedTests(unittest.TestCase):
         self.assertIn("without another owner-choice prompt, policy-change Decision", handoff)
         current = json.loads((ROOT / "guidance/source.json").read_text())
         self.assertEqual((current["version"], current["shared_requirement"], current["shared_version"]),
-                         ("11.0.0", ">=12.1.0", "12.1.0"))
+                         ("11.0.1", ">=12.1.0", "12.1.0"))
         workflow = " ".join((ROOT / "packages/codex-relay/skill/references/workflow.md").read_text().split())
         self.assertIn("required publication or owner-run Apply after merge uses this policy", workflow)
         self.assertIn("No new owner-choice prompt, policy-change Decision or conversion", workflow)

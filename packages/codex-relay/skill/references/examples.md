@@ -27,9 +27,13 @@ qualification, with no remaining work or hold. No consumer mutation is authorize
 Issue creation supplies no Step and starts no worker. If the owner accepts a
 durable scope clarification, publish a trusted v4 Task Decision expressing that
 delta. Do not rewrite the stable charter or duplicate it in a public Request.
-Apply `codex-ready-auto` for governed repository work or
-`codex-ready-manual` for an authorized manual route. Writer resolves and
-records the admission, including Step and starting state.
+When the owner says “start Task 42” for this agreed work, the orchestration
+client can send `codex-ready-auto` on Issue #42 through supported GitHub access
+authenticated as the configured owner. For the authorized manual route, send
+`codex-ready-manual` instead. Writer allocates Step and binds the starting state
+at admission. Follow the original attempt to verified worker start, the
+complete admitted manual handoff or an actual terminal diagnostic. Reconcile
+any uncertain submission against that attempt before another command.
 
 A manual handoff can remain short while preserving the actual admitted prompt:
 
@@ -52,9 +56,11 @@ completed-record marker. Record the candidate and comparison SHAs, triggering
 case, impact, evidence, provenance, bounded correction and acceptance evidence.
 Publish a native v4 `REQUEST_CHANGES`/`change-request` bound to that PR/head.
 
-The CR carries no future Step and creates no replacement Task Request. For native
-automatic remediation, the owner applies `codex-ready-auto` to PR #43. Qualified
-routing sends it through Writer, which derives and executes `begin-remediation`
+The CR carries no future Step and creates no replacement Task Request. If the
+owner instructed the client to publish the agreed CR and start automatic
+remediation, after CR publication the client sends `codex-ready-auto` to PR #43
+through the owner-authenticated GitHub connection. Qualified routing sends it
+through Writer, which derives and executes `begin-remediation`
 from the current native CR and verifies the exact CR/head is Draft before
 admission or worker reservation. The Reviewer response alone is not proof of
 that transition; a failed or uncertain transition stops execution. No second
