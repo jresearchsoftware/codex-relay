@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import { validateConsumer, consumerDigest, configuredRepositories, selectRepositoryConsumer,
-  resolveExecutionConsumer, EXECUTION_PATH_NAMES } from '../consumer-config.mjs';
+  resolveExecutionConsumer, resolveAppServerTarget, EXECUTION_PATH_NAMES } from '../consumer-config.mjs';
 
 const example = JSON.parse(await readFile(new URL('../fixtures/example.json', import.meta.url), 'utf8'));
 const targets = ['example-org/project-a', 'example-org/project-b'];
@@ -95,6 +95,59 @@ test('repository runtime overrides replace only the shared default runtime ident
     assert.equal(resolveExecutionConsumer(b, 'second').runtimeUser, managed ? 'relay-project-b' : 'relay-worker-two');
     assert.equal(value.executionSlots[0].runtimeUser, value.runtimeUser);
     assert.ok(Object.isFrozen(value.repositoryRuntimeUsers));
+  }
+});
+
+test('App Server selects the configured target for the admitted repository', () => {
+  const target = { socketPath: '/run/example-codex/app-server.sock', workspaceRoot: '/srv/project-b' };
+  const legacy = validateConsumer(example);
+  assert.equal(resolveAppServerTarget(legacy), undefined);
+  const singleton = validateConsumer({ ...example, repositoryAppServerTargets: { [example.repository]: target } });
+  assert.deepEqual(resolveAppServerTarget(singleton), target);
+  assert.equal(resolveAppServerTarget(singleton, targets[1]), undefined);
+  const input = withSlots({ managed: true });
+  input.repositoryAppServerTargets = { [targets[1]]: target };
+  const value = validateConsumer(input);
+  const a = selectRepositoryConsumer(value, targets[0]);
+  const b = selectRepositoryConsumer(value, targets[1]);
+  assert.equal(resolveAppServerTarget(value), undefined);
+  assert.equal(resolveAppServerTarget(value, targets[0]), undefined);
+  assert.equal(resolveAppServerTarget(value, 'toString'), undefined);
+  assert.equal(resolveAppServerTarget(a), undefined);
+  assert.equal(resolveAppServerTarget(a, targets[1]), undefined);
+  assert.deepEqual(resolveAppServerTarget(resolveExecutionConsumer(b, 'second')), target);
+  assert.ok(Object.isFrozen(resolveAppServerTarget(b)));
+  assert.doesNotThrow(() => validateConsumer(b));
+});
+
+test('App Server target validation rejects foreign, invalid or overlapping paths', () => {
+  const target = { socketPath: '/run/example-codex/app-server.sock', workspaceRoot: '/srv/project-b' };
+  for (const invalid of [
+    null, [], { '*': target }, { 'foreign/project': target }, { [targets[1].toUpperCase()]: target },
+    { [targets[1]]: { ...target, projectId: 'native-project' } },
+    { [targets[1]]: { ...target, socketPath: 'ws://localhost' } },
+    { [targets[1]]: { ...target, socketPath: '/' + 'a'.repeat(107) } },
+    { [targets[1]]: { ...target, workspaceRoot: '/' } },
+    { [targets[1]]: { ...target, workspaceRoot: '/srv/project-b/../other' } },
+    { [targets[1]]: { ...target, workspaceRoot: '/run/example-codex' } }
+  ]) {
+    const value = { ...multiple(), repositoryAppServerTargets: invalid };
+    assert.throws(() => validateConsumer(value), { code: 'CONSUMER_CONFIG_INVALID' });
+  }
+});
+
+test('App Server socket and workspace changes alter the installation digest', () => {
+  const input = multiple();
+  const socketPath = '/run/example-codex/app-server.sock';
+  const a = { socketPath, workspaceRoot: '/srv/project-a' };
+  const b = { socketPath, workspaceRoot: '/srv/project-b' };
+  input.repositoryAppServerTargets = { [targets[0]]: a, [targets[1]]: b };
+  const digest = consumerDigest(validateConsumer(input));
+  input.repositoryAppServerTargets = { [targets[1]]: { workspaceRoot: b.workspaceRoot, socketPath }, [targets[0]]: a };
+  assert.equal(digest, consumerDigest(validateConsumer(input)));
+  for (const delta of [{ socketPath: '/run/example-codex-2/app-server.sock' }, { workspaceRoot: '/srv/project-b-2' }]) {
+    input.repositoryAppServerTargets[targets[1]] = { ...b, ...delta };
+    assert.notEqual(digest, consumerDigest(validateConsumer(input)));
   }
 });
 

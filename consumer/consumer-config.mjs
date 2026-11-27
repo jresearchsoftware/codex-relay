@@ -42,7 +42,8 @@ const keys = (v, names) => v && typeof v === 'object' && !Array.isArray(v)
 function freeze(v) { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; }
 
 export function validateConsumer(c) {
-  const { validationNames, executionSlots, generalRunnerPool, repositories, repositoryRuntimeUsers, workGroup, ...required } = c ?? {};
+  const { validationNames, executionSlots, generalRunnerPool, repositories, repositoryRuntimeUsers,
+    repositoryAppServerTargets, workGroup, ...required } = c ?? {};
   const multiple = Object.hasOwn(c ?? {}, 'repositories');
   if (!keys(required, ['version', ...(multiple ? [] : ['repository']), 'owner', 'baseBranch', 'taskBranchPrefix', 'routingWorkflow', 'recoveryWorkflow', 'validationWorkflow',
     'writerApp', 'reviewerApp', 'writerIdentity', 'remediationIdentity', 'defaultProfile', 'paths', 'runtimeUser'])) reject('configuration', 'exact-fields', 'required consumer fields with only declared optional fields', c);
@@ -56,6 +57,24 @@ export function validateConsumer(c) {
   if (Object.hasOwn(c, 'repositoryRuntimeUsers') && (!multiple || !repositoryRuntimeUsers
     || typeof repositoryRuntimeUsers !== 'object' || Array.isArray(repositoryRuntimeUsers)
     || Object.entries(repositoryRuntimeUsers).some(([repository, user]) => !repositories.includes(repository) || !unixIdentity(user)))) reject('repositoryRuntimeUsers', 'configured-repository-identities', 'plural configured repository keys and non-root Unix users', repositoryRuntimeUsers);
+  if (Object.hasOwn(c, 'repositoryAppServerTargets')) {
+    const field = 'repositoryAppServerTargets';
+    requireConfig(repositoryAppServerTargets && typeof repositoryAppServerTargets === 'object'
+      && !Array.isArray(repositoryAppServerTargets), field, 'repository-target-map',
+      'object keyed by configured repository name', repositoryAppServerTargets);
+    for (const [repository, target] of Object.entries(repositoryAppServerTargets)) {
+      requireConfig(configuredRepositories(c).includes(repository), field, 'configured-repository',
+        'exact configured repository name', repository);
+      requireConfig(keys(target, ['socketPath', 'workspaceRoot']), field, 'exact-target-fields',
+        'socketPath and workspaceRoot', target);
+      requireConfig(path(target.socketPath) && target.socketPath.length <= 107, `${field}.socketPath`,
+        'absolute-unix-socket-path', 'safe absolute path of at most 107 ASCII bytes', target.socketPath);
+      requireConfig(path(target.workspaceRoot), `${field}.workspaceRoot`, 'safe-absolute-path',
+        'absolute path with safe nonempty components', target.workspaceRoot);
+      requireConfig(!overlaps(target.socketPath, target.workspaceRoot), field, 'socket-outside-workspace',
+        'nonoverlapping socket and workspace paths', true);
+    }
+  }
   if (Object.hasOwn(c, 'validationNames')) {
     requireConfig(Array.isArray(validationNames) && validationNames.length <= 32, 'validationNames', 'bounded-validation-list', 'array of at most 32 check names', validationNames);
     requireConfig(new Set(validationNames).size === validationNames.length, 'validationNames', 'unique-validation-names', 'unique check names', new Set(validationNames).size);
@@ -147,6 +166,15 @@ export function validateConsumer(c) {
   }
   if (/(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}|PRIVATE KEY/.test(JSON.stringify(c))) reject('configuration', 'secret-free-input', 'no credential markers', true);
   const resolved = structuredClone(c);
+  if (repositoryAppServerTargets !== undefined) {
+    // Protected snapshots can sort nested JSON keys before the original
+    // installation is reconstructed. Keep target map digest ordering stable.
+    resolved.repositoryAppServerTargets = Object.fromEntries(Object.keys(repositoryAppServerTargets).sort()
+      .map(repository => {
+        const { socketPath, workspaceRoot } = repositoryAppServerTargets[repository];
+        return [repository, { socketPath, workspaceRoot }];
+      }));
+  }
   resolved.defaultProfile.effort = resolveExecutionDefaults(profile).effort;
   if (multiple) for (const repository of repositories) validateConsumer(selectRepositoryConsumer(resolved, repository));
   return freeze(resolved);
@@ -206,6 +234,10 @@ export const consumerDigest = c => createHash('sha256').update(JSON.stringify(c.
   ? { ...c, generalRunnerPool: {} } : c)).digest('hex');
 
 export const configuredRepositories = c => c.repositories ?? [c.repository];
+export function resolveAppServerTarget(c, repository = c.repository) {
+  const targets = c.repositoryAppServerTargets;
+  return targets && Object.hasOwn(targets, repository) ? targets[repository] : undefined;
+}
 
 // Repository selection changes only the process-local resource view. The
 // complete installation remains the immutable digest and shared lock boundary.
@@ -215,11 +247,13 @@ export function selectRepositoryConsumer(c, repository) {
     return c;
   }
   if (!c.repositories.includes(repository)) reject('repositorySelection', 'configured-repository', 'explicit member of configured repositories', repository);
-  const { repositories, repositoryRuntimeUsers, ...shared } = c;
+  const { repositories, repositoryRuntimeUsers, repositoryAppServerTargets, ...shared } = c;
   const runtimeUser = repositoryRuntimeUsers?.[repository] ?? c.runtimeUser;
   const pathsForRepository = paths => ({ ...paths, ...Object.fromEntries(REPOSITORY_PATH_NAMES
     .map(name => [name, `${paths[name]}/repositories/${repository}`])) });
   const selected = { ...shared, repository, runtimeUser, paths: pathsForRepository(c.paths) };
+  const target = resolveAppServerTarget(c, repository);
+  if (target) selected.repositoryAppServerTargets = { [repository]: target };
   if (c.executionSlots) selected.executionSlots = c.executionSlots.map(slot => ({ ...slot,
     runtimeUser: repositoryRuntimeUsers?.[repository] !== undefined && slot.runtimeUser === c.runtimeUser
       ? runtimeUser : slot.runtimeUser,

@@ -2,13 +2,14 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { performance } from 'node:perf_hooks';
 import { failureFacts } from './failure-report.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
+import { resolveAppServerTarget } from '../../consumer/consumer-config.mjs';
 import { REPOSITORY, OWNER, REVIEWER, VERSION, fail, requireCurrentProtocol, branchName, exactSha, positive, isAdmissionDomainBlock, DEFAULT_NATIVE_VALIDATIONS, NATIVE_VALIDATIONS, validateEnvelope } from './execution-contract.mjs';
 import { dispatchRunName, labelRunCommandMatches, launchStep } from './launch-metadata.mjs';
-import { labelNames, READY_LABELS } from './step-metadata.mjs';
+import { labelNames, LAUNCH_ROUTES, READY_LABELS, readyLabel } from './step-metadata.mjs';
 import { findCurrentIssuePullRequest } from './publication-target.mjs';
 import { readTaskAuthority } from './task-authority.mjs';
 import { taskReferences } from './task-relationship.mjs';
-import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { authorityMode, createAdmissionSnapshot, validateAdmissionSnapshot, canonicalAuthorityJson, sha256Body } from '../../contracts/src/github-authority.mjs';
 import { blockedCrContinuation } from './blocked-cr-continuation.mjs';
 import { readPriorOutcomeContext, appendPriorOutcomeContext } from './prior-outcome-context.mjs';
 import { rejectOwnerRun } from './owner-run-rejection.mjs';
@@ -86,7 +87,7 @@ export async function readAuthority(api, target, number, options = {}) {
 }
 
 async function resolveAuthority(api, { target, issueNumber, issue, pr }, { targetBase, step, route, runId, lineage, snapshot,
-  previousRecord, resolution, publicationTarget, admitting = false }) {
+  previousRecord, resolution, publicationTarget, appServerTarget, admitting = false }) {
   const typed = await readTaskAuthority(api, issue, pr, {
     route, purpose: resolution?.purpose ?? snapshot?.purpose ?? issue.title?.replace(/^Task\s+#?\d+\s*[-–—:·|]+\s*/i, '') ?? `Task ${issueNumber}`,
     projectDefaults: { model: CONSUMER.defaultProfile.cliModelId, effort: CONSUMER.defaultProfile.effort,
@@ -152,7 +153,8 @@ async function resolveAuthority(api, { target, issueNumber, issue, pr }, { targe
   }
   const priorContext = appendPriorOutcomeContext(typed.input, priorOutcome, { unavailable: priorUnavailable });
   const q = snapshot ? validateAdmissionSnapshot(snapshot, { step, route, attempt: `run-${runId}` })
-    : createAdmissionSnapshot(typed, { step, route, runId, attempt: `run-${runId}`, lineage, ...continuationState });
+    : createAdmissionSnapshot(typed, { step, route, runId, attempt: `run-${runId}`, lineage, ...continuationState,
+      ...(appServerTarget ? { backend: 'app-server', app_server_target_sha256: sha256Body(canonicalAuthorityJson(appServerTarget)) } : {}) });
   const noSource = q.route === 'manual' && q.branch === null && q.base_sha === null && q.starting_head === null;
   if (!noSource && (!q.branch || !exactSha(q.base_sha) || !exactSha(q.starting_head))) fail('AUTHORITY_STARTING_STATE_INVALID');
   if (q.branch) branchName(q.branch);
@@ -198,9 +200,11 @@ async function resolveAuthority(api, { target, issueNumber, issue, pr }, { targe
     && await findCurrentIssuePullRequest(api, execution)) fail('PR_AUTHORITY_CHANGED');
   return execution;
 }
-export async function admitEnvelope(api, { runId, target, number, route, issueNumber, step, transport }, { nextStep, lineage, previousRecord, recordFailure = async () => undefined } = {}) {
+export async function admitEnvelope(api, { runId, target, number, route: launchRoute, issueNumber, step, transport }, { nextStep, lineage, previousRecord, recordFailure = async () => undefined } = {}) {
   if (!positive(number) || !positive(runId) || !['issue', 'pull_request'].includes(target)
-    || !['auto', 'manual'].includes(route)) fail('ROUTE_INVALID');
+    || !LAUNCH_ROUTES.includes(launchRoute)) fail('ROUTE_INVALID');
+  const backend = launchRoute === 'app-server' ? launchRoute : undefined;
+  const route = backend ? 'auto' : launchRoute;
   if (transport !== undefined && transport !== 'label') fail('ROUTE_INVALID');
   if (transport === 'label') {
     // Resolve Task through the linked canonical Issue after target binding.
@@ -210,8 +214,8 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     if (step !== null && step !== undefined) step = launchStep(step);
   }
   const eventName = transport === 'label' ? target === 'issue' ? 'issues' : 'pull_request_target' : 'workflow_dispatch';
-  const label = { route, target, number };
-  const expectedTitle = transport === 'label' ? label : dispatchRunName({ route, issueNumber, step, target, number });
+  const label = { route: launchRoute, target, number };
+  const expectedTitle = transport === 'label' ? label : dispatchRunName({ route: launchRoute, issueNumber, step, target, number });
   function checkOwnerRun(run) {
     if (run?.id !== runId) rejectOwnerRun('run_id', runId, run?.id);
     if (run.repository?.full_name !== REPOSITORY) rejectOwnerRun('repository', REPOSITORY, run.repository?.full_name);
@@ -261,7 +265,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     }
     // Unsafe/unbound/stale commands throw outside the domain-result boundary:
     // they authorize neither consumption nor an Outcome on this target.
-    const event = await readReadyEvent(api, { number, route, run, subject, rejectAmbiguous: true });
+    const event = await readReadyEvent(api, { number, label: readyLabel(launchRoute), run, subject, rejectAmbiguous: true });
     command = { transport, readyEventId: event.id, readyEventAt: event.created_at,
       readyLabel: event.label.name, runName: run.display_title };
   }
@@ -278,14 +282,17 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     if (!exactSha(targetBase)) fail('TARGET_BASE_INVALID');
     if (pr) assertPr(pr, number);
     assertIssue(issue);
+    const appServerTarget = backend ? resolveAppServerTarget(CONSUMER, REPOSITORY) : undefined;
+    if (backend && !appServerTarget) fail('APP_SERVER_TARGET_NOT_CONFIGURED');
     const a = await resolveAuthority(api, { target, issueNumber: canonicalIssueNumber, issue, pr },
-      { targetBase, step: admittedStep, route, runId, lineage, previousRecord, admitting: true });
+      { targetBase, step: admittedStep, route, runId, lineage, previousRecord, appServerTarget, admitting: true });
     if (a.request && a.request.route !== route) fail('AUTHORITY_ROUTE_MISMATCH');
     if (a.issueNumber !== issueNumber) fail('CANONICAL_ISSUE_AMBIGUOUS');
     if (!a.validation.length || a.validation.some(name => !NATIVE_VALIDATIONS.has(name))) fail('REQUIRED_VALIDATION_UNSUPPORTED');
     if (a.pr && a.pr.head.sha !== a.startHead) fail('STARTING_STATE_MISMATCH', { check: 'pr.starting-head', expected: a.startHead, observed: a.pr.head.sha });
     return { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
       target, number, issueNumber: a.issueNumber, route, step: admittedStep,
+      ...(backend ? { backend, appServerTarget } : {}),
       ...command,
       branch: a.branch, startHead: a.startHead, historicalBase: a.historicalBase, targetBase,
       reviewId: a.review?.id ?? null, authorityDigest: a.authorityDigest,
@@ -305,6 +312,7 @@ export async function admitEnvelope(api, { runId, target, number, route, issueNu
     // profile, or reviewed/remediation head for the terminal Outcome.
     return { blocked: true, version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId, runId,
       target, number, issueNumber, route, step: null, targetBase, ...command,
+      ...(backend ? { backend } : {}),
       block: { ...failureFacts(error), diagnosticStore, ...(diagnosticRecorderFailed ? { diagnosticRecorderFailed } : {}), code: /^[A-Z][A-Z0-9_]{0,79}$/.test(error.code ?? '') ? error.code : 'ADMISSION_BLOCKED',
         ...(typeof error.details?.field === 'string' ? { field: error.details.field } : {}) } };
   }
@@ -332,8 +340,7 @@ function rejectReady(code, check, expected, observed) {
   throw error;
 }
 
-async function readReadyEvent(api, { number, route, run, subject, rejectAmbiguous = false }) {
-  const label = route === 'auto' ? READY_LABELS[0] : READY_LABELS[1];
+async function readReadyEvent(api, { number, label, run, subject, rejectAmbiguous = false }) {
   const ready = labelNames(subject.labels).filter(name => READY_LABELS.includes(name));
   if (ready.length !== 1 || ready[0] !== label) rejectReady('READY_LABEL_AMBIGUOUS', 'ready-label', [label], ready);
   const events = await readyTransitions(api, number);
@@ -366,7 +373,9 @@ export async function revalidateReadyEvent(api, e) {
   // admission. Never remove a replacement command created during API reads.
   const subject = await api.get(`/issues/${e.number}`);
   if (subject?.number !== e.number) rejectOwnerRun('subject_number', e.number, subject?.number);
-  const event = await readReadyEvent(api, { number: e.number, route: e.route,
+  const label = readyLabel(e.backend ?? e.route);
+  if (e.backend && e.readyLabel !== label) rejectReady('READY_EVENT_STALE', 'ready-event-label', label, e.readyLabel);
+  const event = await readReadyEvent(api, { number: e.number, label,
     run: await api.getRun(e.runId), subject, rejectAmbiguous: true });
   if (event.id !== e.readyEventId || event.created_at !== e.readyEventAt) rejectReady('READY_EVENT_STALE', 'ready-event-revalidation',
     { id: e.readyEventId, created_at: e.readyEventAt }, { id: event.id, created_at: event.created_at });

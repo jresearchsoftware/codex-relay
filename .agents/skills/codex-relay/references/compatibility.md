@@ -7,6 +7,7 @@ discovery are distinct facts. An upgrade of one does not establish the others.
 | Situation | Correct authority and permitted path |
 | --- | --- |
 | New work on a qualified paired v4 installation | Stable marked charter + active trusted v4 Decisions/applicable v4 CR; protected Writer admission. No new public Task Request. |
+| Opt in to App Server | Qualify the installation and projected routing for `codex-ready-app-server` and install the target for the exact repository. Reconcile an existing attempt on its admitted backend and target. |
 | Fresh unmarked/legacy Task or new v3 Request/CR chain on that installation | `CURRENT_PROTOCOL_REQUIRED`; stop before admission reservation, command consumption, Step projection, worker launch or fabricated blocked Outcome. Use current v4 authority or explicitly owner-authorized migration. |
 | Marked Task containing old Request/CR history | Current source does not select an old Request or inherit its execution fields. Author current v4 direction through the owning authority; historical records remain evidence. A new old-schema chain is unsupported. |
 | Exact old attempt already admitted | The bounded installed bridge selects its frozen original source/consumer and original native bindings. Preserve body hashes, Step, transport and replay rules. Current Node code does not rebuild the retired execution model. Safe original completion/publication and reserved native review recovery remain supported. |

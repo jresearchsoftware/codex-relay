@@ -66,8 +66,8 @@ export function safeFailurePredicate(value) {
   }
   const categories = {
     event: ['workflow_dispatch', 'issues', 'pull_request_target'],
-    'inputs.route': ['auto', 'manual'], 'event.action': ['labeled', 'unlabeled', 'opened', 'closed', 'edited', 'reopened'],
-    'event.label': ['codex-ready-auto', 'codex-ready-manual'], 'event.name': ['workflow_dispatch', 'issues', 'pull_request_target'],
+    'inputs.route': ['auto', 'manual', 'app-server'], 'event.action': ['labeled', 'unlabeled', 'opened', 'closed', 'edited', 'reopened'],
+    'event.label': ['codex-ready-auto', 'codex-ready-manual', 'codex-ready-app-server'], 'event.name': ['workflow_dispatch', 'issues', 'pull_request_target'],
     'event.subject.kind': ['issue', 'pull_request'], 'issue.kind': ['issue', 'pull_request'],
     'issue.state': ['open', 'closed'], 'pr.state': ['open', 'closed']
   };
@@ -177,6 +177,9 @@ const otherObservations = {
   OWNER_EVENT_REQUIRED: 'The event did not match the configured owner command and trusted workflow binding.',
   OWNER_RUN_NOT_ADMITTED: 'GitHub workflow run evidence did not match the configured owner command.',
   ADMISSION_QUIESCED: 'The admission gate is closed for a lifecycle operation.',
+  APP_SERVER_TARGET_NOT_CONFIGURED: 'The selected repository has no App Server target binding.',
+  APP_SERVER_TARGET_BINDING_CHANGED: 'The installed App Server target or command does not match the admitted attempt.',
+  PRIOR_EXECUTION_UNRESOLVED: 'An earlier execution of this Task holds an active or unresolved reservation.',
   READY_EVENT_REPLACED: 'The original ready event could no longer be verified.',
   READY_CONSUMPTION_UNCERTAIN: 'Writer could not establish the effect of the reserved ready-label removal.',
   CURRENT_PROTOCOL_REQUIRED: 'The Task lacks current native authority for a new execution.',
@@ -215,6 +218,8 @@ const next = {
   authority: 'Correct the named check in the canonical Task, trusted Decision, or Change Request before requesting fresh admission.',
   transport: 'Have the host operator check the Relay host’s DNS or TLS configuration for GitHub.',
   configuration: 'Have the host operator verify the selected consumer configuration and Writer credential binding.',
+  appServerTarget: 'Configure the selected repository in repositoryAppServerTargets through the deployment-owned consumer configuration before requesting a new App Server execution.',
+  originalExecution: 'Reconcile the retained attempt on its original route and configuration before starting another execution of this Task.',
   current: 'Have the owner reconcile the Task charter and active schema-v4 Decision or Change Request through the current native authority workflow.',
   access: 'Verify that the configured GitHub credential has access to the selected repository and endpoint.',
   wait: 'Have the host operator verify the Relay runner can reach the selected GitHub API before pursuing recovery for this run.',
@@ -353,6 +358,8 @@ export function failureExplanation(code, diagnostic = {}, { runId, reason, targe
     [github?.reason === 'network' && github.stopped === 'non-transient', next.transport],
     [github && ['attempt-limit', 'deadline', 'provider-delay'].includes(github.stopped), next.wait],
     [failureCode === 'ADMISSION_QUIESCED', next.gate],
+    [failureCode === 'APP_SERVER_TARGET_NOT_CONFIGURED', next.appServerTarget],
+    [['APP_SERVER_TARGET_BINDING_CHANGED', 'PRIOR_EXECUTION_UNRESOLVED'].includes(failureCode), next.originalExecution],
     [slotConflict || ['EXECUTION_SLOT_UNAVAILABLE', 'ADMISSION_RESOURCE_EVIDENCE_UNREADABLE'].includes(failureCode), next.slot],
     [/^OWNER_(RUN_NOT_ADMITTED|EVENT_REQUIRED)$/.test(failureCode), next.event],
     [failureCode === 'CURRENT_PROTOCOL_REQUIRED', next.current],

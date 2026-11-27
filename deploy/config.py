@@ -472,6 +472,11 @@ def compile_inputs(c):
         result['relay_repository_runtime_users'] = consumer['repositoryRuntimeUsers']
         result['relay_additional_runtime_users'] = sorted(set(consumer['repositoryRuntimeUsers'].values())
                                                         - {consumer['runtimeUser']})
+    if 'repositoryAppServerTargets' in consumer:
+        result['relay_repository_app_server_targets'] = {
+            repository: {'socketPath': target['socketPath'], 'workspaceRoot': target['workspaceRoot']}
+            for repository, target in sorted(consumer['repositoryAppServerTargets'].items())
+        }
     for role in ['writer', 'reviewer']:
         app = consumer[role + 'App']
         for key, suffix in [('slug','app_slug'),('appId','app_id'),('installationId','app_installation_id'),('expectedActor','expected_actor')]:

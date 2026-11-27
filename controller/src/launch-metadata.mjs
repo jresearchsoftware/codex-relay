@@ -1,7 +1,7 @@
 // Native launch commands and their display metadata; runId owns the attempt.
 import { fail, positive } from './execution-contract.mjs';
 import { RUN_NAME_MAX_CHARS } from './run-name.mjs';
-import { READY_LABELS } from './step-metadata.mjs';
+import { LAUNCH_ROUTES, READY_LABELS, readyLabel } from './step-metadata.mjs';
 
 function positiveDecimal(value, code) {
   if (!['string', 'number'].includes(typeof value) || !positive(Number(value)) || String(Number(value)) !== String(value)) fail(code,
@@ -11,15 +11,21 @@ function positiveDecimal(value, code) {
 
 export const launchStep = value => positiveDecimal(value, 'LAUNCH_STEP_INVALID');
 
+function launchPhase(route, target) {
+  if (route === 'manual') return 'Manual handoff';
+  const backend = route === 'app-server' ? 'App Server' : 'Auto';
+  return `${backend} ${target === 'pull_request' ? 'remediation' : 'implementation'}`;
+}
+
 export function dispatchRunName({ route, issueNumber, step, target, number }) {
-  const phase = route === 'manual' ? 'Manual handoff' : target === 'pull_request' ? 'Auto remediation' : 'Auto implementation';
+  const phase = launchPhase(route, target);
   const title = `${phase} · Task ${issueNumber}${step ? ` · Step ${step}` : ''}${target === 'pull_request' ? ` · PR #${number}` : ''}`;
   if (Array.from(title).length > RUN_NAME_MAX_CHARS) fail('LAUNCH_METADATA_TOO_LONG');
   return title;
 }
 
 export function parseLaunchInputs(inputs) {
-  if (!inputs || !['auto', 'manual'].includes(inputs.route)) fail('ROUTE_INVALID', { check: 'inputs.route', expected: ['auto', 'manual'], observed: inputs?.route ?? null });
+  if (!LAUNCH_ROUTES.includes(inputs?.route)) fail('ROUTE_INVALID', { check: 'inputs.route', expected: LAUNCH_ROUTES, observed: inputs?.route ?? null });
   const issueNumber = positiveDecimal(inputs.task, 'LAUNCH_TASK_INVALID');
   const step = inputs.step === undefined || inputs.step === '' ? null : launchStep(inputs.step);
   const target = inputs.pull_request ? 'pull_request' : 'issue';
@@ -32,12 +38,12 @@ export function parseLaunchInputs(inputs) {
 // Mirrors the workflow expression. Issue titles/prose are never Step inputs.
 // GitHub's native label projection also displays unrelated labels verbatim.
 function labelRunPrefix({ route, target, number }) {
-  const phase = route === 'manual' ? 'Manual handoff' : target === 'pull_request' ? 'Auto remediation' : 'Auto implementation';
+  const phase = launchPhase(route, target);
   return `${phase} · ${target === 'issue' ? `Task ${number}` : `PR #${number}`} · `;
 }
 
 export function labelRunName(launch, subject) {
-  return labelRunPrefix(launch) + (launch.target === 'issue' ? `codex-ready-${launch.route}` : subject.title);
+  return labelRunPrefix(launch) + (launch.target === 'issue' ? readyLabel(launch.route) : subject.title);
 }
 
 export function labelRunCommandMatches(name, launch) {
@@ -45,7 +51,7 @@ export function labelRunCommandMatches(name, launch) {
   if (typeof name !== 'string' || !name.startsWith(prefix)) return false;
   if (launch.target === 'pull_request') return true;
   const commands = name.slice(prefix.length).split(' · ').filter(value => READY_LABELS.includes(value));
-  return commands.length === 1 && commands[0] === `codex-ready-${launch.route}`;
+  return commands.length === 1 && commands[0] === readyLabel(launch.route);
 }
 
 export function parseLabelLaunch(event, eventName) {
@@ -60,6 +66,6 @@ export function parseLabelLaunch(event, eventName) {
   if (target === 'issue' && subject.pull_request) fail('ROUTE_INVALID', { check: 'event.subject.kind', expected: 'issue', observed: 'pull_request' });
   // Routing authenticates the command; Writer resolves the canonical Issue's
   // numbering position under its existing serialization boundary.
-  return { target, number: subject.number, step: null,
-    route: event.label.name === READY_LABELS[0] ? 'auto' : 'manual', transport: 'label' };
+  const route = LAUNCH_ROUTES.find(value => readyLabel(value) === event.label.name);
+  return { target, number: subject.number, step: null, route, transport: 'label' };
 }

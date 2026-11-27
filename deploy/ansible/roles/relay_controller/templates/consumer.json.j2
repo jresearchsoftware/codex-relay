@@ -46,6 +46,9 @@
 {% if relay_repository_runtime_users is defined %}
   "repositoryRuntimeUsers": {{ relay_repository_runtime_users | to_json }},
 {% endif %}
+{% if relay_repository_app_server_targets is defined %}
+  "repositoryAppServerTargets": {{ relay_repository_app_server_targets | to_json }},
+{% endif %}
 {% if relay_general_runner_pool is defined %}
   "generalRunnerPool": {"desiredCapacity": {{ relay_general_runner_pool.desiredCapacity }}},
 {% endif %}

@@ -1,7 +1,9 @@
 import { fail, positive } from './execution-contract.mjs';
 import { RUN_NAME_IDENTITY_MAX_CHARS } from './run-name.mjs';
 
-export const READY_LABELS = ['codex-ready-auto', 'codex-ready-manual'];
+export const LAUNCH_ROUTES = Object.freeze(['auto', 'manual', 'app-server']);
+export const readyLabel = route => `codex-ready-${route}`;
+export const READY_LABELS = Object.freeze(LAUNCH_ROUTES.map(readyLabel));
 export const labelNames = labels => (labels ?? []).map(label => typeof label === 'string' ? label : label.name);
 export const stepLike = name => /^step(?:-|$)/i.test(name ?? '');
 

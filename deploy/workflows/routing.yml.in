@@ -3,10 +3,10 @@
 name: Relay routing
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch' &&
-      format('{0} · Task {1}{2}{3}', inputs.route == 'manual' && 'Manual handoff' || inputs.pull_request != '' && 'Auto remediation' || 'Auto implementation', inputs.task, inputs.step != '' && format(' · Step {0}', inputs.step) || '', inputs.pull_request != '' && format(' · PR #{0}', inputs.pull_request) || '') ||
+      format('{0} · Task {1}{2}{3}', inputs.route == 'manual' && 'Manual handoff' || inputs.route == 'app-server' && (inputs.pull_request != '' && 'App Server remediation' || 'App Server implementation') || inputs.pull_request != '' && 'Auto remediation' || 'Auto implementation', inputs.task, inputs.step != '' && format(' · Step {0}', inputs.step) || '', inputs.pull_request != '' && format(' · PR #{0}', inputs.pull_request) || '') ||
       github.event_name == 'issues' &&
-      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto implementation', github.event.issue.number, github.event.label.name) ||
-      format('{0} · PR #{1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || 'Auto remediation', github.event.pull_request.number, github.event.pull_request.title) }}
+      format('{0} · Task {1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || github.event.label.name == 'codex-ready-app-server' && 'App Server implementation' || 'Auto implementation', github.event.issue.number, github.event.label.name) ||
+      format('{0} · PR #{1} · {2}', github.event.label.name == 'codex-ready-manual' && 'Manual handoff' || github.event.label.name == 'codex-ready-app-server' && 'App Server remediation' || 'Auto remediation', github.event.pull_request.number, github.event.pull_request.title) }}
 
 on:
   issues:
@@ -29,7 +29,7 @@ on:
         description: Admitted execution route
         required: true
         type: choice
-        options: [auto, manual]
+        options: [auto, manual, app-server]
       pull_request:
         description: Existing remediation PR number, if applicable
         required: false
@@ -55,7 +55,8 @@ jobs:
           github.ref == 'refs/heads/@@BASE_BRANCH@@' &&
           (github.event_name == 'workflow_dispatch' ||
            github.event.action == 'labeled' &&
-           (github.event.label.name == 'codex-ready-auto' || github.event.label.name == 'codex-ready-manual')) &&
+           (github.event.label.name == 'codex-ready-auto' || github.event.label.name == 'codex-ready-manual' ||
+            github.event.label.name == 'codex-ready-app-server')) &&
           (github.event_name != 'pull_request_target' ||
            github.event.pull_request.head.repo.full_name == github.repository) }}
     # Labels/if/identity checks are not the external runner scheduling boundary.

@@ -49,6 +49,19 @@ author-assigned future Step. Copy the real identity/profile from the actual
 handoff. Client naming/readback follows supported consumer instructions;
 successful text generation alone does not prove a persisted rename.
 
+### App Server launch
+
+The deployment owner adds a qualified target for
+`example-org/sample-project` through the
+[deployment configuration](https://github.com/jresearchsoftware/codex-relay/blob/main/deploy/README.md#app-server-execution-targets).
+For an authorized App Server execution on Issue #42, the orchestration client
+sends `codex-ready-app-server` using the configured owner's supported GitHub
+connection. Follow the original Actions run to its bound Developer turn.
+The admitted Task/Step title identifies the thread in the qualified Desktop
+project. If the client loses its connection, inspect that original attempt.
+Wait for Writer's Outcome and verified PR head, then use independent exact-head
+review.
+
 ## CR and the next execution
 
 An independent review of exact PR #43 head finds that retry failure clears the

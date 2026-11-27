@@ -67,6 +67,7 @@ class ConsumerWorkflowTests(unittest.TestCase):
         self.assertEqual(set(self.routing['on']), {'issues', 'pull_request_target', 'workflow_dispatch'})
         self.assertEqual(self.routing['on']['issues'], {'types': ['labeled']})
         self.assertEqual(self.routing['on']['pull_request_target'], {'types': ['labeled'], 'branches': ['main']})
+        self.assertEqual(self.routing['on']['workflow_dispatch']['inputs']['route']['options'], ['auto', 'manual', 'app-server'])
         self.assertEqual(set(self.recovery['on']), {'workflow_dispatch'})
         permissions = {'actions': 'read', 'contents': 'read', 'issues': 'read', 'pull-requests': 'read'}
         for value in (self.routing, self.recovery):
@@ -316,7 +317,7 @@ const evaluate = (source, github, inputs = {}) => {
 const base = { repository: 'jresearchsoftware/codex-relay', actor: 'foal', triggering_actor: 'foal',
   ref: 'refs/heads/main', event_name: 'workflow_dispatch', event: {} };
 const condition = routing.jobs.route.if;
-for (const route of ['auto', 'manual']) {
+for (const [route, issuePhase] of [['auto', 'Auto implementation'], ['manual', 'Manual handoff'], ['app-server', 'App Server implementation']]) {
   for (const target of ['issue', 'pull_request']) {
     const launch = { route, issueNumber: 27, step: 3, target, number: target === 'issue' ? 27 : 28 };
     const inputs = { route, task: '27', step: '3', pull_request: target === 'issue' ? '' : '28' };
@@ -331,7 +332,7 @@ for (const route of ['auto', 'manual']) {
     assert.equal(evaluate(routing['run-name'], github), labelRunName(launch, subject));
     if (target === 'issue') {
       assert.equal(evaluate(routing['run-name'], github),
-        `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 27 · codex-ready-${route}`);
+        `${issuePhase} · Task 27 · codex-ready-${route}`);
       const marker = 'Authority model: github-native-v1';
       for (const body of [`Example migration marker: \`${marker}\``, `Quoted marker: "${marker}"`,
         `Before ${marker}`, `> ${marker}`, `\\n${marker}\\n`,
@@ -346,7 +347,7 @@ for (const route of ['auto', 'manual']) {
         assert.equal(authorityMode(body), 'github-native-v1');
         assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: native } }), labelRunName(launch, native), body);
         assert.equal(evaluate(routing['run-name'], { ...github, event: { ...github.event, issue: native } }),
-          `${route === 'manual' ? 'Manual handoff' : 'Auto implementation'} · Task 27 · codex-ready-${route}`);
+          `${issuePhase} · Task 27 · codex-ready-${route}`);
       }
       for (const body of ['authority model: github-native-v1', ` ${marker}`, `${marker} `, `${marker} after`, `- ${marker}`, `${marker}\n${marker}`]) {
         assert.throws(() => authorityMode(body), { code: 'AUTHORITY_MODEL_INVALID' });

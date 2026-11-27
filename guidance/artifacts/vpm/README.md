@@ -1,7 +1,7 @@
-# Codex Relay 11.0.1 guidance package
+# Codex Relay 11.1.0 guidance package
 
 Generated source candidate for `org.jresearch.ai/codex-relay`. It describes the immutable pinned
-Relay contract with accepted baseline `057219dbe733bbdc76baed703d2aad46c0af388e` and native shared requirement
+Relay contract with accepted baseline `275892d8c79469974259e48583ca1bd60f881970` and native shared requirement
 `>=12.1.0`. The consumer selects its reviewed exact lock identity. `skill/PROVENANCE.json` binds every projected byte and authoring input.
 Acceptance, package publication and consumer adoption remain separate.
 

@@ -1,3 +1,4 @@
+import { executionEnded } from './execution-completion.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
 import { REPOSITORY, VERSION, WRITER, digest, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
@@ -302,7 +303,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     return saved?.version === VERSION && Boolean(saved.envelope) && digest(saved.envelope) === digest(e)
       && execution?.reserved === true && execution.returned === true
       && ['started', 'not_started'].includes(execution.child)
-      && (execution.containment === 'reaped' || execution.child === 'not_started' && execution.containment === 'not_required');
+      && executionEnded(e, execution);
+  }
+  async function appServerCollection(e, { successful = false } = {}) {
+    if (e.backend !== 'app-server') return null;
+    const saved = await journal?.get(e.runId, e.repository);
+    if (!containedExecutionJournal(saved, e) || saved.collection?.preserved !== true
+      || !exactSha(saved.collection.head) || successful && saved.execution.result?.status !== 'success')
+      fail('COLLECTION_NOT_ADMITTED');
+    return saved.collection.head;
   }
   const retainedPublicationHead = r => r.publicationIntent ? r.publicationIntent.head : r.publishedHead;
   function interruptedSuccessOutcome(r, saved) {
@@ -535,6 +544,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
   function blockedAdmissionEnvelope(admitted) {
     return { version: VERSION, repository: REPOSITORY, consumerDigest: CONSUMER_DIGEST, attemptId: admitted.attemptId, runId: admitted.runId,
       target: admitted.target, number: admitted.number, issueNumber: admitted.issueNumber, route: admitted.route, step: admitted.step,
+      ...(admitted.backend ? { backend: admitted.backend } : {}),
       ...(admitted.transport ? { transport: admitted.transport, readyEventId: admitted.readyEventId,
         readyEventAt: admitted.readyEventAt, readyLabel: admitted.readyLabel, runName: admitted.runName } : {}),
       branch: null, startHead: null, historicalBase: null,
@@ -547,6 +557,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
     return { ...safeFailureFacts(block), ...(block.diagnosticRecorderFailed ? { diagnosticRecorderFailed: true } : {}), observed: { child: 'not_started', exitCode: null }, executionState: 'known-not-executed', executionId: null,
       lastSuccessfulBoundary: 'admission', failureBoundary: 'authority', classification: { code: block.code, source: 'observed', stage: 'authority' },
       primaryCause: block.code, containment: 'not_required', terminal: 'blocked', durable: { publishedHead: null, diagnosticStore: block.diagnosticStore ?? null },
+      ...(block.code === 'APP_SERVER_TARGET_NOT_CONFIGURED' ? { admissionSummary: 'The selected repository has no App Server target. Configure its repositoryAppServerTargets entry in the deployment-owned consumer configuration before requesting a new App Server execution.' } : {}),
       nextAction: 'correct-authority-before-new-owner-attempt', orchestration: 'COMPLETED' };
   }
 
@@ -614,7 +625,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (!request || !positive(request.runId)) fail('BROKER_REQUEST_INVALID');
       if (request.operation === 'admit') {
-        if (CONSUMER.executionSlots && request.route === 'auto') executionConsumer(request.executionSlot);
+        const automatic = request.route === 'auto' || request.route === 'app-server';
+        if (CONSUMER.executionSlots && automatic) executionConsumer(request.executionSlot);
         if (!CONSUMER.executionSlots && Object.hasOwn(request, 'executionSlot')) fail('EXECUTION_SLOT_INVALID');
         const existing = await store.get(request.runId);
         if (existing && existing.envelope.consumerDigest !== CONSUMER_DIGEST) fail('CONSUMER_CONFIG_CHANGED');
@@ -624,7 +636,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             && existing.readyConsumed !== true && existing.readyConsumption === undefined
             && !existing.admissionBlock && !existing.outcome;
           if (existing.predispatchRecovery) fail('PREDISPATCH_ATTEMPT_FINALIZED');
-          if (e.target !== request.target || e.number !== request.number || e.route !== request.route
+          if (e.target !== request.target || e.number !== request.number || (e.backend ?? e.route) !== request.route
             || (e.transport !== 'label' && e.issueNumber !== request.issueNumber)
             || e.transport !== request.transport
             || (e.executionSlot ?? null) !== (request.executionSlot ?? null)) fail('RUN_BINDING_CHANGED');
@@ -649,7 +661,14 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             }
             const consumed = consumedPredispatchMarker(existing);
             if (existing.readyConsumption && !consumed) fail('READY_CONSUMPTION_UNCERTAIN');
-            if (!recoverUnreturnedAdmission && !(consumed && await retainedPublicationReplay(existing)))
+            let appServerReentry = false;
+            if (consumed && e.backend === 'app-server' && existing.controllerLifecycle?.status === 'active') {
+              validateEnvelope(e);
+              const saved = await journal?.get(e.runId, e.repository);
+              appServerReentry = saved?.version === VERSION && digest(saved.envelope) === digest(e)
+                && saved.execution?.reserved === true;
+            }
+            if (!recoverUnreturnedAdmission && !appServerReentry && !(consumed && await retainedPublicationReplay(existing)))
               fail('PREDISPATCH_ATTEMPT_FINALIZED');
           }
           if (recoverUnreturnedAdmission) {
@@ -708,12 +727,12 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         // Installed helpers hold the same root lock as lifecycle quiesce.
         // Reserve full controller ownership in this existing attempt before
         // the ready event is consumed or a child can be launched.
-        if (request.route === 'auto') await admission?.assertOpen();
-        if (request.route === 'auto' && CONSUMER.executionSlots) {
+        if (automatic) await admission?.assertOpen();
+        if (automatic && CONSUMER.executionSlots) {
           if (!request.executionSlot || !admission?.assertSlotComplete) fail('EXECUTION_SLOT_INVALID');
           await admission.assertSlotComplete(request.executionSlot);
         }
-        if (request.route === 'auto' && !CONSUMER.executionSlots) await admission?.assertSlotComplete?.('primary');
+        if (automatic && !CONSUMER.executionSlots) await admission?.assertSlotComplete?.('primary');
         const subject = await api.get(request.target === 'issue' ? `/issues/${request.number}` : `/pulls/${request.number}`);
         let task = request.target === 'issue' ? request.number : null;
         if (request.target === 'pull_request') {
@@ -721,6 +740,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         }
         const charter = request.target === 'issue' ? subject : task ? await api.get(`/issues/${task}`) : null;
         const nativeAdmission = charter !== null && authorityMode(charter.body) === 'github-native-v1';
+        if (nativeAdmission) await admission?.assertAppServerAttemptsComplete?.(task);
         const priorRecords = nativeAdmission ? (await publicationRecords({ repository: REPOSITORY, issueNumber: task }))
           .filter(record => record.envelope?.repository === REPOSITORY) : [];
         const replacementPredecessors = [];
@@ -732,7 +752,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             continue;
           }
           if (consumedPredispatchMarker(previous)) {
-            if (request.route === 'auto' && (original.executionSlot ?? 'primary') === (request.executionSlot ?? 'primary')) {
+            if (automatic && (original.executionSlot ?? 'primary') === (request.executionSlot ?? 'primary')) {
               if (!admission?.assertSlotComplete) fail('PREDISPATCH_EXECUTION_EVIDENCE_CONFLICT');
               await admission.assertSlotComplete(original.executionSlot ?? 'primary');
             }
@@ -963,8 +983,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           || saved.diagnostic?.orchestration === 'FAILED' || r.publicationIntent || r.commentIntent
           || saved.execution !== null && (saved.execution?.reserved !== true || saved.execution.returned !== true
             || !['started', 'not_started'].includes(saved.execution.child)
-            || !(saved.execution.containment === 'reaped'
-              || (saved.execution.child === 'not_started' && saved.execution.containment === 'not_required'))))
+            || !executionEnded(e, saved.execution)))
           fail('ADMISSION_COMPLETION_UNKNOWN');
         await admission?.complete({ runId: e.runId, attemptId: e.attemptId });
         if (!admission && r.predispatchPending) {
@@ -983,7 +1002,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (e.route !== 'auto' || !saved || digest(saved.envelope) !== digest(e)
           || saved.version !== VERSION || saved.diagnostic
           || saved.execution?.reserved !== true || saved.execution.returned !== true
-          || saved.execution.child !== 'started' || saved.execution.containment !== 'reaped'
+          || saved.execution.child !== 'started' || !executionEnded(e, saved.execution)
           || saved.execution.result?.status !== 'success'
           || !(typeof saved.collection?.clean === 'boolean' || saved.collection?.clean === null && saved.collection?.preserved === true && saved.collection?.worktreeObservation?.status === 'unknown') || saved.collection.head !== r.finalHead
           || r.outcome?.status !== 'IMPLEMENTED_PENDING_FRESH_REVIEW'
@@ -1034,7 +1053,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
           const saved = await journal?.get(e.runId, e.repository);
           if (!consumedPredispatchRecord(r) || !saved || saved.version !== VERSION
             || digest(saved.envelope) !== digest(e) || !Object.hasOwn(saved, 'execution')
-            || saved.execution !== null && (saved.execution?.reserved !== true || saved.execution.returned !== true))
+            || saved.execution !== null && (saved.execution?.reserved !== true
+              || saved.execution.returned !== true && !(e.backend === 'app-server' && saved.execution.appServer)))
             fail('PREDISPATCH_CONTROLLER_JOURNAL_REQUIRED');
         }
         const a = await revalidateAuthority(api, e, { verifyStartingBase: !r.finalHead && !r.publishedHead });
@@ -1082,11 +1102,13 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'publish-progress') {
         if (e.route !== 'auto' || r.finalHead) fail('PROGRESS_NOT_ADMITTED');
+        const appServerHead = await appServerCollection(e);
         const reconciliationHead = request.reconciliationHead;
         if (reconciliationHead !== undefined && (!exactSha(reconciliationHead)
           || reconciliationHead !== retainedPublicationHead(r))) fail('PUBLICATION_RECONCILIATION_REQUIRED');
         await guardPublication(e);
         return publisher.inspect(e, request.bundle, async g => {
+          if (appServerHead && g.head !== appServerHead) fail('RECOVERY_CANDIDATE_CHANGED');
           const previous = r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null);
           if (reconciliationHead !== undefined && g.head !== reconciliationHead
             || r.publicationIntent && r.publicationIntent.head !== g.head) fail('PUBLICATION_RECONCILIATION_REQUIRED');
@@ -1175,6 +1197,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (r.outcome) return receipt(r.outcome);
         if (e.route !== 'auto' || e.request?.kind !== 'admission'
           || request.head !== e.startHead || r.publishedHead || r.publicationIntent) fail('NO_CHANGE_COMPLETION_INVALID');
+        const appServerHead = await appServerCollection(e, { successful: true });
+        if (appServerHead && appServerHead !== request.head) fail('RECOVERY_CANDIDATE_CHANGED');
         if (request.executionWarnings !== undefined && !Array.isArray(request.executionWarnings)) fail('EXECUTION_WARNING_INVALID');
         const executionWarnings = [...new Set([...(request.executionWarnings ?? []), ...(r.presentationWarnings ?? [])])];
         if (!Array.isArray(executionWarnings) || executionWarnings.some(code => !['RUNTIME_CLEANUP_FAILED', 'PRESENTATION_REPAIR_UNAVAILABLE', 'WORKTREE_OBSERVATION_INCOMPLETE'].includes(code)) || executionWarnings.length > 3) fail('EXECUTION_WARNING_INVALID');
@@ -1259,6 +1283,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       if (request.operation === 'finish') {
         if (r.outcome && r.outcome.status !== 'BLOCKED') return receipt(r.outcome);
         if (!r.publishedHead || request.head !== r.publishedHead) fail('PUBLISHED_HEAD_REQUIRED');
+        const appServerHead = await appServerCollection(e, { successful: true });
+        if (appServerHead && appServerHead !== request.head) fail('RECOVERY_CANDIDATE_CHANGED');
         if (request.executionWarnings !== undefined && !Array.isArray(request.executionWarnings)) fail('EXECUTION_WARNING_INVALID');
         const executionWarnings = [...new Set([...(request.executionWarnings ?? []), ...(r.presentationWarnings ?? [])])];
         if (!Array.isArray(executionWarnings) || executionWarnings.length > 4

@@ -75,6 +75,31 @@ def test_workflow_projection_selects_each_explicit_target_and_rejects_foreign(tm
         workflow_projection.verify(value, head, ROOT, tmp_path / 'first', 'example-org/second')
 
 
+@pytest.mark.parametrize('value_factory', [inputs, shared])
+def test_optional_app_server_targets_validate_and_project_into_installed_consumer(value_factory):
+    value = value_factory()
+    source = (ROOT / 'deploy/ansible/roles/relay_controller/templates/consumer.json.j2').read_text()
+
+    def render(configured):
+        compiled = config.compile_inputs(configured)
+        return json.loads(Templar(loader=DataLoader(), variables=compiled).template(source, convert_data=False))
+
+    assert 'repositoryAppServerTargets' not in render(value)
+    name = config.configured_repositories(value)[-1]
+    target = {'socketPath': '/run/example-codex/app-server.sock',
+              'workspaceRoot': '/srv/example-relay/app-server-work'}
+    value['consumer']['repositoryAppServerTargets'] = {name: target}
+    loaded = config.loads(json.dumps(value, sort_keys=True), ROOT)
+    projected = render(loaded)
+    assert projected['repositoryAppServerTargets'] == {name: target}
+    assert json.dumps(render(value)) == json.dumps(projected)
+    assert projected == loaded['consumer']
+
+    value['consumer']['repositoryAppServerTargets']['example-org/unconfigured'] = target
+    with pytest.raises(config.InvalidConfig, match='INVALID_DEPLOYMENT_CONFIG:consumer'):
+        config.loads(json.dumps(value), ROOT)
+
+
 def test_reviewer_targets_are_independent_of_the_writer_pool_organization():
     value = shared()
     value['environment']['reviewerRepositories'] = ['another-org/review-only']

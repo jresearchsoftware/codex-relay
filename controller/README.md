@@ -30,19 +30,26 @@ Use the [authority contract](../contracts/README.md#github-native-task-authority
 for migration, trust, supersession and selected context.
 
 Fresh Issue work, explicitly authorized Issue implementation continuation or
-applicable PR remediation starts with `codex-ready-auto` or `codex-ready-manual`
-on the canonical target through GitHub as the configured owner. The
+applicable PR remediation starts when the configured owner applies a ready
+command to the canonical GitHub target. Use `codex-ready-auto` for the automatic
+CLI, `codex-ready-manual` for the copyable handoff, or `codex-ready-app-server`
+for automatic execution through the configured App Server. The
 [admission workflow](../packages/codex-relay/skill/references/workflow.md#author-and-admit-current-work)
 describes direct owner and explicitly authorized orchestration client submission.
-The manual command produces the existing copyable handoff after admission.
-These are first-class native commands. No Actions UI, dispatch inputs,
-comment command or additional launch form is required. Owner `workflow_dispatch`
-on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
-`pull_request`; compatibility inputs cannot replace current authority. For new
-schema `4.0` admissions the ready command selects the route and Writer allocates
-Step. Exact old replay/recovery stays on its original route and runtime; these
-inputs cannot re-admit it through current code.
-The dispatch fallback does not bypass the fresh-v4 protocol gate.
+Owner `workflow_dispatch` on the configured base branch remains an optional
+fallback with `task`, `step`, `route` (`auto`, `manual`, or `app-server`) and
+optional `pull_request`. It uses the same current authority and Step allocation.
+Exact old replay and recovery stay on their original route and runtime.
+
+App Server admission resolves the selected repository's
+[`repositoryAppServerTargets` entry](../consumer/README.md) from the installed
+consumer configuration. A missing entry reports `APP_SERVER_TARGET_NOT_CONFIGURED`
+before any Developer starts or Step is allocated. Writer verifies and records the
+native App Server command, reserves the same automatic controller slot, and binds
+the configured socket and workspace to the immutable attempt. The installed routing
+workflow must expose the new command. Generate and integrate the updated
+[workflow projection](../deploy/README.md#workflow-projection-and-pinned-runtime)
+for each repository that needs it.
 
 At a genuinely new routed admission, Writer reads the canonical Issue's single
 valid `step-N` position under its existing serialization lock and compares it
@@ -176,8 +183,9 @@ does not change launch authority. Admission binds only the ready command and
 Step display metadata in the Issue label projection; new schema `4.0` execution
 uses the Step resolved by Writer. PR names use the existing
 synchronized bounded title, for example
-`Auto remediation · PR #13 · Task 12 · Step 6 · CR purpose`; manual
-names begin `Manual handoff`. Descriptive PR tails are bounded, and Task/Step
+`Auto remediation · PR #13 · Task 12 · Step 6 · CR purpose`. Manual
+names begin `Manual handoff`, and App Server names begin `App Server implementation`
+or `App Server remediation`. Descriptive PR tails are bounded, and Task/Step
 lead the title. A stale ready command blocks admission; compatibility Task/Step
 projection checks remain unchanged. Neither Issue prose nor arbitrary PR/CR prose is parsed to construct
 the pre-start name.
@@ -317,8 +325,8 @@ stops admission. Writer pins the existing PR number in the attempt record and
 projects its newly admitted Step/title. Closure, disappearance or replacement
 cannot authorize another target or a replacement PR.
 
-Apply `codex-ready-auto` to the canonical Issue; `codex-ready-manual` produces the
-copyable manual handoff. This keeps the authenticated Writer publication identity and needs no Reviewer
+Apply `codex-ready-auto`, `codex-ready-app-server`, or `codex-ready-manual` to the
+canonical Issue for the intended route. This keeps the authenticated Writer publication identity and needs no Reviewer
 CR merely to continue authorized implementation. The executor chooses ordinary
 local Git methods, including task-owned commits, accepted-upstream integration,
 conflict resolution and organization of its own unpublished work. Preserve the
@@ -564,6 +572,16 @@ Run `npm test` here and the affected runtime/contract suites. Consumer-owned
 installed runtime/user/sudo proof requires its separate integration checks.
 
 ## Lifecycle admission and drain
+
+App Server work occupies an automatic reservation on the selected slot and
+records its exact repository target in the admission. While a native turn is
+active or its state is uncertain, the gate holds the physical resource and
+the Task's original execution boundary. A reconnect uses the recorded
+assignment and cannot create a replacement turn. The protected journal binds
+terminal status to the original attempt, thread and turn. Writer checks that
+evidence before collection. A new launch for the same Task can select any
+eligible route after the original operation is reconciled.
+
 
 The root-only `relay-admission` helper controls automatic
 Issue and CR admission. Its durable gate is

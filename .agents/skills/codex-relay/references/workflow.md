@@ -31,7 +31,8 @@ Choose the route authorized by the owning project's policy and current Task:
 
 | Route | Execution and result evidence |
 | --- | --- |
-| Relay automatic | Protected Writer admission and Step; isolated worker executes; Writer imports and publishes the result and one canonical Outcome. |
+| Relay automatic CLI | Protected Writer admission and Step; isolated CLI worker executes; Writer imports and publishes the result and one canonical Outcome. |
+| Relay automatic App Server | Protected Writer admission and Step; one Developer runs in the selected App Server instance and task checkout; the same Writer collects and publishes the result and one canonical Outcome. |
 | Relay-admitted manual | Real Writer admission/Step and copyable handoff; manual executor submits the result through the admitted Writer transport. |
 | Explicitly owner-authorized standalone/manual | Canonical Task/CR goal and boundaries, exact source/target identity, safe effects, validation, durable ordinary owner result and independent review. No fabricated native admission, Step, ready event or Writer Outcome. |
 
@@ -156,9 +157,10 @@ and effective closure disposition within that authoring action.
 
 When the owner explicitly instructs the orchestration assistant to start agreed
 work in the bound project, apply the ready label through the available supported
-owner-authenticated GitHub connection. Use `codex-ready-auto` or
-`codex-ready-manual` for the agreed route on the canonical Issue, or on the
-bound PR for current native CR remediation. That instruction suffices for
+owner-authenticated GitHub connection. Use `codex-ready-auto` for automatic CLI,
+`codex-ready-app-server` for automatic App Server or `codex-ready-manual` for
+Relay-admitted manual work. Apply it to the canonical Issue, or to the bound PR
+for current native CR remediation. That instruction suffices for
 dispatch without another confirmation, a personal label action by the owner or
 a Decision certifying the unchanged start. The owner can also apply the label
 directly. On a fresh launch, send the command before expecting an admission,
@@ -171,10 +173,10 @@ boundaries, validation, exact starting state, route, attempt/run and Step.
 Rejected routing does not allocate Step.
 
 Follow the original ready event, routing run and applicable trusted Writer
-publication until the requested boundary is verified. For automatic launch,
-use evidence of worker execution bound to that attempt, such as a reported
-start of the inner Codex process. For manual launch, return the complete
-Writer handoff described below. If routing stops first, report
+publication until the requested boundary is verified. For automatic CLI,
+verify the start of the inner Codex process for that attempt. For automatic
+App Server, verify its bound native thread and Developer turn have started.
+For manual launch, return the complete Writer handoff described below. If routing stops first, report
 the verified terminal diagnostic for that attempt. A visible label, a queued
 run or a green routing wrapper alone proves neither boundary. If a previous
 launch is uncertain or an admitted attempt has missing or conflicting metadata,
@@ -223,6 +225,25 @@ JSON for later submission through `submit_manual_outcome`. Preserve both blocks
 verbatim when transporting them. Older comments keep their original presentation.
 Actions run names can show bounded Task/PR/route information but do not
 preallocate Step.
+
+### App Server execution
+
+Use a qualified Relay installation and routing workflow that support
+`codex-ready-app-server`. The deployment owner can enable the route for an
+individual configured repository with
+[`consumer.repositoryAppServerTargets`](https://github.com/jresearchsoftware/codex-relay/blob/main/deploy/README.md#app-server-execution-targets).
+It supplies the private Unix socket for the intended instance and an explicitly
+qualified workspace parent. The launch uses the exact admitted repository. If
+its target is absent, `APP_SERVER_TARGET_NOT_CONFIGURED` stops the launch
+before model execution. Install the target binding before submitting a new
+App Server launch. Manual and CLI remain available through their own commands.
+
+Writer binds the backend and protected target to the same attempt and profile.
+The adapter prepares an independent checkout and records the native thread and
+turn identities. Find the thread in the qualified Desktop project using the
+admitted Task/Step title and recorded native identity. Wait for the canonical
+Writer Outcome before claiming publication. The same independent exact-head
+review applies when the result is a source PR.
 
 ### Manual result PR Step labels
 
@@ -302,13 +323,15 @@ guidance within its admitted permissions; Relay adds no live steering or polling
 
 Task boundaries and acceptance requirements describe the work and the result
 that independent review must assess; they are not ordinary execution controls.
-For manual Codex, the owner gives stop or control instructions directly in the
-active Codex session. For automatic work, use native GitHub Actions cancellation
-of the active execution run, through its supported cancellation path. Cancellation
-must still establish child containment and reconcile uncertain effects; a cancelled
-run label alone is not proof that execution stopped. Quiescing admissions only
-prevents new work and does not cancel an active execution. Relay adds no new stop
-command, live steering service or Decision polling.
+For manual Codex, give stop or control instructions directly in the active
+session. For automatic work, use native GitHub Actions cancellation for the
+active execution run. The CLI route must establish child containment. The
+App Server route targets the attempt's bound turn and must observe its terminal
+state and reconcile remaining effects on the original instance. Its shared
+server stays available to unrelated sessions. A cancelled run label or lost
+connection leaves the execution uncertain until the original attempt is
+reconciled. Quiescing admissions prevents new work while active or uncertain
+attempts remain in Apply/drain accounting.
 
 An existing structured `continuation.hold` remains a safety guard wherever the
 current effect checks apply; it is not the ordinary owner stop/control route.
@@ -360,7 +383,8 @@ no successor public Task Request. Task-level `task-review` findings are evidence
 for future owner direction, not an executable PR CR.
 
 For native Relay-admitted automatic remediation, send the owner-authorized
-`codex-ready-auto` command on the existing PR as described under
+`codex-ready-auto` or `codex-ready-app-server` command for the agreed route
+on the existing PR as described under
 [Author and admit current work](#author-and-admit-current-work). The qualified
 routing path sends that command through Writer, which derives the bounded `begin-remediation` action
 from the verified current native CR, executes it and verifies Draft for the exact

@@ -1,11 +1,11 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "057219dbe733bbdc76baed703d2aad46c0af388e",
+  "contract_revision": "275892d8c79469974259e48583ca1bd60f881970",
   "contract_revision_role": "accepted-baseline",
   "contract_source": "source-tree",
   "name": "codex-relay",
-  "publication": "PATCH 11.0.1 from independently accepted 11.0.0. Task 303 clarifies owner-authorized dispatch through the configured owner's supported GitHub connection and how to verify the original launch.",
+  "publication": "MINOR 11.1.0 from independently accepted 11.0.1. Task 305 adds optional App Server execution for configured repositories, preserving existing CLI and manual routes and the shared Writer and independent review workflow.",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -15,6 +15,6 @@
   "shared_requirement": ">=12.1.0",
   "shared_source_revision": "e4b5b738ae0918014dd06b5616fe37a5dcb93290",
   "shared_version": "12.1.0",
-  "version": "11.0.1",
+  "version": "11.1.0",
   "workflow_contract": "relay-workflows-v4"
 }

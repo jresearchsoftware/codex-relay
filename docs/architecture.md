@@ -150,6 +150,26 @@ commits and returns semantic status, summary, validation claims and a blocked
 reason. Within that single invocation it follows the
 [progress-bounded policy](execution-policy.md).
 
+The App Server command uses the automatic controller with an explicit backend
+in the immutable admission. Writer selects the socket and workspace parent
+for the exact repository from deployment configuration. That parent locates
+one fresh checkout per attempt. A qualified Desktop project can display its
+thread. Desktop grouping, the native server identity and task checkout have
+separate meanings. The [deployment binding](../deploy/README.md) describes
+qualification of a particular target.
+
+The trusted controller connects to the configured local App Server, gives a
+new Developer thread the admitted Task/Step title, and starts one turn with
+the resolved model, effort and Subagents permission. Its journal retains the
+native thread, turn and original assignment identity. Interruption acts on
+that turn. Reconnection checks its history against the original assignment.
+A missing reply keeps the reservation until Relay can establish what happened.
+A terminal native turn and its scoped tool settlement have their own evidence
+in the journal. The daemon can keep serving unrelated sessions throughout
+completion, collection and publication. Apply includes the reservation in
+its usual drain. Writer collects and publishes through the same bounded Git
+importer and canonical Outcome path used for automatic CLI execution.
+
 After containment, the routing controller asks the fixed root Writer to collect
 the admission-derived checkout. Writer independently reads the matching runner
 journal before source access. This grants bounded reads of task-owned private-mode
