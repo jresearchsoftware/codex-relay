@@ -6,6 +6,7 @@ operation before stopping units or moving files. An interrupted invocation is
 evidence for diagnosis, never implicit permission to retry.
 """
 from contextlib import contextmanager
+import base64
 import fcntl
 import grp
 import hashlib
@@ -1337,10 +1338,15 @@ def recovery_admission_program(config, *, source_base=None):
                 + 'assertRootConsumer(process.env.RELAY_CONSUMER_CONFIG);\n'
                 + 'const admission = installedAdmissionControl();\n'
                 + "process.stdout.write(JSON.stringify(await admission.status()) + '\\n');\n")
-    source = (Path(__file__).resolve().parents[1] / 'controller/src/admission-control.mjs').read_text()
+    controller = Path(__file__).resolve().parents[1] / 'controller/src'
+    source = (controller / 'admission-control.mjs').read_text()
+    # The candidate's completion classifier is part of this program. Older
+    # retained sources need not contain that module. Its only import is native.
+    completion = base64.b64encode((controller / 'execution-completion.mjs').read_bytes()).decode('ascii')
     for relative, absolute in [('../../consumer/consumer-config.mjs', base + 'consumer/consumer-config.mjs'),
                                ('../../consumer/consumer.mjs', base + 'consumer/consumer.mjs'),
                                ('./execution-contract.mjs', base + 'controller/src/execution-contract.mjs'),
+                               ('./execution-completion.mjs', 'data:text/javascript;base64,' + completion),
                                ('../../contracts/src/github-authority.mjs', base + 'contracts/src/github-authority.mjs'),
                                ('./predispatch-recovery.mjs', base + 'controller/src/predispatch-recovery.mjs'),
                                ('./execution-effects.mjs', base + 'controller/src/execution-effects.mjs')]:
