@@ -2876,6 +2876,18 @@
           "manual"
         ]
       },
+      "backend": {
+        "type": "string",
+        "enum": [
+          "app-server"
+        ]
+      },
+      "app_server_target_sha256": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "format": "sha256"
+      },
       "purpose": {
         "type": "string",
         "minLength": 1,

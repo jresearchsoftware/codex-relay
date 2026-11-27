@@ -208,8 +208,9 @@ Use these complete titles, with a concise purpose:
 Preserve an exact title supplied by live task/CR authority, including an
 explicit phase qualifier. Step is a positive, explicitly resolved value.
 For a new schema-v4 execution, an explicit owner instruction to start an agreed
-local Task authorizes the orchestration assistant to apply `codex-ready-auto`
-or `codex-ready-manual` on the canonical target through its supported
+local Task authorizes the orchestration assistant to apply `codex-ready-auto`,
+`codex-ready-app-server` or `codex-ready-manual` for the agreed route on
+the canonical target through its supported
 owner-authenticated GitHub connection. Send the agreed command without a second
 owner action or a start-certifying Decision. A fresh launch has no admission,
 Step or handoff for that execution yet. Writer verifies the native event against

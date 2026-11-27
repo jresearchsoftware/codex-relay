@@ -10,7 +10,18 @@ own user actions. This document owns source maintenance and provenance;
 
 ## Version and provenance
 
-Guidance **11.0.1** is a **PATCH** from independently accepted **11.0.0**.
+Guidance **11.1.0** is a **MINOR** from independently accepted **11.0.1**.
+[Task #305](https://github.com/jresearchsoftware/codex-relay/issues/305) adds
+an optional App Server route while keeping the CLI and manual commands and
+shared admission, Writer result and independent review. Only repositories
+adopting the new route need its deployment binding and qualified projection.
+The native Shared requirement stays `>=12.1.0` with exact Shared 12.1.0
+for standalone and publisher closure evidence. The accepted 11.0.1 registry
+payload is frozen at `275892d8c79469974259e48583ca1bd60f881970` (PR #304).
+
+### Earlier version-scoped classification
+
+Guidance **11.0.1** was a **PATCH** from independently accepted **11.0.0**.
 [Task #303](https://github.com/jresearchsoftware/codex-relay/issues/303)
 clarifies dispatch of the owner's agreed ready command through the configured
 owner's supported GitHub connection and verification of the original launch.
@@ -18,8 +29,6 @@ This adds no mandatory operator work and preserves the authority, admission and
 review contract. The native Shared floor is `>=12.1.0`, with exact Shared
 12.1.0 retained for standalone and publisher closure evidence. The accepted
 11.0.0 registry payload is frozen at `3bf9998937ed8397d72b45a68e287a39b0667c08`.
-
-### Earlier version-scoped classification
 
 Guidance **11.0.0** was a **MAJOR** change from independently accepted and
 published **10.0.0**. [Issue #297](https://github.com/jresearchsoftware/codex-relay/issues/297)
@@ -199,9 +208,12 @@ Relay's version. That release's standalone form retains its immutable Shared
 4.0.0 snapshot. Both forms retain the same Relay product behavior.
 
 The historical independently accepted Relay product-contract baseline was
-`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 11.0.1 uses
-`contract_source: source-tree` and records the accepted Task #303 baseline
-`057219dbe733bbdc76baed703d2aad46c0af388e` in `guidance/source.json`.
+`61bfe2be5bdf5632449cd7f544c6c5ba4d4146d4`. Guidance 11.1.0 uses
+`contract_source: source-tree` with the accepted 11.0.1 baseline
+`275892d8c79469974259e48583ca1bd60f881970` in `guidance/source.json`.
+Guidance 11.0.1 recorded the independently accepted Task #303 execution
+baseline `057219dbe733bbdc76baed703d2aad46c0af388e`, which also governs
+Task #305's execution.
 Guidance 11.0.0 recorded the accepted Task #234 Step 5 baseline
 `45fd525d8e040b1235858001c0eb2bd573286c10`. The actual schema, workflow and tool input bytes are frozen by
 `source_files` hashes in provenance and, after acceptance, the enclosing source
@@ -214,7 +226,7 @@ Current authority v4 and retained admitted v3/legacy attempts stay distinct.
 The guidance build and source acceptance do not activate the runtime changes.
 
 Independent exact-head acceptance and merge establish the first-party source
-release. Before independent acceptance, 11.0.1 is a candidate. Native source
+release. Before independent acceptance, 11.1.0 is a candidate. Native source
 self-adoption travels with the accepted commit; it is neither external package
 publication nor another consumer's adoption. Frozen accepted registry payloads,
 including 2.0.1, remain unchanged. New output does not rewrite historical

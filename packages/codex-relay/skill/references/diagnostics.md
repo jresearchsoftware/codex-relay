@@ -89,6 +89,22 @@ read/delete or cleanup is granted here. Owned disposable TEST follows
 its established TEST authority. If an intended effect cannot be confined within
 that authority, stop the affected operation and continue independent work.
 
+### Reconcile an App Server attempt
+
+Identify the existing Relay attempt and its protected App Server target.
+Reconcile its recorded native thread and turn on that instance. A connection
+failure or missing mutation response leaves the original turn state uncertain.
+`APP_SERVER_TURN_ACTIVE` reports an observed active original turn.
+`APP_SERVER_TURN_UNCERTAIN` requires further reconciliation.
+Preserve the attempt and workspace while reconciling. Starting another turn
+or choosing another route can duplicate execution. Apply/drain continues to
+account for active or uncertain attempts. Keep unrelated sessions intact.
+
+For a stop, verify the recorded turn reached a terminal state and the
+attempt's remaining effects are reconciled. A terminal turn is native execution
+evidence. Safe Git collection, durable Writer publication and independent
+acceptance each use their own evidence.
+
 ## Manual publication target errors
 
 `MANUAL_PR_TARGET_MISMATCH`, `MANUAL_PR_REPOSITORY_MISMATCH`,

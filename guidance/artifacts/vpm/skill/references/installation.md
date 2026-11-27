@@ -8,7 +8,14 @@ and generated files.
 Its contract revision is the behavior baseline, not the enclosing guidance
 release revision. Do not resolve a moving `latest` during execution.
 
-Version **11.0.1** is PATCH from accepted 11.0.0. It clarifies how the
+Version **11.1.0** is MINOR from accepted 11.0.1. It adds an optional
+App Server route for repositories with a qualified target. Existing CLI
+and manual consumers can keep their deployment configuration and launch
+commands. App Server adoption uses a compatible installation and workflow
+projection. The native Shared floor stays `>=12.1.0`, with exact Shared
+12.1.0 for standalone and publisher closure evidence.
+
+Version **11.0.1** was PATCH from accepted 11.0.0. It clarifies how the
 orchestration assistant acts on the owner's explicit instruction to start agreed
 work through a supported owner-authenticated GitHub connection and verifies the
 original launch. It adds no mandatory operator work and preserves existing authority
@@ -74,7 +81,7 @@ Frozen 7.0.0 and earlier package bytes remain unchanged.
 | Form | Source in the selected Relay revision | Normal use |
 | --- | --- | --- |
 | Standalone native Skill | `guidance/artifacts/standalone/codex-relay` | Copy or explicitly project the complete folder into `.agents/skills/codex-relay`. Read local files without VibeVM, registry, Relay source checkout or network. |
-| VibeVM flow `org.jresearch.ai/codex-relay` `11.0.1` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
+| VibeVM flow `org.jresearch.ai/codex-relay` `11.1.0` | `guidance/artifacts/vpm`, with sibling `vpm-consumer.toml.in` | Resolve the selected package and explicitly project its native Codex Skill. Commit ready files; ordinary use reads them offline. |
 
 Both retain the same Relay product contract and exact product schemas. The
 standalone form includes an immutable, attributed Shared Governance 12.1.0
