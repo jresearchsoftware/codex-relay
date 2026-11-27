@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -131,6 +131,9 @@ test('App Server sends the admitted profile and scoped tools in one named Develo
   assert.equal(start.config.features.apps, false);
   assert.equal(start.config.features.plugins, false);
   assert.equal(start.config.shell_environment_policy.inherit, 'none');
+  const scratch = start.config.shell_environment_policy.set.TMPDIR;
+  assert.equal(scratch, join(f.args.cwd, '.git', 'relay-runtime'));
+  assert.equal((await stat(scratch)).mode & 0o7777, 0o2770);
   assert.equal(start.config.permissions[start.permissions].filesystem[f.args.target.socketPath], 'none');
   assert.equal(start.config.permissions[start.permissions].network.enabled, false);
   assert.equal(turn.model, f.args.profile.cliModelId);

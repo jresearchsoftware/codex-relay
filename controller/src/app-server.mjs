@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, readdir, realpath } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CODEX_RESULT_SCHEMA, normalizeCodexSemanticResult } from '../../runtime/src/codex-result-schema.mjs';
@@ -57,7 +57,10 @@ async function threadConfiguration(connection, cwd, profile, subagentsAllowed, p
     throw failure('APP_SERVER_RUNTIME_UNQUALIFIED', 'Relay cannot read the protected App Server Linux sandbox helper paths');
   });
   const scratch = join(cwd, '.git', 'relay-runtime');
-  await mkdir(scratch, { mode: 0o2770, recursive: true });
+  // The controller may run with umask 077. The admitted model identity needs
+  // the inherited checkout group to create its own sandbox runtime files.
+  await mkdir(scratch, { mode: 0o700 });
+  await chmod(scratch, 0o2770);
   return {
     ...Object.fromEntries(mcpNames.map(name => [`mcp_servers.${name}.enabled`, false])),
     permissions: {
