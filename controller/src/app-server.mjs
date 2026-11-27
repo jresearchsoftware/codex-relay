@@ -77,11 +77,15 @@ async function threadConfiguration(connection, cwd, profile, subagentsAllowed, p
     features: {
       apps: false, plugins: false, hooks: false, remote_plugin: false,
       browser_use: false, browser_use_external: false, browser_use_full_cdp_access: false,
-      computer_use: false, code_mode: false, code_mode_only: false,
-      skill_mcp_dependency_install: false, memories: false,
+      computer_use: false, image_generation: false, goals: false,
+      code_mode: false, code_mode_only: false, shell_snapshot: false,
+      skill_mcp_dependency_install: false, memories: false, agent_message_board_mcp: false,
       multi_agent: subagentsAllowed, multi_agent_v2: subagentsAllowed,
       subagent_thread_environments: false, use_legacy_landlock: false
     },
+    // Model-selected Code Mode delegates the same sandboxed turn tools. Do
+    // not select it on behalf of other models or fall back on host failure.
+    code_mode: { disable_in_process_fallback: true },
     agents: { enabled: subagentsAllowed },
     shell_environment_policy: {
       inherit: 'none', set: {
