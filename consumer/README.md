@@ -47,6 +47,7 @@ checks the request's configured target before importing repository-bound code.
 | --- | --- |
 | `repository` or `repositories`, `owner`, `baseBranch` | Selected API paths, owner admission, PR binding, exact base observation and Git fetch/publication |
 | Optional `repositoryRuntimeUsers` | Trusted runtime identity overrides within a plural installation |
+| Optional `repositoryAppServerTargets` | Private Unix socket and qualified workspace parent for each enabled repository's App Server route |
 | `taskBranchPrefix` | Task branch admission and omitted-branch derivation |
 | `writerApp`, `reviewerApp` | Separate App slugs, numeric App/installation IDs and expected bot actors |
 | `writerIdentity`, `remediationIdentity` | Worker commit author/committer and trusted object validation |
@@ -80,6 +81,13 @@ under their original reviewed configuration/release before ordinary cutover, or
 use the separately qualified bounded SERIAL-to-pool transition to preserve their
 original context. New namespaced stores must not hide retained legacy records
 or bypass their original admission and recovery bindings.
+
+`repositoryAppServerTargets` accepts exact configured repository keys with
+`socketPath` and `workspaceRoot` as absolute paths. The full installation
+digest binds every configured target. A repository view retains only its own
+entry. The App Server route requires an entry for the selected repository.
+See the [deployment configuration example](../deploy/README.md#app-server-execution-targets)
+for provisioning and installation.
 
 For plural configuration, the selected `workRoot`, `attemptRoot` and
 `diagnosticsRoot` append `/repositories/<owner>/<repository>` to their configured

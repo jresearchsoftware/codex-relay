@@ -33,6 +33,7 @@ The [validator and compiler](config.py) define configuration version 1:
 | `source.repository`, optional `source.revision` | Trusted repository and deployment selector; omitted revision means `main` |
 | `target` | Host, root authorization, Ansible `ssh` (default) or `local` connection, and host fingerprint; SSH also uses the existing key reference and identity fingerprint |
 | `consumer` | The existing [runtime consumer configuration](../consumer/README.md), including separate Apps, repository, policy and credential file references |
+| `consumer.repositoryAppServerTargets` | Optional per-repository App Server Unix socket and qualified task workspace parent |
 | `environment` | Namespace, Unix identities, runner names/group/labels, existing ingress/network properties and consumer runtime options |
 | `environment.repository` | Required lifecycle/Production Runner anchor for plural `consumer.repositories`; must be a configured target. Singleton inputs keep their existing repository |
 | `environment.generalRunner.scope`, `environment.generalRunner.group` | Optional general-runner registration scope and its dedicated organization runner group; omitted scope preserves repository registration |
@@ -77,6 +78,43 @@ adding targets to the same instance while retaining its installed targets in
 the expert compatibility route. Git Apply uses the reviewed desired target set,
 including removals, while retaining actual service, Unix identity, credential
 and namespace collision checks.
+
+### App Server execution targets
+
+Add `repositoryAppServerTargets` under `consumer` in the reviewed deployment
+configuration. Keys exactly match configured `repository` or `repositories`
+entries. A single target can share its socket with other entries on the same
+host. This example uses synthetic repository and host paths.
+
+```json
+"repositoryAppServerTargets": {
+  "example-org/sample-project": {
+    "socketPath": "/run/example-codex/app-server.sock",
+    "workspaceRoot": "/srv/example-relay/app-server-work"
+  }
+}
+```
+
+- `socketPath` is the absolute filesystem path of the intended local App
+  Server instance's private Unix socket. Use an owner-provisioned endpoint
+  that the installed Relay adapter can access under its trusted identity.
+- `workspaceRoot` is the absolute parent for that repository's isolated
+  attempt checkouts. Provision the directory and qualify checkout access and
+  Desktop grouping with the intended App Server and Desktop project. Record
+  that qualification before using the binding. Desktop display names and
+  server project IDs describe separate native records.
+
+Use the accepted product revision containing this contract with the reviewed
+deployment configuration for the ordinary Git-managed installation. The
+installer projects the map into protected `consumer.json`. It retains the
+configured values as part of the execution digest. Reconcile active attempts
+with their original binding before replacing it. Relay leaves App Server
+provisioning and Desktop project setup to the operator.
+
+Omitting the map or a repository entry keeps manual and CLI execution
+available. A `codex-ready-app-server` request without that repository's entry
+requires the deployment owner to supply and install its binding before a fresh
+request can execute.
 
 ### Shared managed General Runner pool
 
