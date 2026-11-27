@@ -288,6 +288,9 @@ There is one installation-wide consumer digest, Writer identity, credential and
 claim namespace. Admission selects a slot from the qualified native runner and
 Unix identity; Task/worker input cannot choose identities or protected paths.
 Desired physical capacity does not rewrite the internal slots or old digests.
+Git-managed Apply publishes a changed desired capacity in the consumer
+snapshot under the existing Writer lock for the active Apply operation.
+The unchanged admission digest continues to bind original attempts.
 Retained older explicit-slot/SERIAL attempts preserve their exact original
 configuration and source readers; those schemas grant no fresh installation,
 projection or execution option.
@@ -1757,6 +1760,9 @@ the same template and target gateway discovery as installation. Before
 Apply withdraws runner eligibility, the staged Reviewer validates this
 configuration with `--check-config`. That check exits before credential
 loading, binding the listener or opening SQLite.
+Consumption for an existing release retains the protected Reviewer executable
+when its bytes and mode match the sealed candidate. The loaded-process proof
+can then verify the original mapped inode.
 An operation-scoped catalogue renders canonical task-owned files, modes,
 identities and all 32 namespace probes. Native checks verify current host/App/TLS
 inputs, pool units/registrations/group eligibility, runtime imports and readiness,

@@ -116,7 +116,9 @@ impl Maintenance {
 
     pub fn request(&self) -> Option<Guard> {
         let mut state = self.0.lock().expect("maintenance state");
-        if state.paused || state.draining {
+        // Axum owns connection acceptance during graceful shutdown. A request
+        // it already dispatched can reach this middleware after SIGTERM.
+        if state.paused {
             return None;
         }
         state.requests += 1;
@@ -294,7 +296,10 @@ mod tests {
         state.command("resume").unwrap();
         assert!(state.request().is_some());
         state.draining();
-        assert!(state.request().is_none());
+        let status = state.command("status").unwrap();
+        assert_eq!(status["accepting"], false);
+        assert_eq!(status["ready"], false);
+        assert!(state.request().is_some());
         assert!(state.command("resume").is_err());
         assert!(
             state.mutation(false).is_some(),

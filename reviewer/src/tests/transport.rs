@@ -59,6 +59,13 @@ async fn maintenance_preserves_identity_checks_and_only_pauses_the_affected_boun
         .unwrap();
     assert_eq!(paused.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(paused.headers()["retry-after"], "5");
+    maintenance.command("resume").unwrap();
+    maintenance.draining();
+    let dispatched = request(json!({"jsonrpc":"2.0","id":4,"method":"tools/list"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(dispatched.status(), StatusCode::OK);
     assert_eq!(maintenance.command("status").unwrap()["activeRequests"], 0);
     assert_no_publication(&state);
     server.abort();

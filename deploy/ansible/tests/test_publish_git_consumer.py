@@ -383,6 +383,34 @@ class PublishConsumerTests(unittest.TestCase):
         self.assertEqual(self.consumer.read_bytes(), self.old)
         self.assertFalse(self.backup.exists())
 
+    def test_same_digest_capacity_change_requires_current_operation_without_rebinding(self):
+        self.consumer.write_bytes(b'{"generalRunnerPool":{"desiredCapacity":2}}')
+        self.desired.write_bytes(b'{"generalRunnerPool":{"desiredCapacity":1}}')
+        digest = hash_bytes(b'{"generalRunnerPool":{}}')
+        gate_path = self.claims / 'admission-v1.json'
+        self.gate.update(phase='open', consumerDigest=digest)
+        gate_path.write_text(json.dumps(self.gate))
+
+        def capacity_independent_digest(argv, env):
+            self.assertIn('--input-type=module', argv)
+            self.execute(argv, env)
+            return {'digest': digest}
+
+        with self.assertRaisesRegex(publication.ConsumerPublicationError,
+                                    '^CONSUMER_PUBLICATION_CAPACITY_OPERATION_UNPROVEN$'):
+            self.publish(execute=capacity_independent_digest)
+        self.assertEqual(json.loads(self.consumer.read_bytes())['generalRunnerPool']['desiredCapacity'], 2)
+
+        self.gate['phase'] = 'applying'
+        gate_bytes = json.dumps(self.gate)
+        gate_path.write_text(gate_bytes)
+        self.assertEqual(self.publish(execute=capacity_independent_digest), {
+            'status': 'PUBLISHED', 'operationId': OP, 'target': REVISION, 'consumerDigest': digest})
+        self.assertEqual(self.consumer.read_bytes(), self.desired.read_bytes())
+        self.assertEqual(gate_path.read_text(), gate_bytes)
+        self.assertFalse(self.backup.exists())
+        self.assertEqual(self.publish(execute=capacity_independent_digest)['status'], 'UNCHANGED')
+
     def test_failed_transition_keeps_known_config_and_original_backup_for_exact_recovery(self):
         self.fail_transition = True
         with self.assertRaisesRegex(publication.ConsumerPublicationError,
