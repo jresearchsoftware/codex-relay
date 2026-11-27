@@ -192,8 +192,8 @@ Product invariants remain fixed: same-repository heads/bases (fork execution is
 unsupported), exact heads, separate owner/Writer/Reviewer authority, bounded
 payloads, secret redaction, safe Git paths and regular-file modes, non-force
 publication and reservation-based duplicate suppression. `step-N`,
-`codex-ready-auto`, `codex-ready-manual`, the historical CR validation tokens and
-terminal status values are protocol vocabulary. The historical
+`codex-ready-auto`, `codex-ready-app-server`, `codex-ready-manual`, the historical
+CR validation tokens and terminal status values are protocol vocabulary. The historical
 `jresearchsoftware-reviewer-relay:v1` comment marker is a retained wire namespace
 for duplicate recovery; it grants no organization or App authority. The local
 `refs/remotes/main` import ref is a private alias for the configured base SHA.
