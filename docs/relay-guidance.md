@@ -353,20 +353,12 @@ summary before deciding whether to retry. Pending recovery retains the original
 frozen package's `source_sha` and receipt; `trigger_sha` identifies the resolved
 dispatch commit whose exact push CI qualified that recovery.
 
-`scripts/test-relay-publisher.py` exercises that selected implementation with
-exact Relay source and disposable transitions. Its `--publisher-sha` asserts
-the resolved checkout, rather than choosing another implementation. For the
-optional native export/install fixture, use the same recorded publisher SHA
-and the native binary verified against that checkout's `toolchain/vibevm.json`:
-
-```sh
-python3 scripts/qualify-relay-publisher.py --publisher /path/to/accepted/shared-governance \
-  --publisher-sha RESOLVED_PUBLISHER_SHA --source-ref EXACT_RELAY_SOURCE_SHA \
-  --vibe /path/to/verified/vibe
-```
-
-This fixture uses synthetic readiness and local distribution writes only; it
-does not prove source CI acceptance or live publication.
+Public CI validates Relay's prepared export inventory and redistribution metadata,
+then runs the publisher's credential-free `check` command against the exact
+candidate and base. Shared Publisher owns its staging, acceptance checks,
+publication and retry behavior. Its workflow reports the actual result. The
+[local native fixture](../scripts/qualify-relay-guidance-vpm.py) exercises installation
+of Relay’s prepared package with the selected dependency.
 
 The named `DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN` is supplied only to isolated
 shared-publisher finalization, never through `secrets: inherit`. No local release

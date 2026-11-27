@@ -78,6 +78,7 @@ test('only an in-progress first native run may pass the owner status predicate',
 test('automatic label admission reobserves the same queued run before allocating the admitted envelope', async t => {
   const f = await fixture(t, { labelLaunch: true, deferAdmission: true });
   let reads = 0;
+  let issueReads = 0;
   let previousBudget = 10_000;
   const api = { ...f.api, getRun: async (id, options) => {
     assert.equal(id, f.run.id);
@@ -90,12 +91,19 @@ test('automatic label admission reobserves the same queued run before allocating
     }
     reads += 1;
     return { ...f.run, status: reads < 3 ? 'queued' : 'in_progress' };
+  }, get: path => {
+    if (path === '/issues/42') {
+      assert.equal(reads, 3);
+      issueReads++;
+    }
+    return f.api.get(path);
   } };
   const admitted = await admitEnvelope(api, f.admissionRequest, { nextStep: f.envelope.step });
   assert.equal(admitted.runId, f.run.id);
   assert.equal(admitted.readyEventId, f.envelope.readyEventId);
   assert.equal(admitted.step, f.envelope.step);
   assert.equal(reads, 3);
+  assert.equal(issueReads, 1);
 });
 
 test('queued run reobservation checks authority again and stops if the run has ended', async t => {

@@ -105,8 +105,7 @@ export const digest = value => createHash('sha256').update(JSON.stringify(value)
 export const exactSha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
 export const positive = value => Number.isSafeInteger(value) && value > 0;
 export function branchName(value) {
-  if (typeof value !== 'string' || !safeConsumerBranch(value) || !value.startsWith(CONSUMER.taskBranchPrefix)
-    || value.includes('..') || value.includes('//') || value.endsWith('/') || value.endsWith('.lock')) fail('BRANCH_INVALID');
+  if (!safeConsumerBranch(value) || !value.startsWith(CONSUMER.taskBranchPrefix)) fail('BRANCH_INVALID');
   return value;
 }
 export function safePath(value) {

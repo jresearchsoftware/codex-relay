@@ -34,9 +34,15 @@ test('dirty initial state is preserved without switching', async t => {
   assert.equal(await f.command(f.source, ['branch', '--show-current']), 'codex/unrelated');
   assert.equal(await readFile(join(f.source, 'docs/work.md'), 'utf8'), 'dirty\n');
 });
-test('unpublished unrelated commits remain intact without switching', async t => {
+test('unpublished unrelated commits remain intact when the exact fetch is refused', async t => {
   const f = await fixture(t, { remediation: true }); const head = await otherBranch(f, false);
-  await assert.rejects(establish(f), { code: 'CHECKOUT_UNPUBLISHED' });
+  await assert.rejects(establish(f), error => {
+    assert.equal(error.code, 'TRUSTED_GIT_FAILED');
+    assert.equal(error.details.failureDiagnostic.operation, 'fetch');
+    assert.match(error.details.failureDiagnostic.preview, /couldn't find remote ref refs\/heads\/codex\/unrelated/);
+    return true;
+  });
+  assert.equal(await f.command(f.source, ['branch', '--show-current']), 'codex/unrelated');
   assert.equal(await f.command(f.source, ['rev-parse', 'HEAD']), head);
 });
 test('unpublished canonical work is preserved instead of replaced by its remote', async t => {
@@ -47,7 +53,12 @@ test('unpublished canonical work is preserved instead of replaced by its remote'
 });
 test('missing canonical remote blocks without a replacement branch', async t => {
   const f = await fixture(t); const head = await f.command(f.source, ['rev-parse', 'HEAD']);
-  await assert.rejects(establish(f), { code: 'CANONICAL_BRANCH_MISSING' });
+  await assert.rejects(establish(f), error => {
+    assert.equal(error.code, 'TRUSTED_GIT_FAILED');
+    assert.equal(error.details.failureDiagnostic.operation, 'fetch');
+    assert.ok(error.details.failureDiagnostic.preview.includes(`couldn't find remote ref refs/heads/${f.envelope.branch}`));
+    return true;
+  });
   assert.equal(await f.command(f.source, ['rev-parse', 'HEAD']), head);
   assert.equal(await f.command(f.source, ['branch', '--list', f.envelope.branch]), '');
 });

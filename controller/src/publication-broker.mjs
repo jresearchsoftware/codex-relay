@@ -2,7 +2,7 @@ import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { PROGRESS_BOUNDED_EXECUTION } from '../../runtime/src/execution-policy.mjs';
 import { REPOSITORY, VERSION, WRITER, digest, exactSha, fail, positive, validateEnvelope } from './execution-contract.mjs';
 import { canonicalAuthorityJson, sha256Body, authorityMode, admissionBinding } from '../../contracts/src/github-authority.mjs';
-import { admitEnvelope, revalidateReadyEvent, readyTransitions, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue } from './live-authority.mjs';
+import { admitEnvelope, revalidateReadyEvent, readyTransitions, revalidateAuthority, revalidateIntegrationBase, assertPr, linkedIssue, startsAtPublishedIssueBase } from './live-authority.mjs';
 import { secretFree } from './trusted-git.mjs';
 import { failureDiagnosticFromDetails } from './diagnostics.mjs';
 import { admissionWarningSummary, executionWarningSummary, terminalOutcomeBody, automaticOutcomeBody, usageOutcomeSummary, safeOutcomePublication } from './outcome.mjs';
@@ -284,7 +284,7 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       diagnosticRecorderFailed: cause?.details?.diagnosticRecorderFailed };
     throw error;
   }
-  async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false, verifyStartingBase = false } = {}) {
+  async function bound(request, { revalidate = true, allowAdmissionBlock = false, reporting = false } = {}) {
     if (!positive(request.runId)) fail('RUN_ID_INVALID');
     const record = await store.get(request.runId);
     if (!record || request.attemptId !== record.envelope.attemptId) fail('ATTEMPT_NOT_ADMITTED');
@@ -293,9 +293,29 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       if (!allowAdmissionBlock) fail('ADMISSION_ALREADY_BLOCKED');
       return record;
     }
-    validateEnvelope(record.envelope);
-    if (revalidate) record.authorityDrift = (await revalidateAuthority(api, record.envelope, { reporting, verifyStartingBase })).authorityDrift;
+    if (revalidate) record.authorityDrift = (await revalidateAuthority(api, record.envelope, { reporting })).authorityDrift;
+    else validateEnvelope(record.envelope);
     return record;
+  }
+  function containedExecutionJournal(saved, e) {
+    const execution = saved?.execution;
+    return saved?.version === VERSION && Boolean(saved.envelope) && digest(saved.envelope) === digest(e)
+      && execution?.reserved === true && execution.returned === true
+      && ['started', 'not_started'].includes(execution.child)
+      && (execution.containment === 'reaped' || execution.child === 'not_started' && execution.containment === 'not_required');
+  }
+  const retainedPublicationHead = r => r.publicationIntent ? r.publicationIntent.head : r.publishedHead;
+  function interruptedSuccessOutcome(r, saved) {
+    return exactSha(r.publishedHead) && r.successOutcomeIntent?.head === r.publishedHead
+      && saved?.progress?.head === r.publishedHead && saved.execution?.result?.status === 'success';
+  }
+  async function retainedPublicationReplay(r) {
+    const e = r.envelope;
+    const head = retainedPublicationHead(r);
+    if (e.route !== 'auto' || r.outcome || !exactSha(head)) return null;
+    const saved = await journal?.get(e.runId, e.repository);
+    return containedExecutionJournal(saved, e) && !saved.outcome && (!saved.diagnostic || interruptedSuccessOutcome(r, saved))
+      && saved.collection?.preserved === true && saved.collection.head === head ? head : null;
   }
   async function commentOnce(r, key, number, body, { legacyBodies = [] } = {}) {
     secretFree(body);
@@ -627,8 +647,10 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
               if (!pendingPredispatchRecord(existing)) fail('READY_CONSUMPTION_UNCERTAIN');
               fail('PREDISPATCH_ATTEMPT_FINALIZED');
             }
-            if (existing.readyConsumption && !consumedPredispatchMarker(existing)) fail('READY_CONSUMPTION_UNCERTAIN');
-            if (!recoverUnreturnedAdmission) fail('PREDISPATCH_ATTEMPT_FINALIZED');
+            const consumed = consumedPredispatchMarker(existing);
+            if (existing.readyConsumption && !consumed) fail('READY_CONSUMPTION_UNCERTAIN');
+            if (!recoverUnreturnedAdmission && !(consumed && await retainedPublicationReplay(existing)))
+              fail('PREDISPATCH_ATTEMPT_FINALIZED');
           }
           if (recoverUnreturnedAdmission) {
             await revalidateUnreturnedAdmission({ api, journal, record: existing, checkoutAbsent });
@@ -806,9 +828,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       const r = await bound(request, request.operation === 'manual-outcome-direct' ? { revalidate: false }
         : request.operation === 'terminal-outcome' ? { revalidate: false, allowAdmissionBlock: true }
-        : ['publication-state', 'recover-publication', 'complete-handoff', 'complete-execution', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
-          : { reporting: ['collect-progress', 'finish', 'finish-no-change'].includes(request.operation),
-            verifyStartingBase: ['preflight', 'publish-progress'].includes(request.operation) }); const e = r.envelope;
+        : ['preflight', 'publication-state', 'recover-publication', 'complete-handoff', 'complete-execution', 'prepublication-state', 'recover-prepublication', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation) ? { revalidate: false }
+          : { reporting: ['collect-progress', 'finish', 'finish-no-change'].includes(request.operation) }); const e = r.envelope;
       if (r.predispatchRecovery && !['publication-state', 'predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) fail('PREDISPATCH_ATTEMPT_FINALIZED');
       if (['predispatch-state', 'predispatch-authorization', 'finalize-predispatch'].includes(request.operation)) {
         if (Object.keys(request).some(key => !['operation', 'runId', 'attemptId', 'authorizationId', 'workflowReadToken', 'executionSlot'].includes(key))) fail('RECOVERY_REQUEST_INVALID');
@@ -1000,6 +1021,15 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         return receipt(r.outcome);
       }
       if (request.operation === 'preflight') {
+        if ((r.publicationIntent || r.publishedHead) && !r.outcome) {
+          if (r.predispatchPending && !consumedPredispatchMarker(r)) fail('PREDISPATCH_CONTROLLER_JOURNAL_REQUIRED');
+          const reconciliationHead = await retainedPublicationReplay(r);
+          if (!reconciliationHead) fail('EXECUTION_UNKNOWN_NO_RETRY');
+          // The contained worker's exact candidate may already own this ref.
+          // Only publish-progress can reconcile it, without another push.
+          await revalidateAuthority(api, e);
+          return receipt({ envelope: e, publishedHead: r.publishedHead, finalHead: r.finalHead, reconciliationHead });
+        }
         if (r.predispatchPending) {
           const saved = await journal?.get(e.runId, e.repository);
           if (!consumedPredispatchRecord(r) || !saved || saved.version !== VERSION
@@ -1007,7 +1037,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
             || saved.execution !== null && (saved.execution?.reserved !== true || saved.execution.returned !== true))
             fail('PREDISPATCH_CONTROLLER_JOURNAL_REQUIRED');
         }
-        const a = await revalidateAuthority(api, e);
+        const a = await revalidateAuthority(api, e, { verifyStartingBase: !r.finalHead && !r.publishedHead });
+        r.authorityDrift = a.authorityDrift;
         if (a.pr && a.pr.head.sha !== (r.publishedHead ?? e.startHead)) fail('REMOTE_HEAD_CHANGED');
         if (e.continuation) {
           const refs = await api.get(`/git/matching-refs/heads/${e.branch}`);
@@ -1021,13 +1052,9 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         if (a.pr && !r.finalHead && await isCurrentProjection(e)) {
           await guardPublication(e);
           a.pr = await projectTaskRelationship(r, a.pr);
-        }
-        if (a.pr && !r.finalHead && await isCurrentProjection(e)) {
           const title = titleFor(e);
           if (a.pr.title !== title) await api.patch(`/pulls/${a.pr.number}`, { title });
-        }
-        if (a.pr && !a.pr.draft && !r.finalHead && await isCurrentProjection(e)) {
-          await transitionPr({ api, store, key: e.runId, record: r, head: a.pr.head.sha, draft: true,
+          if (!a.pr.draft) await transitionPr({ api, store, key: e.runId, record: r, head: a.pr.head.sha, draft: true,
             readPr: () => existingPullRequest(r) });
         }
         return receipt({ envelope: e, publishedHead: r.publishedHead, finalHead: r.finalHead,
@@ -1042,12 +1069,8 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
         const recovery = Object.hasOwn(request, 'authorizationId');
         const saved = await journal?.get(e.runId);
         if (e.route !== 'auto' || !recovery && (r.finalHead || r.outcome)
-          || !saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)
-          || !recovery && (saved.outcome || saved.diagnostic)
-          || saved.execution?.reserved !== true || saved.execution.returned !== true
-          || !['started', 'not_started'].includes(saved.execution.child)
-          || !(saved.execution.containment === 'reaped'
-            || saved.execution.child === 'not_started' && saved.execution.containment === 'not_required')) fail('COLLECTION_NOT_ADMITTED');
+          || !containedExecutionJournal(saved, e)
+          || !recovery && (saved.outcome || saved.diagnostic && !interruptedSuccessOutcome(r, saved))) fail('COLLECTION_NOT_ADMITTED');
         await guardPublication(e);
         const expected = recovery ? await authorizeRecoveryCollection({ api, record: r, authorizationId: request.authorizationId }) : null;
         if (recovery && (saved.execution.child !== 'started' || saved.execution.result?.status !== 'success'
@@ -1059,20 +1082,28 @@ export function createPublicationBroker({ api, store, publisher, admission, jour
       }
       if (request.operation === 'publish-progress') {
         if (e.route !== 'auto' || r.finalHead) fail('PROGRESS_NOT_ADMITTED');
+        const reconciliationHead = request.reconciliationHead;
+        if (reconciliationHead !== undefined && (!exactSha(reconciliationHead)
+          || reconciliationHead !== retainedPublicationHead(r))) fail('PUBLICATION_RECONCILIATION_REQUIRED');
         await guardPublication(e);
         return publisher.inspect(e, request.bundle, async g => {
-          if (e.request?.kind === 'admission' && e.target === 'issue' && !e.continuation
-            && !await g.ancestor(e.startHead, 'refs/remotes/main')) fail('STARTING_STATE_MISMATCH');
           const previous = r.publishedHead ?? (e.target === 'pull_request' || e.continuation ? e.startHead : null);
-          if (r.publicationIntent && r.publicationIntent.head !== g.head) fail('PUBLICATION_RECONCILIATION_REQUIRED');
+          if (reconciliationHead !== undefined && g.head !== reconciliationHead
+            || r.publicationIntent && r.publicationIntent.head !== g.head) fail('PUBLICATION_RECONCILIATION_REQUIRED');
           if (g.remoteHead === g.head) {
             if (!r.publicationIntent && r.publishedHead !== g.head) fail('UNATTRIBUTED_REMOTE_HEAD');
           } else {
             if (r.publicationIntent) fail('PUBLICATION_UNCERTAIN');
-            if (g.remoteHead !== previous || !(await g.ancestor(e.startHead, g.head))
-              || (previous && !(await g.ancestor(previous, g.head)))) fail('REMOTE_HEAD_CHANGED');
+            if (g.remoteHead !== previous) fail('REMOTE_HEAD_CHANGED');
+            // Current main is a starting-state guard for new mutations. A
+            // verified publication receipt can be reconciled without it.
+            if (e.request?.kind === 'admission' && startsAtPublishedIssueBase(e)
+              && !await g.ancestor(e.startHead, 'refs/remotes/main')) fail('STARTING_STATE_MISMATCH');
+            // The trusted import already proved ancestry from the start.
+            // A later Writer publication can add a distinct frontier.
+            if (previous && previous !== e.startHead && !await g.ancestor(previous, g.head)) fail('REMOTE_HEAD_CHANGED');
             if (!g.commits.length) fail('NO_PROGRESS');
-            await revalidateAuthority(api, e, { verifyStartingBase: true });
+            r.authorityDrift = (await revalidateAuthority(api, e)).authorityDrift;
             if (e.continuation) {
               const pr = await existingPullRequest(r);
               if (pr && pr.head.sha !== previous) fail('REMOTE_HEAD_CHANGED');

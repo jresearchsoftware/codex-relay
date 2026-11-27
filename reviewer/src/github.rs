@@ -239,26 +239,15 @@ impl Github {
             .json::<Value>()
             .await
             .map_err(|error| crate::diagnostics::failure("GITHUB_AUTH_FAILED", error))?;
-        if payload
-            .get("expires_at")
-            .and_then(Value::as_str)
-            .is_none_or(|value| value.is_empty())
-        {
-            crate::diagnostics::record(
-                "GITHUB_TOKEN_LIFETIME_UNAVAILABLE",
-                "token-response",
-                "Successful installation token response lacks expires_at",
-            );
-            return Err("GITHUB_TOKEN_LIFETIME_UNAVAILABLE");
-        }
         payload
             .get("token")
             .and_then(Value::as_str)
+            .filter(|token| !token.is_empty())
             .map(ToOwned::to_owned)
             .ok_or_else(|| {
                 crate::diagnostics::failure(
                     "GITHUB_AUTH_FAILED",
-                    "Successful installation token response lacks token",
+                    "Successful installation token response lacks a nonempty token",
                 )
             })
     }

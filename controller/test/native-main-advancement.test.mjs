@@ -1,20 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFile, readFile } from 'node:fs/promises';
+import { chmod, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fixture } from './fixture.mjs';
 import { runAttempt } from '../src/attempt.mjs';
+import { main as routeAttempt } from '../src/entrypoint.mjs';
 import { verifyPublishedBase } from '../src/live-authority.mjs';
 import { canonicalAuthorityJson, sha256Body } from '../../contracts/src/github-authority.mjs';
-import { REPOSITORY, REVIEWER } from '../src/execution-contract.mjs';
+import { REPOSITORY, REVIEWER, VERSION } from '../src/execution-contract.mjs';
+import { CONSUMER } from '../../consumer/consumer.mjs';
 
 const charter = 'Authority model: github-native-v1\n\nIssue closure policy: keep-open\n\nImplement independent source work.';
 const native = (t, options = {}) => fixture(t, { issueBody: charter, labelLaunch: true, streamlinedAdmission: true, ...options });
+const taskRef = `refs/heads/${CONSUMER.taskBranchPrefix}task-42`;
+const precreate = ({ command, source, remote }) => command(source, ['push', remote, `HEAD:${taskRef}`]);
+const push = (f, progress) => f.broker.invoke({ operation: 'publish-progress', runId: f.envelope.runId,
+  attemptId: f.envelope.attemptId, bundle: progress.bundle });
+
 async function advance(f) {
   await writeFile(join(f.source, `later-${Date.now()}.md`), 'independent main progress\n');
   await f.command(f.source, ['add', '.']); await f.command(f.source, ['commit', '-m', 'independent main advancement']);
   await f.command(f.source, ['push', f.remote, 'main']);
   return f.command(f.source, ['rev-parse', 'HEAD']);
+}
+
+async function replaceMain(f) {
+  await f.command(f.source, ['switch', '--orphan', 'replacement']);
+  await writeFile(join(f.source, 'replacement.md'), 'unrelated root\n');
+  await f.command(f.source, ['add', '.']); await f.command(f.source, ['commit', '-m', 'replacement unrelated root']);
+  const replacement = await f.command(f.source, ['rev-parse', 'HEAD']);
+  await f.command(f.source, ['push', f.remote, 'replacement']);
+  await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', 'refs/heads/main', replacement]);
 }
 
 test('native admission retains an explicitly authorized accepted ancestor when main moved before reserve', async t => {
@@ -67,15 +83,146 @@ test('native base proof rejects diverged, foreign or malformed commit observatio
 
 test('native Issue main rewrite blocks before inference', async t => {
   const f = await native(t);
-  await f.command(f.source, ['switch', '--orphan', 'replacement']);
-  await writeFile(join(f.source, 'replacement.md'), 'unrelated root\n');
-  await f.command(f.source, ['add', '.']); await f.command(f.source, ['commit', '-m', 'replacement unrelated root']);
-  const replacement = await f.command(f.source, ['rev-parse', 'HEAD']);
-  await f.command(f.source, ['push', f.remote, 'replacement']);
-  await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', 'refs/heads/main', replacement]);
+  await replaceMain(f);
   const result = await runAttempt({ ...f, execute: () => assert.fail('rewritten main inferred') });
   assert.equal(result.status, 'BLOCKED'); assert.equal(f.pushes(), 0);
 });
+
+test('Git checkout and publication distinguish exact refs from slash-delimited suffix matches', async t => {
+  const f = await native(t, { beforeAdmission: async ({ command, source, remote }) => {
+    await command(source, ['push', remote, `HEAD:refs/heads/elsewhere/${taskRef}`,
+      'HEAD:refs/heads/elsewhere/refs/heads/main']);
+  } });
+  assert.equal(f.envelope.continuation, undefined);
+  const result = await runAttempt({ ...f, execute: async e => {
+    assert.equal(await f.command(f.cwd, ['rev-parse', 'HEAD']), e.startHead);
+    await f.commit();
+    return { version: VERSION, attemptId: e.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
+  } });
+  assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+  assert.equal(f.pushes(), 1);
+  assert.equal(await f.command(f.root, ['--git-dir=' + f.remote, 'rev-parse', taskRef]), result.head);
+  assert.equal(await f.command(f.root, ['--git-dir=' + f.remote, 'rev-parse', `refs/heads/elsewhere/${taskRef}`]), f.envelope.startHead);
+});
+
+test('a Git server refusal on a precreated Issue branch keeps the original cause and stops retries', async t => {
+  const f = await native(t, { beforeAdmission: precreate });
+  const hook = join(f.remote, 'hooks/pre-receive');
+  await writeFile(hook, "#!/bin/sh\nprintf '%s\\n' 'permission denied by repository policy' >&2\nexit 1\n");
+  await chmod(hook, 0o755);
+  let executions = 0;
+  const options = { ...f, execute: async e => {
+    executions++;
+    await f.commit();
+    return { version: VERSION, attemptId: e.attemptId, child: 'started', containment: 'reaped', result: { status: 'success' } };
+  } };
+  const refusal = error => {
+    assert.equal(error.code, 'PUBLICATION_UNCERTAIN');
+    assert.equal(error.details.diagnostic.primaryCause, 'GIT_AUTHORIZATION_REJECTED');
+    return true;
+  };
+  await assert.rejects(runAttempt(options), refusal);
+  await assert.rejects(runAttempt({ ...options, admissionResumed: true }), refusal);
+  const saved = await f.journal.get(f.envelope.runId);
+  assert.deepEqual((await f.store.get(f.envelope.runId)).publicationIntent,
+    { previous: f.envelope.startHead, head: saved.collection.head });
+  assert.match(f.comments[0].body, /Cause summary: GIT_AUTHORIZATION_REJECTED/);
+  assert.equal(await f.remoteHead(), f.envelope.startHead);
+  assert.equal(f.pushes(), 1);
+  assert.equal(executions, 1);
+});
+
+for (const phase of ['pending intent', 'recorded publication']) for (const changed of ['neither', 'remote ref', 'collected head']) {
+  const evidence = changed === 'neither' ? 'matching evidence' : `a changed ${changed}`;
+  test(`native replay of a ${phase} with ${evidence}`, async t => {
+    const f = await native(t, { beforeAdmission: precreate });
+    const e = f.envelope;
+    const readyEvents = structuredClone(f.events);
+    assert.deepEqual(e.continuation, { head: e.startHead, pullRequest: null });
+    await f.prepare(e);
+    await f.commit();
+    const progress = await f.collect(e);
+    // Simulate controller interruption after execution and collection, with
+    // the remote push either pending readback or already recorded by Writer.
+    const journal = { version: VERSION, envelope: e, outcome: null, progress: null, diagnostic: null,
+      execution: { reserved: true, returned: true, child: 'started', containment: 'reaped', result: { status: 'success' } },
+      collection: { head: progress.head, clean: true, preserved: true } };
+    await f.journal.put(e.runId, journal);
+    const recorded = phase === 'recorded publication';
+    if (recorded) {
+      const prior = await push(f, progress);
+      assert.equal(prior.publishedHead, progress.head);
+      assert.equal(prior.prNumber, 43);
+    } else {
+      const inspect = f.publisher.inspect.bind(f.publisher);
+      f.publisher.inspect = (envelope, bundle, inspectCandidate) => inspect(envelope, bundle, g => inspectCandidate({
+        ...g, push: async () => { await g.push(); f.stale(true); }
+      }));
+      await assert.rejects(push(f, progress), { code: 'PUBLICATION_UNCERTAIN' });
+      f.stale(false);
+    }
+    assert.equal(await f.remoteHead(), progress.head);
+    const publishedState = await f.store.get(e.runId);
+    assert.equal(publishedState.publishedHead, recorded ? progress.head : null);
+    assert.deepEqual(publishedState.publicationIntent, recorded ? null : { previous: e.startHead, head: progress.head });
+    assert.equal(publishedState.outcome, null);
+    if (changed === 'remote ref') await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', taskRef, e.startHead]);
+    if (changed === 'collected head') {
+      await f.commit('docs/work.md', 'different retained candidate\n');
+      const different = await f.collect(e);
+      await assert.rejects(f.broker.invoke({ operation: 'publish-progress', runId: e.runId,
+        attemptId: e.attemptId, bundle: different.bundle, reconciliationHead: progress.head }),
+      { code: 'PUBLICATION_RECONCILIATION_REQUIRED' });
+    } else await replaceMain(f);
+    const resume = () => f.broker.invoke(f.admissionRequest);
+    await f.journal.put(e.runId, { ...journal, execution: null });
+    await assert.rejects(resume(), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+    await f.journal.put(e.runId, { ...journal, collection: { ...journal.collection, head: e.startHead } });
+    await assert.rejects(resume(), { code: 'PREDISPATCH_ATTEMPT_FINALIZED' });
+    await f.journal.put(e.runId, journal);
+    const publicationRequests = [];
+    const replay = () => routeAttempt({
+      env: { GITHUB_EVENT_NAME: 'issues', GITHUB_REF: `refs/heads/${CONSUMER.baseBranch}`, GITHUB_RUN_ID: String(e.runId) },
+      readEvent: async () => JSON.stringify({ action: 'labeled', label: { name: e.readyLabel },
+        issue: { number: e.number }, repository: { full_name: REPOSITORY }, sender: { login: CONSUMER.owner } }),
+      createWriter: () => ({ invoke: async ({ workflowReadToken, ...request }) => {
+        if (request.operation === 'publish-progress') publicationRequests.push(request);
+        const result = await f.broker.invoke(request);
+        if (request.operation === 'admit') {
+          assert.equal(result.resumed, true);
+          assert.deepEqual(result.envelope, e);
+        }
+        return result;
+      } }),
+      createJournal: () => f.journal,
+      createDispatcher: () => ({ dispatch: () => assert.fail('retained publication ran a second worker') }),
+      prepare: () => assert.fail('retained publication prepared a new checkout'),
+      collect: f.collect,
+      persistFailure: async () => ({})
+    });
+    if (changed === 'neither') {
+      const finished = await replay();
+      assert.equal(finished.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+      assert.equal(finished.head, progress.head);
+      assert.deepEqual(await replay(), finished);
+      assert.equal((await f.store.get(e.runId)).publicationIntent, null);
+    } else {
+      const code = changed === 'remote ref'
+        ? recorded ? 'REMOTE_HEAD_CHANGED' : 'PUBLICATION_UNCERTAIN'
+        : 'PUBLICATION_RECONCILIATION_REQUIRED';
+      await assert.rejects(replay, { code });
+      const retained = await f.store.get(e.runId);
+      assert.deepEqual(retained.publicationIntent, publishedState.publicationIntent);
+      assert.equal(retained.publishedHead, publishedState.publishedHead);
+      assert.equal((await f.journal.get(e.runId)).collection.head, progress.head);
+    }
+    assert.deepEqual(publicationRequests.map(request => request.reconciliationHead), changed === 'collected head' ? [] : [progress.head]);
+    assert.equal(await f.remoteHead(), changed === 'remote ref' ? e.startHead : progress.head);
+    assert.equal(f.pushes(), 1);
+    assert.equal(f.comments.length, 1);
+    assert.deepEqual(f.events, readyEvents);
+  });
+}
 
 test('native publication rejects external advancement of the task branch even while main advancement is allowed', async t => {
   const f = await native(t); await f.prepare(f.envelope); await f.commit('task.md', 'first worker progress\n');

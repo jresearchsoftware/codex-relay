@@ -1,4 +1,4 @@
-import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest, positive } from './execution-contract.mjs';
+import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest, exactSha, positive } from './execution-contract.mjs';
 import { isWriterTokenRequest, safeWriterFailure } from './failure-report.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
 import { boundedDiagnosticText, captureCausalDiagnostic } from './diagnostics.mjs';
@@ -110,6 +110,10 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       await journal.put(e.runId, record);
       return record.outcome;
     }
+    const reconciliationHead = preflight.reconciliationHead;
+    if (reconciliationHead !== undefined && (!exactSha(reconciliationHead) || record.execution?.returned !== true
+      || record.collection?.preserved !== true || record.collection.head !== reconciliationHead))
+      fail('PUBLICATION_RECONCILIATION_REQUIRED');
     if (!record.execution) {
       await prepare(e);
       lastSuccessfulBoundary = 'checkout';
@@ -137,6 +141,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     lastSuccessfulBoundary = 'contained-execution';
     stage = 'progress';
     const progress = await collect(e);
+    if (reconciliationHead && (progress.head !== reconciliationHead || !progress.bundle))
+      fail('PUBLICATION_RECONCILIATION_REQUIRED');
     if (typeof progress.clean !== 'boolean' && !(progress.clean === null && progress.worktreeObservation?.status === 'unknown')) fail('WORKTREE_STATE_UNKNOWN');
     const executionWarnings = [...(record.execution.executionWarnings ?? []),
       ...(progress.clean === null ? ['WORKTREE_OBSERVATION_INCOMPLETE'] : progress.clean ? [] : ['UNCOMMITTED_WORK_REMAINS'])];
@@ -148,7 +154,8 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
     // an uncertain Writer response cannot turn it into unknown execution.
     await journal.put(e.runId, record);
     if (progress.bundle) {
-      const published = await invoke('publish-progress', { bundle: progress.bundle });
+      const published = await invoke('publish-progress', { bundle: progress.bundle,
+        ...(reconciliationHead ? { reconciliationHead } : {}) });
       record.progress = { head: published.publishedHead, prNumber: published.prNumber, clean: progress.clean === true };
       lastSuccessfulBoundary = 'publication';
       await journal.put(e.runId, record);

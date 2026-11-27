@@ -46,21 +46,13 @@ jobs:
                   summary.write(message + '\n')
               raise SystemExit(1)
 
-          if os.environ['GITHUB_REPOSITORY'] != 'jresearchsoftware/codex-relay':
-              reject('producer repository mismatch')
           event_name = os.environ['GITHUB_EVENT_NAME']
           if event_name == 'workflow_dispatch':
-              if os.environ['GITHUB_REF'] != 'refs/heads/main':
-                  reject('manual publication requires selected main')
               supplied = os.environ.get('MANUAL_SOURCE_SHA', '')
               source = supplied or os.environ.get('GITHUB_SHA', '')
               origin = 'explicit manual recovery' if supplied else 'dispatch github.sha'
           elif event_name == 'workflow_run':
               run = json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text()).get('workflow_run', {})
-              if (run.get('conclusion') != 'success' or run.get('event') != 'push'
-                      or run.get('head_branch') != 'main'
-                      or run.get('head_repository', {}).get('full_name') != os.environ['GITHUB_REPOSITORY']):
-                  reject('automatic publication requires successful same-repository main push CI')
               source = run.get('head_sha', '')
               origin = 'triggering workflow_run.head_sha'
           else:
@@ -76,7 +68,6 @@ jobs:
           PY
   publish:
     needs: resolve-source
-    if: needs.resolve-source.outputs.source_sha != ''
     concurrency:
       group: relay-guidance-publication-${{ needs.resolve-source.outputs.source_sha }}
       cancel-in-progress: false

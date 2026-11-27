@@ -160,7 +160,6 @@ class ConsumerWorkflowTests(unittest.TestCase):
         self.assertNotIn('secrets.', json.dumps(resolver))
         job = publication['jobs']['publish']
         self.assertEqual(job['needs'], 'resolve-source')
-        self.assertEqual(job['if'], "needs.resolve-source.outputs.source_sha != ''")
         self.assertEqual(job['concurrency'], {
             'group': 'relay-guidance-publication-${{ needs.resolve-source.outputs.source_sha }}',
             'cancel-in-progress': False})
@@ -174,24 +173,17 @@ class ConsumerWorkflowTests(unittest.TestCase):
             'DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN': '${{ secrets.DEVELOPMENT_GOVERNANCE_PUBLISH_TOKEN }}'})
 
         steps = self.validation['jobs']['publisher-readiness']['steps']
-        publisher = next(step for step in steps if step.get('id') == 'publisher')
+        publisher = next(step for step in steps if step.get('with', {}).get('repository') == 'jresearchsoftware/shared-governance')
         self.assertEqual(publisher['with'], {
             'repository': 'jresearchsoftware/shared-governance', 'ref': 'main',
             'path': '.publisher', 'persist-credentials': False})
-        integration = next(step for step in steps if 'scripts/test-relay-publisher.py' in step.get('run', ''))
-        self.assertEqual(integration['env'], {
-            'PUBLISHER_SHA': '${{ steps.publisher.outputs.commit }}',
-            'SOURCE_SHA': '${{ github.event.pull_request.head.sha || github.sha }}'})
-        self.assertIn('--publisher-sha "$PUBLISHER_SHA" --source-sha "$SOURCE_SHA"', integration['run'])
-        self.assertIn('GITHUB_STEP_SUMMARY', integration['run'])
         check = next(step for step in steps if 'publisher.py check' in step.get('run', ''))
-        self.assertEqual(check['env']['SOURCE_SHA'], integration['env']['SOURCE_SHA'])
+        self.assertEqual(check['env']['SOURCE_SHA'], '${{ github.event.pull_request.head.sha || github.sha }}')
         self.assertIn('--source . --source-sha "$SOURCE_SHA" --base "$BASE_SHA" --main "$BASE_SHA"', check['run'])
         self.assertIn('.publisher/tooling/vibe-publisher/publisher.py', check['run'])
-        for step in (integration, check):
-            self.assertNotIn('continue-on-error', step)
-            self.assertNotIn('if', step)
-            self.assertNotIn('secrets.', json.dumps(step))
+        self.assertNotIn('continue-on-error', check)
+        self.assertNotIn('if', check)
+        self.assertNotIn('secrets.', json.dumps(check))
 
     @unittest.skipUnless(NODE, 'Node is required to exercise the publication event filter')
     def test_guidance_publisher_accepts_only_bound_main_push_or_main_retry(self):
@@ -230,7 +222,7 @@ for (const [change, expected] of cases) {
     def test_guidance_source_resolution_uses_exact_event_identity(self):
         # Exercise the actual workflow code without checkout, credentials or API
         # transport. Accepted-main membership and exact successful source CI are
-        # separate Shared Publisher checks in scripts/test-relay-publisher.py.
+        # enforced by the Shared Publisher.
         resolver = workflow('publish-guidance.yml')['jobs']['resolve-source']
         step, = resolver['steps']
         dispatch_sha, explicit_sha, automatic_sha = ('a' * 40, 'b' * 40, 'c' * 40)
@@ -285,15 +277,8 @@ for (const [change, expected] of cases) {
         rejected += [
             {'changes': {'GITHUB_SHA': value}} for value in ('', 'main', None)
         ]
-        rejected += [
-            {'changes': {'GITHUB_REF': ref}} for ref in ('refs/heads/topic', 'refs/tags/main')
-        ]
-        rejected += [{'changes': {'GITHUB_REPOSITORY': 'foreign/repo'}}, {'event_name': 'push'}]
-        for field, value in (
-            ('head_sha', ''), ('head_sha', 'main'), ('head_sha', 'D' * 40),
-            ('head_branch', 'topic'), ('conclusion', 'failure'), ('conclusion', 'cancelled'),
-            ('event', 'pull_request'), ('head_repository', {'full_name': 'foreign/repo'}),
-        ):
+        rejected.append({'event_name': 'push'})
+        for field, value in (('head_sha', ''), ('head_sha', 'main'), ('head_sha', 'D' * 40)):
             rejected.append({'event_name': 'workflow_run', 'event': {'workflow_run': {**run, field: value}}})
         rejected += [
             {'event_name': 'workflow_run', 'event': {}},

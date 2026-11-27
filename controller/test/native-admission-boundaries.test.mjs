@@ -97,6 +97,87 @@ test('a fresh native Step continues exact Writer-published progress from a conta
   assert.deepEqual((await f.store.get(99)).envelope, original);
 });
 
+for (const [description, { recreate = false, retain = false, merged = true, wrongBase = false }] of [
+  ['after a verified squash merge and branch deletion', {}],
+  ['after a verified squash merge and recreation at the new base', { recreate: true }],
+  ['after a verified squash merge with the published ref retained', { retain: true }],
+  ['after branch deletion without a merge', { merged: false }],
+  ['when the historical PR was merged to the wrong base', { wrongBase: true }]
+]) {
+  test(`fresh native Step resolves branch availability ${description}`, async t => {
+    const f = await fixture(t, { issueBody: charter, labelLaunch: true, streamlinedAdmission: true, createAdmission: admissionControl });
+    const original = copy(f.envelope);
+    const result = await runAttempt({ ...f, execute: async e => {
+      await f.commit();
+      return { version: 2, attemptId: e.attemptId, child: 'started', containment: 'reaped',
+        result: { status: 'success', summary: 'Publish initial work before another Step.', validation: [] } };
+    } });
+    assert.equal(result.status, 'IMPLEMENTED_PENDING_FRESH_REVIEW');
+    await f.admissionControl.complete({ runId: 99, attemptId: original.attemptId });
+    const prior = await f.store.get(99);
+    const pr = await f.api.get(`/pulls/${result.prNumber}`);
+    assert.equal(pr.head.sha, prior.publishedHead);
+    if (merged && !wrongBase) {
+      await f.command(f.source, ['fetch', f.remote, `refs/heads/${original.branch}`]);
+      await f.command(f.source, ['merge', '--squash', 'FETCH_HEAD']);
+      await f.command(f.source, ['commit', '-m', 'Accept the first Step via squash merge']);
+      await f.command(f.source, ['push', f.remote, CONSUMER.baseBranch]);
+    }
+    const base = await f.command(f.source, ['rev-parse', CONSUMER.baseBranch]);
+    assert.notEqual(base, prior.publishedHead);
+    if (!retain) await f.command(f.root, ['--git-dir=' + f.remote, 'update-ref', '-d', `refs/heads/${original.branch}`]);
+    if (recreate) await f.command(f.source, ['push', f.remote, `${base}:refs/heads/${original.branch}`]);
+    const get = f.api.get.bind(f.api);
+    const list = f.api.list.bind(f.api);
+    f.api.get = path => path === `/pulls/${pr.number}`
+      ? copy({ ...pr, state: 'closed', merged, body: 'Edited historical PR description',
+        ...(wrongBase ? { base: { ...pr.base, ref: 'different-base' } } : {}) }) : get(path);
+    f.api.list = path => path.startsWith('/pulls?') ? [] : list(path);
+
+    const admitted = await f.broker.invoke(nextReady(f));
+    assert.deepEqual((await f.store.get(99)).envelope, original);
+    assert.equal(f.pushes(), 1);
+    if (!merged || wrongBase) {
+      assert.equal(admitted.status, 'BLOCKED');
+      assert.equal(admitted.envelope.step, null);
+      assert.equal(admitted.envelope.admissionBlock.code, 'STARTING_STATE_MISMATCH');
+      assert.deepEqual(f.issue.labels, [{ name: 'step-1' }]);
+      return;
+    }
+    assert.notEqual(admitted.status, 'BLOCKED', JSON.stringify(admitted.envelope));
+    assert.equal(admitted.envelope.step, 2);
+    assert.equal(admitted.envelope.branch, original.branch);
+    const start = retain ? prior.publishedHead : base;
+    assert.equal(admitted.envelope.startHead, start);
+    assert.equal(admitted.envelope.request.lineage.attempt, original.attemptId);
+    assert.equal(admitted.envelope.request.existing_pr, null);
+    assert.deepEqual(admitted.envelope.continuation, recreate || retain ? { head: start, pullRequest: null } : undefined);
+    assert.deepEqual(f.issue.labels, [{ name: 'step-2' }]);
+  });
+}
+
+test('an authorized starting ref cannot adopt a current PR targeting a different base', async t => {
+  const branch = `${CONSUMER.taskBranchPrefix}task-42`;
+  const f = await fixture(t, { issueBody: charter, streamlinedAdmission: true, labelLaunch: true,
+    beforeAdmission: async ({ source, remote, command, base, api }) => {
+      await command(source, ['push', remote, `${base}:refs/heads/${branch}`]);
+      const list = api.list.bind(api);
+      api.list = path => {
+        if (!path.startsWith('/pulls?')) return list(path);
+        const query = new URLSearchParams(path.split('?')[1]);
+        assert.equal(query.get('head'), `${REPOSITORY.split('/')[0]}:${branch}`);
+        assert.equal(query.get('base'), null);
+        return [{ number: 43, state: 'open', merged: false, body: 'Related to #42',
+          base: { ref: 'other-base', sha: base, repo: { full_name: REPOSITORY } },
+          head: { ref: branch, sha: base, repo: { full_name: REPOSITORY } } }];
+      };
+    } });
+  assert.equal(f.admission.status, 'BLOCKED');
+  assert.equal(f.envelope.admissionBlock.code, 'PR_NOT_ADMITTED');
+  assert.equal(f.envelope.step, null);
+  assert.equal(f.pushes(), 0);
+});
+
 test('new trusted Decision starting-head authority takes precedence over implicit retained branch progress', async t => {
   const f = await fixture(t, { issueBody: charter, labelLaunch: true, streamlinedAdmission: true, createAdmission: admissionControl });
   const list = f.api.list.bind(f.api);

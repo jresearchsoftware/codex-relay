@@ -50,7 +50,11 @@ async function refuses(t, options = {}, setup = () => {}) {
 for (const route of ['auto', 'manual']) {
   for (const remediation of [false, true]) test(`current ${route} ${remediation ? 'PR' : 'Issue'} rejects unmarked authority before any mutation`, async t => {
     const context = await refuses(t, { route, remediation, issueBody: 'Unmarked old execution prose.\nIssue closure policy: keep-open' });
-    await assert.rejects(admitEnvelope(context.api, context.admissionRequest, { nextStep: 1 }), { code: 'CURRENT_PROTOCOL_REQUIRED' });
+    const api = { ...context.api, get: path => {
+      assert.notEqual(path, `/git/ref/heads/${CONSUMER.baseBranch}`, 'Unmarked authority precedes Step and base resolution.');
+      return context.api.get(path);
+    } };
+    await assert.rejects(admitEnvelope(api, context.admissionRequest), { code: 'CURRENT_PROTOCOL_REQUIRED' });
     assert.equal(isAdmissionDomainBlock('CURRENT_PROTOCOL_REQUIRED'), false);
   });
   test(`current ${route} rejects an old or untyped active CR instead of creating a new old-schema chain`, async t => {
