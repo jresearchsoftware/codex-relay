@@ -42,7 +42,7 @@ def recipe_digest(source_root):
 
 # Frozen against the reviewed recipe surface, not an observed installation.
 # Includes the Reviewer listener and maintenance control owned below.
-RECIPE_SHA256 = '660aa4c3c4ccfcb5d3af9a6fdac12386337160da295bed39ce008ea6d732fb55'
+RECIPE_SHA256 = '8ef021ff87f26de310a3466a63f52e7cd80e81171c4681ce2c4889203cdda230'
 OWNERS = {
     "roles/relay_codex_runtime/tasks/runtime-namespace.yml": [
         "Reconcile the Codex temporary roots for the runtime identity",
