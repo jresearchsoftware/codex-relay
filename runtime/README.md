@@ -70,6 +70,25 @@ that execution check. Execution and cleanup share one fixed sudo argument builde
 This changes process credentials only, without changing account settings or
 repairing source metadata. Explicit private modes remain private.
 
+## App Server execution
+
+The trusted controller selects the App Server adapter from the admitted
+backend. It prepares the same task branch and uses the existing worker prompt,
+semantic result schema and Writer collection interface. The native thread
+receives a local attempt workspace, the resolved profile, a task-scoped
+permission profile and the Task/Step title. A persistent server may host
+other threads with different permissions.
+
+The adapter records the assignment identity and thread/turn checkpoints in
+the controller journal around native start operations. On disconnect it
+reopens the configured Unix socket and checks the recorded thread, turn and
+original user message. Cancellation requests interruption of the recorded
+turn. Terminal status, settled task-owned resources and a valid semantic
+result precede ordinary success publication. Incomplete observations retain
+the attempt for reconciliation on its original target. The CLI dispatcher's
+process-group termination and reaping rules continue to apply to CLI work.
+
+
 ## Task capabilities and bounded output
 
 The automatic worker chooses ordinary local task-owned commits, accepted-upstream

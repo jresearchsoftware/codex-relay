@@ -113,7 +113,8 @@ The qualified `relay-workflows-v4` controller/Writer pair resolves new native
 admissions from the unchanged `github-native-v1` charter and trusted Task
 Decisions. Schema version `4.0` explicitly distinguishes this path from retained
 schema-v3 records; it requires no new charter marker or public Task Request.
-An owner-authorized ready label supplies the native launch command and route.
+An owner-authorized ready label supplies the native launch command. The choices
+are `codex-ready-auto` (CLI), `codex-ready-manual`, and `codex-ready-app-server`.
 Decisions can accumulate in backlog without assigning a Step. Writer assigns a
 Step only when it durably admits a new execution under the existing lock.
 Replay/recovery of that attempt retains its snapshot and Step; a genuinely new
@@ -208,8 +209,13 @@ run/attempt and lineage. A charter-only snapshot may omit duplicate scope and
 boundary arrays: the complete charter stays visible in the worker input and is
 bound by its exact native hash. `validateAdmissionSnapshot` validates the internal
 shape and binding; `admissionBinding(snapshot)` returns `{attempt, step, sha256}`
-with the digest of the complete canonical snapshot. Only protected Writer
-reservation/persistence makes that snapshot an admitted execution.
+with the digest of the complete canonical snapshot. For App Server the snapshot
+records `route: auto`, `backend: app-server`, and `app_server_target_sha256`, the
+SHA-256 of the canonical target object from the selected repository's installed
+configuration. The socket and workspace paths are stored in the protected
+execution envelope. The automatic CLI and manual snapshots retain their existing
+fields and hashes. Only protected Writer reservation and persistence makes that
+snapshot an admitted execution.
 
 Schema-v4 Outcomes and Task acceptance records bind both `authority` and
 `admission`, plus exact immutable results and native Outcome identity. They do

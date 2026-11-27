@@ -1,3 +1,4 @@
+import { executionEnded } from './execution-completion.mjs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
 import { REPOSITORY, OWNER, WRITER, VERSION, digest, positive, exactSha, fail } from './execution-contract.mjs';
 import { sha256Body, extractAuthorityRecord, canonicalAuthorityJson, admissionBinding } from '../../contracts/src/github-authority.mjs';
@@ -43,17 +44,17 @@ export async function prepublicationState({ api, journal, record: r, head }) {
   if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
   const execution = saved.execution;
   if (execution?.reserved !== true || execution.returned !== true || execution.child !== 'started'
-    || execution.containment !== 'reaped' || execution.result?.status !== 'success'
+    || !executionEnded(e, execution) || execution.result?.status !== 'success'
     || execution.errorCode || execution.diagnostic) fail('RECOVERY_EXECUTION_NOT_PROVEN');
   if (saved.collection || saved.progress || saved.outcome?.status !== 'BLOCKED'
     || !['status', 'head', 'prNumber', 'outcomeId'].every(key => saved.outcome[key] === r.outcome[key])
     || saved.diagnostic?.classification?.stage !== 'progress'
     || saved.diagnostic.lastSuccessfulBoundary !== 'contained-execution'
-    || saved.diagnostic.observed?.child !== 'started' || saved.diagnostic.containment !== 'reaped'
+    || saved.diagnostic.observed?.child !== 'started' || saved.diagnostic.containment !== execution.containment
     || saved.diagnostic.orchestration !== 'FAILED' || saved.diagnostic.durable?.publishedHead !== null) fail('RECOVERY_TERMINAL_STATE_NOT_PROVEN');
   const lifecycle = r.controllerLifecycle;
   if (lifecycle && (lifecycle.version !== 1 || lifecycle.status !== 'complete'
-    || lifecycle.child !== 'started' || lifecycle.containment !== 'reaped')) fail('RECOVERY_CONTROLLER_NOT_COMPLETE');
+    || lifecycle.child !== 'started' || !executionEnded(e, lifecycle))) fail('RECOVERY_CONTROLLER_NOT_COMPLETE');
   const run = await originalRun(api, e);
   const outcome = await api.get(`/issues/comments/${r.outcome.outcomeId}`);
   const writer = await api.userIdentity(WRITER);

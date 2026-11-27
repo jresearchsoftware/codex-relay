@@ -8,6 +8,7 @@ import { digest, exactSha, fail, positive, VERSION, REPOSITORY } from './executi
 import { admissionBinding, canonicalAuthorityJson, validateAuthorityRecord } from '../../contracts/src/github-authority.mjs';
 import { completedPredispatchRecovery, pendingPredispatchRecord, predispatchNoWorkerRecord,
   consumedPredispatchMarker } from './predispatch-recovery.mjs';
+import { executionEnded, terminalObservation } from './execution-completion.mjs';
 import { manualAttemptHasConflictingActivity, attemptHasPendingPublicationEffects } from './execution-effects.mjs';
 
 export const ADMISSION_STATE_BYTES = 4096;
@@ -142,8 +143,7 @@ export async function completedAdmissionRecord(record, journal) {
   const lifecycle = record.controllerLifecycle;
   if (lifecycle && (lifecycle.version !== 1 || lifecycle.status !== 'complete'
     || !['started', 'not_started'].includes(lifecycle.child)
-    || !(lifecycle.containment === 'reaped'
-      || lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))) return false;
+    || !executionEnded(e, lifecycle))) return false;
   if (record.admissionBlock && !lifecycle && record.outcome.status === 'BLOCKED') return true;
   if (record.prepublicationRecovery) {
     const recovery = record.prepublicationRecovery;
@@ -172,7 +172,7 @@ export async function completedAdmissionRecord(record, journal) {
   const execution = saved.execution;
   return execution?.reserved === true && execution.returned === true
     && ['started', 'not_started'].includes(execution.child)
-    && (execution.containment === 'reaped' || execution.child === 'not_started' && execution.containment === 'not_required');
+    && executionEnded(e, execution);
 }
 function validServices(value) {
   // The primary service keeps the original `general` key. Additional activity
@@ -285,16 +285,15 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     if (saved.execution === null) return { child: 'not_started', containment: 'not_required' };
     const execution = saved.execution;
     if (execution?.reserved !== true || execution.returned !== true || !['started', 'not_started'].includes(execution.child)
-      || !(execution.containment === 'reaped' || (execution.child === 'not_started' && execution.containment === 'not_required'))) return null;
-    return { child: execution.child, containment: execution.containment };
+      || !executionEnded(e, execution)) return null;
+    return terminalObservation(e, execution);
   }
   async function resourceReleased(record) {
+    const e = record.envelope;
     const lifecycle = record.controllerLifecycle;
     if (lifecycle?.version === 1 && lifecycle.status === 'complete'
       && ['started', 'not_started'].includes(lifecycle.child)
-      && (lifecycle.containment === 'reaped'
-        || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'))) return true;
-    const e = record.envelope;
+      && executionEnded(e, lifecycle)) return true;
     const saved = await journal.get(e.runId, e.repository);
     if (!saved || saved.version !== VERSION || digest(saved.envelope) !== digest(e)) return false;
     const execution = saved.execution;
@@ -303,8 +302,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     // its exact effect, rather than the physical runner slot.
     if (execution?.reserved === true && execution.returned === true
       && ['started', 'not_started'].includes(execution.child)
-      && (execution.containment === 'reaped'
-        || (execution.child === 'not_started' && execution.containment === 'not_required'))
+      && executionEnded(e, execution)
       && saved.collection?.preserved === true && exactSha(saved.collection.head)
       && typeof saved.collection.clean === 'boolean') return true;
     // Retained receipts have no new preservation field. Keep their original
@@ -332,7 +330,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
   async function noPredispatchResource(e) {
     return journal && !await journal.get(e.runId, e.repository) && checkoutAbsent && await checkoutAbsent(e);
   }
-  async function currentInventory({ task, slot, resourceOnly, requireTerminalOutcome }) {
+  async function currentInventory({ task, slot, resourceOnly, requireTerminalOutcome, backend }) {
     const active = []; const unknown = [];
     const rows = store.scan ? await store.scan()
       : (await store.all()).map(record => ({ runId: record?.envelope?.runId, repository: record?.envelope?.repository, record }));
@@ -350,6 +348,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
           observation: { check: 'inventory.record', expected: 'readable native envelope', observed: { runId: row.runId, code: cause } },
           details: { conflictingRunId: row.runId, repository: row.repository, resource: slot, cause } });
       }
+      if (backend && identity.backend !== backend) continue;
       // A handoff is not evidence of physical runner occupation.
       if (resourceOnly && identity.route === 'manual') continue;
       const e = validRecord(record);
@@ -433,7 +432,7 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
         if (lifecycle.version !== 1 || !['active', 'complete'].includes(lifecycle.status)) fail('ADMISSION_ATTEMPT_INVALID');
         if (lifecycle.status === 'complete') {
           const containedChild = ['started', 'not_started'].includes(lifecycle.child)
-            && (lifecycle.containment === 'reaped' || (lifecycle.child === 'not_started' && lifecycle.containment === 'not_required'));
+            && executionEnded(e, lifecycle);
           const safeEffects = !attemptHasPendingPublicationEffects(record)
             && (!record.prIntent || positive(record.prNumber)) && record.handoffComplete !== false;
           // Maintenance can tolerate missing Outcome evidence once the
@@ -485,6 +484,12 @@ export function createAdmissionControl({ root, consumerDigest, store, journal, p
     },
     read,
     async assertOpen() { if ((await read()).phase !== 'open') fail('ADMISSION_QUIESCED'); },
+    async assertAppServerAttemptsComplete(task) {
+      if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
+      const pending = await currentInventory({ task, slot: null, resourceOnly: false, requireTerminalOutcome: true, backend: 'app-server' });
+      if (pending.active.length || pending.unknown.length) throw Object.assign(new Error('PRIOR_EXECUTION_UNRESOLVED'),
+        { code: 'PRIOR_EXECUTION_UNRESOLVED', details: { task, ...pending } });
+    },
     async assertTaskComplete(task) {
       if (!positive(task)) fail('AUTHORITY_ADMISSION_INVALID');
       const pending = await inventory({ task });

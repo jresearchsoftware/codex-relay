@@ -26,9 +26,10 @@ admission, change substantive Task authority through trusted Task-scoped
 Decisions; do not rewrite the historical charter. Ordinary comments are evidence.
 
 An explicit owner instruction to start agreed in-scope work authorizes the
-orchestration assistant to send codex-ready-auto or codex-ready-manual on the
-canonical target through supported GitHub access authenticated as the configured
-owner. Follow the original attempt to verified worker start, the complete
+orchestration assistant to send codex-ready-auto, codex-ready-app-server or
+codex-ready-manual for the agreed route on the canonical target through
+supported GitHub access authenticated as the configured owner.
+Follow the original attempt to verified worker start, the complete
 manual handoff or a terminal diagnostic. Reconcile an uncertain prior launch.
 Writer creates the immutable snapshot and allocates Step only at admission.
 Issue creation, Decisions and ready-command submission allocate no Step.

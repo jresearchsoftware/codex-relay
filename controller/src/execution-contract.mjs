@@ -1,12 +1,13 @@
+import { executionEnded } from './execution-completion.mjs';
 import { safeModel, safeEffort } from '../../runtime/src/codex-profile.mjs';
-import { safeBranch as safeConsumerBranch } from '../../consumer/consumer-config.mjs';
+import { resolveAppServerTarget, safeBranch as safeConsumerBranch } from '../../consumer/consumer-config.mjs';
 import { CONSUMER, CONSUMER_DIGEST } from '../../consumer/consumer.mjs';
 import { createHash } from 'node:crypto';
 import { safeDiagnosticStoreReference, safeFailureDiagnosticReference, safeFallbackReference, safeRuntimeLifecycle, safeLauncherDiagnosticSummary } from './diagnostics.mjs';
 import { EXECUTION_DEFINITION } from '../../contracts/src/execution-defaults.mjs';
 import { failureFacts, safeFailureFacts } from './failure-report.mjs';
 import { normalizeCodexUsage } from './codex-usage.mjs';
-import { validateAdmissionSnapshot, canonicalAuthorityJson } from '../../contracts/src/github-authority.mjs';
+import { validateAdmissionSnapshot, canonicalAuthorityJson, sha256Body } from '../../contracts/src/github-authority.mjs';
 
 export const REPOSITORY = CONSUMER.repository;
 export const OWNER = CONSUMER.owner;
@@ -46,6 +47,7 @@ export const NORMAL_DOMAIN_BLOCK_CODES = new Set([
   'LAUNCH_STEP_INVALID', 'LAUNCH_TASK_INVALID', 'LAUNCH_PR_INVALID', 'LAUNCH_METADATA_TOO_LONG',
   'CHECKOUT_ALREADY_EXISTS', 'CHECKOUT_DIRTY', 'CHECKOUT_UNPUBLISHED', 'CANONICAL_BRANCH_MISSING',
   'REQUIRED_VALIDATION_UNSUPPORTED', 'NO_DURABLE_PROGRESS',
+  'APP_SERVER_TARGET_NOT_CONFIGURED',
   'AUTHORITY_MODEL_INVALID', 'AUTHORITY_CHARTER_INVALID', 'AUTHORITY_RECORD_INVALID', 'AUTHORITY_TARGET_MISMATCH',
   'AUTHORITY_PARENT_MISMATCH', 'AUTHORITY_STARTING_STATE_INVALID', 'AUTHORITY_CR_BINDING_INVALID',
   'AUTHORITY_VALIDATION_UNKNOWN', 'AUTHORITY_REFERENCE_DUPLICATE', 'AUTHORITY_RESULT_INVALID',
@@ -86,7 +88,7 @@ export function safeDomainTerminal(error, record, stage) {
   if (!domain) return false;
   if (!execution) return stage === 'preflight';
   if (execution.reserved !== true || execution.returned !== true || !['started', 'not_started'].includes(execution.child)
-    || (execution.containment !== 'reaped' && !(execution.child === 'not_started' && execution.containment === 'not_required'))) return false;
+    || !executionEnded(record.envelope, execution)) return false;
   const collected = record.collection;
   return collected?.clean === true && exactSha(collected.head)
     && (collected.head === record.envelope.startHead || record.progress?.head === collected.head);
@@ -130,6 +132,13 @@ export function validateEnvelope(e) {
   if (!manualNoSource) branchName(e.branch);
   if (e.request?.kind !== 'admission' || e.request.schema_version !== '4.0') fail('EXECUTION_ENVELOPE_INVALID');
   validateAdmissionSnapshot(e.request, { repository: REPOSITORY, task: e.issueNumber, validationNames: [...NATIVE_VALIDATIONS] });
+  if (e.backend !== e.request.backend) fail('EXECUTION_ENVELOPE_INVALID');
+  if (e.backend === 'app-server') {
+    const target = resolveAppServerTarget(CONSUMER, e.repository);
+    if (!target || !e.appServerTarget || canonicalAuthorityJson(e.appServerTarget) !== canonicalAuthorityJson(target)
+      || e.request.app_server_target_sha256 !== sha256Body(canonicalAuthorityJson(target))
+      || e.transport === 'label' && e.readyLabel !== 'codex-ready-app-server') fail('APP_SERVER_TARGET_BINDING_CHANGED');
+  } else if (Object.hasOwn(e, 'appServerTarget') || e.readyLabel === 'codex-ready-app-server') fail('EXECUTION_ENVELOPE_INVALID');
   if (e.request.step !== e.step || e.request.route !== e.route || e.request.branch !== e.branch
     || e.request.starting_head !== e.startHead || e.request.base_sha !== e.historicalBase
     || e.request.model !== e.profile.cliModelId || e.request.effort !== e.profile.effort
@@ -208,7 +217,7 @@ export function causalEvidence(error, { child = 'unknown', containment = 'unknow
     failureBoundary: parserFailure ? 'result-parse' : boundary(safeDiagnostic.boundary ?? inherited.failureBoundary ?? stage),
     classification: { code, source: primary ? 'observed' : 'fallback', stage },
     primaryCause: primary,
-    containment: ['reaped', 'not_required', 'unknown'].includes(containment) ? containment : 'unknown',
+    containment: ['reaped', 'not_required', 'unknown', 'turn_completed', 'turn_failed', 'turn_interrupted'].includes(containment) ? containment : 'unknown',
     terminal: 'blocked', durable: { publishedHead: exactSha(publishedHead) ? publishedHead : null,
       diagnosticStore: safeDiagnosticStoreReference(detail.diagnosticStore ?? diagnostic.diagnosticStore ?? inherited.durable?.diagnosticStore) ?? null,
       ...(safeFallbackReference(detail.fallbackReference ?? diagnostic.fallbackReference ?? inherited.durable?.fallbackReference)

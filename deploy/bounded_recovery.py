@@ -157,8 +157,7 @@ def resource_identity(config):
     consumer = {key: value for key, value in config['consumer'].items()
                 if key in {'paths', 'runtimeUser', 'workGroup', 'writerApp', 'reviewerApp',
                            'owner', 'writerIdentity', 'remediationIdentity', 'repository', 'repositories',
-                           'repositoryRuntimeUsers', 'repositoryAppServerTargets',
-                           'executionSlots', 'generalRunnerPool'}}
+                           'repositoryRuntimeUsers', 'executionSlots', 'generalRunnerPool'}}
     return sha(json.dumps({'environment': environment, 'consumer': consumer}, sort_keys=True).encode())
 
 

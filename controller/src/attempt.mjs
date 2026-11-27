@@ -1,3 +1,4 @@
+import { executionEnded } from './execution-completion.mjs';
 import { VERSION, validateEnvelope, causalEvidence, fail, safeDomainTerminal, digest, exactSha, positive } from './execution-contract.mjs';
 import { isWriterTokenRequest, safeWriterFailure } from './failure-report.mjs';
 import { safeOutcomePublication } from './outcome.mjs';
@@ -96,8 +97,49 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
   }
   let stage = 'preflight';
   let lastSuccessfulBoundary = 'admission';
+  async function executeReservation(reconcile) {
+    lastSuccessfulBoundary = 'checkout';
+    stage = 'execution';
+    try {
+      const returned = await execute(e, e.backend === 'app-server' ? {
+        checkpoint: record.execution.appServer,
+        mode: reconcile ? 'reconcile' : undefined,
+        saveCheckpoint: async checkpoint => {
+          record.execution.appServer = checkpoint;
+          await journal.put(e.runId, record);
+        }
+      } : undefined);
+      if (returned?.version !== VERSION || returned.attemptId !== e.attemptId) fail('CHILD_ENVELOPE_INVALID');
+      if (e.backend === 'app-server' && !executionEnded(e, {
+        ...record.execution, child: returned.child, containment: returned.containment
+      })) fail('APP_SERVER_COMPLETION_UNPROVEN');
+      record.execution = { ...record.execution, returned: true, child: returned.child, containment: returned.containment, result: returned.result,
+        codexUsage: normalizeCodexUsage(returned.codexUsage), runtimeLifecycle: returned.runtimeLifecycle,
+        executionWarnings: returned.executionWarnings ?? [] };
+    } catch (error) {
+      if (e.backend === 'app-server' && !executionEnded(e, { ...record.execution,
+        child: error.details?.childState, containment: error.details?.containment })) throw error;
+      record.execution = { ...record.execution, returned: true, child: error.details?.childState ?? 'unknown',
+        causalEvidence: captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'execution', operation: 'dispatch',
+          secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }),
+        containment: error.details?.containment ?? 'unknown', errorCode: error.code ?? 'EXECUTION_FAILED',
+        codexUsage: normalizeCodexUsage(error.details?.codexUsage ?? error.details?.causal?.codexUsage),
+        diagnostic: causalEvidence(error, { child: error.details?.childState ?? 'unknown', containment: error.details?.containment, stage: 'execution' }) };
+    }
+    if (reconcile && record.diagnostic) {
+      record.reconciliationDiagnostic = record.diagnostic;
+      record.diagnostic = null;
+    }
+    await journal.put(e.runId, record);
+  }
   try {
-    if (record.execution?.reserved && !record.execution.returned) fail('EXECUTION_UNKNOWN_NO_RETRY');
+    const reconcile = e.backend === 'app-server' && record.execution?.reserved === true
+      && record.execution.returned === false && Boolean(record.execution.appServer);
+    if (record.execution?.reserved && !record.execution.returned && !reconcile) fail('EXECUTION_UNKNOWN_NO_RETRY');
+    // A retained turn may need observation or interruption even if GitHub
+    // authority no longer permits publication. This mode never starts a turn.
+    if (reconcile) await executeReservation(true);
+    stage = 'preflight';
     const preflight = await invoke('preflight');
     lastSuccessfulBoundary = 'preflight';
     if (preflight.finalHead) {
@@ -116,27 +158,11 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       fail('PUBLICATION_RECONCILIATION_REQUIRED');
     if (!record.execution) {
       await prepare(e);
-      lastSuccessfulBoundary = 'checkout';
-      stage = 'execution';
       record.execution = { reserved: true, returned: false, child: 'unknown', containment: 'unknown', result: null };
       await journal.put(e.runId, record);
-      try {
-        const returned = await execute(e);
-        if (returned?.version !== VERSION || returned.attemptId !== e.attemptId) fail('CHILD_ENVELOPE_INVALID');
-        record.execution = { reserved: true, returned: true, child: returned.child, containment: returned.containment, result: returned.result,
-          codexUsage: normalizeCodexUsage(returned.codexUsage), runtimeLifecycle: returned.runtimeLifecycle,
-          executionWarnings: returned.executionWarnings ?? [] };
-      } catch (error) {
-        record.execution = { ...record.execution, returned: true, child: error.details?.childState ?? 'unknown',
-          causalEvidence: captureCausalDiagnostic({ error, executionId: e.attemptId, phase: 'execution', operation: 'dispatch',
-            secrets: { githubToken: process.env.GITHUB_TOKEN ?? '' } }),
-          containment: error.details?.containment ?? 'unknown', errorCode: error.code ?? 'EXECUTION_FAILED',
-          codexUsage: normalizeCodexUsage(error.details?.codexUsage ?? error.details?.causal?.codexUsage),
-          diagnostic: causalEvidence(error, { child: error.details?.childState ?? 'unknown', containment: error.details?.containment, stage: 'execution' }) };
-      }
-      await journal.put(e.runId, record);
+      await executeReservation(false);
     }
-    if (record.execution.containment !== 'reaped' && !(record.execution.child === 'not_started' && record.execution.containment === 'not_required')) fail('CONTAINMENT_NOT_PROVEN');
+    if (!executionEnded(e, record.execution)) fail('CONTAINMENT_NOT_PROVEN');
     if (!['started', 'not_started'].includes(record.execution.child)) fail(record.execution.errorCode ?? 'EXECUTION_STATE_UNKNOWN');
     lastSuccessfulBoundary = 'contained-execution';
     stage = 'progress';
@@ -241,7 +267,10 @@ async function runContainedAttempt({ envelope, broker, journal, prepare, execute
       record.diagnostic.outcomePublication = error.details.outcomePublication;
     }
     await saveTerminal();
-    if (e.route === 'auto' && !record.outcome && !deferOutcome) {
+    // A lost RPC can leave a live turn. Keep the original reservation and
+    // checkpoint eligible for reconciliation before issuing a terminal Outcome.
+    const pendingTurn = e.backend === 'app-server' && record.execution?.reserved && !record.execution.returned;
+    if (e.route === 'auto' && !record.outcome && !deferOutcome && !pendingTurn) {
       try {
         const outcome = await invoke('terminal-outcome', { status: 'blocked', terminalCode: error.code,
           diagnostic: record.diagnostic, executionWarnings: record.executionWarnings ?? record.execution?.executionWarnings ?? [], publishedHead: record.progress?.head ?? null,

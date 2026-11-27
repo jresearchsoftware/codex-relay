@@ -377,6 +377,8 @@ export function resolveOutcomeAuthority(authority, nativeRecords, binding) {
 export function validateAdmissionSnapshot(snapshot, binding = {}) {
   if (!conforms(snapshot, AUTHORITY_DEFINITION.admission_schema)
     || bytes(canonicalAuthorityJson(snapshot)) > AUTHORITY_DEFINITION.max_payload_bytes) fail('AUTHORITY_ADMISSION_INVALID');
+  if (Object.hasOwn(snapshot, 'backend') !== Object.hasOwn(snapshot, 'app_server_target_sha256')
+    || snapshot.backend === 'app-server' && snapshot.route !== 'auto') fail('AUTHORITY_ADMISSION_INVALID');
   if (snapshot.repository !== (binding.repository ?? snapshot.repository) || snapshot.task !== (binding.task ?? snapshot.task)
     || snapshot.parent.kind !== 'issue' || snapshot.parent.number !== snapshot.task) fail('AUTHORITY_TARGET_MISMATCH');
   if (snapshot.authority.sha256 !== authoritySourceDigest(snapshot.authority)
@@ -414,7 +416,7 @@ export function createAdmissionSnapshot(resolved, admission) {
     lineage: admission.lineage ?? null,
     ...(resolved.resolution ? { authority_resolution: validateAuthorityResolution(resolved.resolution) } : {}),
     ...Object.fromEntries(['change_request_id', 'reviewed_head_sha'].filter(field => q[field] !== undefined).map(field => [field, q[field]])),
-    ...Object.fromEntries(['branch', 'base_sha', 'starting_head', 'existing_pr'].filter(field => admission[field] !== undefined)
+    ...Object.fromEntries(['branch', 'base_sha', 'starting_head', 'existing_pr', 'backend', 'app_server_target_sha256'].filter(field => admission[field] !== undefined)
       .map(field => [field, admission[field]])) };
   return validateAdmissionSnapshot(snapshot, { authority: resolved.authority });
 }

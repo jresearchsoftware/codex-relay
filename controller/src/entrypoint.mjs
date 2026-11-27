@@ -6,7 +6,7 @@ import { createLocalWriterAdapter } from './local-writer.mjs';
 import { createOnDemandDispatchAdapter } from './github.mjs';
 import { createAttemptStore } from './attempt-store.mjs';
 import { runAttempt, describePostOutcomeFailure } from './attempt.mjs';
-import { prepareCheckout } from './attempt-runtime.mjs';
+import { prepareCheckout, executeCodex } from './attempt-runtime.mjs';
 import { REPOSITORY, OWNER, causalEvidence, fail, positive } from './execution-contract.mjs';
 import { emitAdmissionWarnings, executionWarningSummary } from './outcome.mjs';
 import { parseLaunchInputs, parseLabelLaunch } from './launch-metadata.mjs';
@@ -122,7 +122,9 @@ async function runRouting({ env = process.env, readEvent = path => readFile(path
       admissionUnstarted: admitted.admissionUnstarted === true, broker,
       journal, persistFailure,
       prepare: e => traceRuntimeOperation('checkout-prepare', () => prepare(e)),
-      execute: e => traceRuntimeOperation('governed-runtime', () => dispatcher.dispatch(e)),
+      execute: (e, lifecycle) => traceRuntimeOperation('governed-runtime', () => e.backend === 'app-server'
+        ? executeCodex(e, { ...lifecycle, signal })
+        : dispatcher.dispatch(e)),
       collect: collect ? e => traceRuntimeOperation('collect-progress', () => collect(e)) : (e => broker.invoke({
         operation: 'collect-progress', runId: e.runId, attemptId: e.attemptId })) });
   } catch (error) {

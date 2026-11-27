@@ -28,8 +28,11 @@ export async function retainedCheckoutAbsent(envelope, installation = INSTALLATI
     && (typeof executionSlot !== 'string' || !/^[a-z][a-z0-9-]{0,31}$/.test(executionSlot)))
     fail('ADMISSION_RESOURCE_IDENTITY_INVALID');
   const selected = selectRepositoryConsumer(installation, repository);
-  const base = resolveExecutionConsumer(installation, executionSlot).paths.workRoot;
-  const root = resolveExecutionConsumer(selected, executionSlot).paths.workRoot;
+  // The protected original envelope retains the backend's selected workspace
+  // even while assessing a later installation configuration.
+  const base = envelope.backend === 'app-server' ? envelope.appServerTarget.workspaceRoot
+    : resolveExecutionConsumer(installation, executionSlot).paths.workRoot;
+  const root = envelope.backend === 'app-server' ? base : resolveExecutionConsumer(selected, executionSlot).paths.workRoot;
   if (root !== base && !root.startsWith(base + sep)) fail('ADMISSION_RESOURCE_IDENTITY_INVALID');
   const parents = [root];
   while (parents[0] !== base) parents.unshift(dirname(parents[0]));

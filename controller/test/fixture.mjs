@@ -46,7 +46,7 @@ export function memoryStore() {
 }
 export async function fixture(t, options = {}) {
   const { remediation = false, continuation = false, continuationPr = true, instruction = '', installed = false, retainCheckout = false, issueBody, reviewBody, step = remediation ? 2 : 1, labelLaunch = false, route = 'auto',
-  mainAdvance = false, unrelatedMain = false, nativeReview = false, deferAdmission = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(),
+  mainAdvance = false, unrelatedMain = false, nativeReview = false, deferAdmission = false, beforeAdmission = () => {}, createAdmission, createJournal = () => memoryStore(), writerCollect = false,
   streamlinedAdmission = true, profile = { cliModelId: 'gpt-5.6-luna', effort: 'high' } } = options;
   const syntheticAuthority = issueBody === undefined && options.streamlinedAdmission !== true;
   // The installed proof runs real code against the governed dispatch-work
@@ -277,14 +277,17 @@ export async function fixture(t, options = {}) {
       return staleObservation ? null : observedHead ?? g.observe();
     } })) };
   const admissionControl = createAdmission ? await createAdmission({ root, store, journal }) : undefined;
-  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore, streamlinedAdmission });
+  const workRoot = installed ? CONSUMER.paths.workRoot : join(root, 'work');
+  const collect = e => collectProgress(join(workRoot, e.attemptId), e, { root, remote });
+  const brokerImpl = createPublicationBroker({ api, store, publisher, admission: admissionControl, journal, lifecycleStore, streamlinedAdmission,
+    ...(writerCollect ? { collectRetained: collect } : {}) });
   const broker = { invoke: r => brokerImpl.dispatch(r) };
   await beforeAdmission({ issue, pr, review, run, events, api, store, admissionRequest, admissionControl, root, remote, source, command, continuationHead, base, fixtureDecision, authorityComments, renderDecision });
   const admission = deferAdmission ? { envelope: await admitEnvelope(api, admissionRequest, { nextStep: step, streamlined: true }) }
     : await broker.invoke(admissionRequest);
   const { envelope } = admission;
   taskBranch = envelope.branch ?? taskBranch;
-  const workRoot = installed ? CONSUMER.paths.workRoot : join(root, 'work'); await mkdir(workRoot, { recursive: true });
+  await mkdir(workRoot, { recursive: true });
   const cwd = join(workRoot, envelope.attemptId);
   // The installed test may invoke this same cleanup while another fixture is
   // collecting progress; it must therefore own a distinct checkout path.
@@ -297,7 +300,7 @@ export async function fixture(t, options = {}) {
   const commit = async (path = 'docs/work.md', text = 'changed\n') => { await writeFile(join(cwd, path), text); await command(cwd, ['add', path]); await command(cwd, ['commit', '-m', 'task progress'], identity); return command(cwd, ['rev-parse', 'HEAD']); };
   return { root, remote, source, command, api, issue, pr, run, events, fixtureDecision, authorityComments, renderDecision, admissionRequest, admission, admissionControl, review, store, journal, lifecycleStore, broker, publisher, identity, envelope, cwd, commit, comments, remoteHead, removeCheckout,
     prepare: e => prepareCheckout(e, { root: workRoot, remote, token: null }),
-    collect: e => collectProgress(cwd, e, { root, remote }),
+    collect,
     checksReady: () => { checksReady = true; }, pushes: () => pushes,
     publicationOperations, failObserve: v => { observationFailure = v; },
     stale: v => { staleObservation = v; }, observeAs: v => { observedHead = v; },

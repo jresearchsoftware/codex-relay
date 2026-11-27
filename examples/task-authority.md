@@ -73,8 +73,9 @@ Copy the returned native `reference` when a later record needs this exact source
 An explicit successor Decision uses that reference in `supersedes`; otherwise
 active Decisions accumulate in native comment-ID order. After an explicit owner
 instruction to start the agreed work, the orchestration client can send the
-appropriate `codex-ready-auto` or `codex-ready-manual` command on the Issue
-through supported GitHub access authenticated as the configured owner. Writer
+appropriate `codex-ready-auto`, `codex-ready-app-server` or
+`codex-ready-manual` command on the Issue through supported GitHub access
+authenticated as the configured owner. Writer
 resolves and stores the current snapshot, allocates Step and projects
 labels/title only once the attempt is admitted. Check the original attempt for
 verified worker start, the complete admitted manual handoff or an actual

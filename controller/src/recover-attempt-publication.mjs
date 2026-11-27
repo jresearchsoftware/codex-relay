@@ -1,3 +1,4 @@
+import { executionEnded } from './execution-completion.mjs';
 import { CONSUMER, EXECUTION_CONSUMER, EXECUTION_SLOT, executionConsumer, runnerExecutionSlot } from '../../consumer/consumer.mjs';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -56,7 +57,7 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
   if (!record || record.version !== e.version || digest(record.envelope) !== digest(e)) fail('JOURNAL_BINDING_CHANGED');
   const execution = record.execution;
   if (execution?.reserved !== true || execution.returned !== true || execution.child !== 'started'
-    || execution.containment !== 'reaped') fail('RECOVERY_EXECUTION_NOT_PROVEN');
+    || !executionEnded(e, execution)) fail('RECOVERY_EXECUTION_NOT_PROVEN');
   let progress;
   try {
     // A consumed authorization is replayed at the Writer before touching the
@@ -74,7 +75,7 @@ async function recoverContainedPublication({ runId, attemptId, authorizationId, 
     progress ??= await collect(e);
     if (progress.head !== published.publishedHead) fail('RECOVERY_CANDIDATE_CHANGED');
     if (typeof progress.clean !== 'boolean') fail('WORKTREE_STATE_UNKNOWN');
-    record.collection = { head: progress.head, clean: progress.clean === true };
+    record.collection = { head: progress.head, clean: progress.clean === true, preserved: true };
     record.progress.clean = progress.clean === true;
     if (!progress.clean && execution.result?.status !== 'success') fail('UNCOMMITTED_WORK_REMAINS');
     if (execution.result?.status !== 'success') fail(execution.errorCode ?? 'SEMANTIC_RESULT_BLOCKED');

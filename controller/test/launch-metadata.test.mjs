@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { CONSUMER } from '../../consumer/consumer.mjs';
-import { dispatchRunName, launchStep, parseLaunchInputs } from '../src/launch-metadata.mjs';
+import { dispatchRunName, launchStep, parseLabelLaunch, parseLaunchInputs } from '../src/launch-metadata.mjs';
 import { admitEnvelope } from '../src/live-authority.mjs';
 import { runAttempt } from '../src/attempt.mjs';
 import { executeCodex } from '../src/attempt-runtime.mjs';
@@ -56,6 +56,24 @@ test('workflow exact LF and CRLF markers admit native work using the owner-maint
       assert.equal(f.comments.length, 0);
     }
   }
+});
+
+test('the App Server ready label without a target produces one pre-execution Outcome and allocates no Step', async t => {
+  const label = { name: 'codex-ready-app-server' };
+  const launch = parseLabelLaunch({ action: 'labeled', label, issue: { number: 42 } }, 'issues');
+  assert.deepEqual(launch, { target: 'issue', number: 42, step: null, route: 'app-server', transport: 'label' });
+  const f = await fixture(t, { route: launch.route, labelLaunch: true,
+    beforeAdmission: ({ issue, run }) => { run.display_title = issueLabelRunName(issue, launch.route); } });
+  assert.equal(f.run.display_title, 'App Server implementation · Task 42 · codex-ready-app-server');
+  assert.equal(f.admission.status, 'BLOCKED');
+  assert.equal(f.envelope.admissionBlock.code, 'APP_SERVER_TARGET_NOT_CONFIGURED');
+  assert.equal(f.envelope.backend, 'app-server');
+  assert.equal(f.envelope.step, null);
+  assert.deepEqual(f.issue.labels, []);
+  assert.equal(await f.journal.get(f.envelope.runId), null);
+  assert.match(f.comments[0].body, /Configure its repositoryAppServerTargets entry/);
+  assert.equal((await f.broker.invoke(f.admissionRequest)).admissionUnstarted, undefined);
+  assert.equal(f.comments.length, 1);
 });
 
 test('a current broker refuses legacy authority before checking obsolete Step display', async t => {
