@@ -1,11 +1,11 @@
 {
   "authority_schema": "4.0",
   "contract_repository": "https://github.com/jresearchsoftware/codex-relay",
-  "contract_revision": "45fd525d8e040b1235858001c0eb2bd573286c10",
+  "contract_revision": "057219dbe733bbdc76baed703d2aad46c0af388e",
   "contract_revision_role": "accepted-baseline",
   "contract_source": "source-tree",
   "name": "codex-relay",
-  "publication": "MAJOR 11.0.0 from independently accepted 10.0.0. Task 234 includes Issue 297 and removes mandatory review and integration gates for routine disposable TEST operations within established authority.",
+  "publication": "PATCH 11.0.1 from independently accepted 11.0.0. Task 303 clarifies owner-authorized dispatch through the configured owner's supported GitHub connection and how to verify the original launch.",
   "retained_authority_schema": "3.0",
   "schema_version": 1,
   "serial_workflow_contract": "relay-workflows-v3",
@@ -15,6 +15,6 @@
   "shared_requirement": ">=12.1.0",
   "shared_source_revision": "e4b5b738ae0918014dd06b5616fe37a5dcb93290",
   "shared_version": "12.1.0",
-  "version": "11.0.0",
+  "version": "11.0.1",
   "workflow_contract": "relay-workflows-v4"
 }

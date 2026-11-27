@@ -29,10 +29,13 @@ old Request history does not establish a separate purpose/scope amendment gate.
 Use the [authority contract](../contracts/README.md#github-native-task-authority)
 for migration, trust, supersession and selected context.
 
-The owner launches fresh Issue work, explicitly authorized Issue implementation
-continuation or applicable PR remediation by applying
-`codex-ready-auto`; `codex-ready-manual` produces the existing copyable manual
-handoff. These are first-class native commands. No Actions UI, dispatch inputs,
+Fresh Issue work, explicitly authorized Issue implementation continuation or
+applicable PR remediation starts with `codex-ready-auto` or `codex-ready-manual`
+on the canonical target through GitHub as the configured owner. The
+[admission workflow](../packages/codex-relay/skill/references/workflow.md#author-and-admit-current-work)
+describes direct owner and explicitly authorized orchestration client submission.
+The manual command produces the existing copyable handoff after admission.
+These are first-class native commands. No Actions UI, dispatch inputs,
 comment command or additional launch form is required. Owner `workflow_dispatch`
 on the configured base branch remains an optional fallback with `task`, `step`, `route` and optional
 `pull_request`; compatibility inputs cannot replace current authority. For new

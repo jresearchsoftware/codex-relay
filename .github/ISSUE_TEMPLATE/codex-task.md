@@ -1,6 +1,6 @@
 ---
 name: Codex task
-about: A current v4 Relay Task charter; owner ready command admits execution
+about: A current v4 Relay Task charter for owner-authorized execution
 title: ''
 labels: ''
 assignees: ''
@@ -25,9 +25,13 @@ an actionable charter without hiding meaningful public history. After first
 admission, change substantive Task authority through trusted Task-scoped
 Decisions; do not rewrite the historical charter. Ordinary comments are evidence.
 
-The owner applies codex-ready-auto or codex-ready-manual when execution is ready.
-Writer creates the immutable admission snapshot and allocates Step at that time;
-Issue creation, Decisions and ready labels alone do not preallocate a Step.
+An explicit owner instruction to start agreed in-scope work authorizes the
+orchestration assistant to send codex-ready-auto or codex-ready-manual on the
+canonical target through supported GitHub access authenticated as the configured
+owner. Follow the original attempt to verified worker start, the complete
+manual handoff or a terminal diagnostic. Reconcile an uncertain prior launch.
+Writer creates the immutable snapshot and allocates Step only at admission.
+Issue creation, Decisions and ready-command submission allocate no Step.
 Do not add step-1 to a new charter. Writer projects admitted Step/title metadata.
 Each genuinely new execution, including after BLOCKED, receives the next Step;
 replay/recovery of the same attempt retains its original Step and bindings.

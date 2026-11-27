@@ -71,10 +71,15 @@ defaults. Ordinary selected evidence remains context, rather than Task authority
 
 Copy the returned native `reference` when a later record needs this exact source.
 An explicit successor Decision uses that reference in `supersedes`; otherwise
-active Decisions accumulate in native comment-ID order. Apply the existing
-`codex-ready-auto` or `codex-ready-manual` command when the Task is ready for an
-execution admission. Writer resolves and stores the current snapshot, allocates
-Step, and projects labels/title. No additional authoring form or Request is needed.
+active Decisions accumulate in native comment-ID order. After an explicit owner
+instruction to start the agreed work, the orchestration client can send the
+appropriate `codex-ready-auto` or `codex-ready-manual` command on the Issue
+through supported GitHub access authenticated as the configured owner. Writer
+resolves and stores the current snapshot, allocates Step and projects
+labels/title only once the attempt is admitted. Check the original attempt for
+verified worker start, the complete admitted manual handoff or an actual
+terminal diagnostic. If the command's effect is uncertain, reconcile that
+attempt before another command. See the [admission workflow](../packages/codex-relay/skill/references/workflow.md#author-and-admit-current-work).
 
 ### Finite Apply and closure choices
 
